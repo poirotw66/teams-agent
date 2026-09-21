@@ -122,6 +122,13 @@ def test_is_chunk_visible_to_groups_matches_hybrid_acl() -> None:
         content="公開內容",
         allowed_groups=[],
     )
+    public_sentinel = DocumentChunk(
+        chunk_id="public-sentinel",
+        title="全員公開",
+        source_path="sources/public-sentinel.md",
+        content="全員公開內容",
+        allowed_groups=["grp_public"],
+    )
     restricted = DocumentChunk(
         chunk_id="restricted",
         title="限制",
@@ -132,6 +139,8 @@ def test_is_chunk_visible_to_groups_matches_hybrid_acl() -> None:
 
     assert is_chunk_visible_to_groups(public, set()) is True
     assert is_chunk_visible_to_groups(public, {"HR"}) is True
+    assert is_chunk_visible_to_groups(public_sentinel, set()) is True
+    assert is_chunk_visible_to_groups(public_sentinel, {"HR"}) is True
     assert is_chunk_visible_to_groups(restricted, set()) is False
     assert is_chunk_visible_to_groups(restricted, {"HR"}) is False
     assert is_chunk_visible_to_groups(restricted, {"IT"}) is True

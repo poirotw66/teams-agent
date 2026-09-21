@@ -110,19 +110,26 @@ def check_sparse_fast_path(
     return bool(top1_score >= 1.5 * top2_score)
 
 
+# Publisher ALL_EMPLOYEES / File Search public sentinel. Empty allowlists and
+# sole ``grp_public`` are both public; restricted docs use concrete group ids.
+PUBLIC_ACL_GROUP = "grp_public"
+
+
 def is_chunk_visible_to_groups(
     chunk: DocumentChunk,
     groups: set[str] | None,
 ) -> bool:
     """Return whether Hybrid ACL allows the caller to see ``chunk``.
 
-    Empty ``allowed_groups`` means public. Otherwise the caller's groups must
+    Public documents use an empty ``allowed_groups`` list or only
+    ``grp_public`` (portal ALL_EMPLOYEES). Otherwise the caller's groups must
     intersect the document allowlist.
     """
     caller_groups = groups or set()
-    if not chunk.allowed_groups:
+    allowed = {str(group) for group in (chunk.allowed_groups or []) if str(group)}
+    if not allowed or allowed == {PUBLIC_ACL_GROUP}:
         return True
-    return bool(set(chunk.allowed_groups).intersection(caller_groups))
+    return bool(allowed.intersection(caller_groups))
 
 
 @dataclass(frozen=True)

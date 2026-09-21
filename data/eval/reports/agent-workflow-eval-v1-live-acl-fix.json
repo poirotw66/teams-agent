@@ -1,0 +1,52 @@
+{
+  "summary": {
+    "caseCount": 3.0,
+    "supervisorRouteAccuracy": 1.0,
+    "issueCountAccuracy": 1.0,
+    "issueRouteAccuracy": 1.0,
+    "answerAccuracy": 1.0,
+    "citationPrecision": 0.75,
+    "citationRecall": 1.0,
+    "ticketFalseTriggerRate": 0.0,
+    "handoffFalseTriggerRate": 0.0,
+    "llmCallsPerRequest": 1.3333333333333333,
+    "latencyMsP50": 4448.459500010358,
+    "latencyMsP95": 4448.459500010358,
+    "firstStageLatencyMsP50": 0.0,
+    "firstStageLatencyMsP95": 0.0,
+    "provenance": {
+      "commitSha": "80d5b1889c936d93993dff89b4a02f257fc8fa12",
+      "datasetPath": "../data/eval/agent_workflow_eval_v1.json",
+      "datasetHash": "6c253ac330ddb38c1a36a39b30888d18e687ec13d1797a9355a457ac6031ddac",
+      "freezeVersion": 1,
+      "releaseId": null,
+      "agentModel": "google_genai:gemini-3.8-flash",
+      "answerModel": "google_genai:gemini-3.1-flash-lite",
+      "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+      "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+      "hardAnswerModel": null,
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "escalationPolicy": "OFF",
+      "region": null,
+      "startedAt": "2026-09-21T06:39:05.710320+00:00",
+      "completedAt": "2026-09-21T06:39:16.628002+00:00"
+    }
+  },
+  "provenance": {
+    "commitSha": "80d5b1889c936d93993dff89b4a02f257fc8fa12",
+    "datasetPath": "../data/eval/agent_workflow_eval_v1.json",
+    "datasetHash": "6c253ac330ddb38c1a36a39b30888d18e687ec13d1797a9355a457ac6031ddac",
+    "freezeVersion": 1,
+    "releaseId": null,
+    "agentModel": "google_genai:gemini-3.8-flash",
+    "answerModel": "google_genai:gemini-3.1-flash-lite",
+    "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+    "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+    "hardAnswerModel": null,
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "escalationPolicy": "OFF",
+    "region": null,
+    "startedAt": "2026-09-21T06:39:05.710320+00:00",
+    "completedAt": "2026-09-21T06:39:16.628002+00:00"
+  }
+}
