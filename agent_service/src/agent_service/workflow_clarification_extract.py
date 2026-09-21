@@ -9,7 +9,11 @@ from .confirmation import TicketIntent, is_pending_ticket_offer_confirmation
 from .contracts import AgentRequest, ConversationContext, Issue, PendingIssueContext
 from .extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION, merge_pending_ticket_issues
 from .supervisor import ConversationSupervisorDecision
-from .workflow_clarification_helpers import _complete_complementary_pending_issue
+from .workflow_clarification_helpers import (
+    _complete_complementary_pending_issue,
+    _is_error_catalog_documentation_request,
+    _promote_error_catalog_documentation_request,
+)
 from .workflow_pending_helpers import (
     _has_pending_ticket_offer,
     _is_pending_ticket_detail,
@@ -32,9 +36,11 @@ def resolve_pending_offer_state(
 ) -> tuple[TicketIntent, bool, list[Issue], list[PendingIssueContext], list[PendingIssueContext]]:
     """Resolve pending-offer confirmation and context lists for extraction."""
     pending_confirmation = False
+    catalog_request = _is_error_catalog_documentation_request(request.message.text)
     if (
         ticket_intent == TicketIntent.NONE
         and not superseded_handoff
+        and not catalog_request
         and _has_pending_ticket_offer(conversation)
         and is_pending_ticket_offer_confirmation(request.message.text)
     ):
@@ -44,7 +50,7 @@ def resolve_pending_offer_state(
     pending_issues = _pending_offer_issues(conversation) if pending_confirmation else []
     active_offer_contexts = (
         []
-        if superseded_handoff
+        if superseded_handoff or catalog_request
         else (
             _recent_ticket_contexts(conversation)
             if ticket_intent == TicketIntent.NONE
@@ -55,7 +61,7 @@ def resolve_pending_offer_state(
     )
     requested_offer_contexts = (
         []
-        if superseded_handoff
+        if superseded_handoff or catalog_request
         else (
             _recent_ticket_contexts(conversation)
             if ticket_intent == TicketIntent.NONE
@@ -79,8 +85,11 @@ def issues_from_offer_contexts(
     requested_offer_contexts: list[PendingIssueContext],
     prior_pending_issues: list[PendingIssueContext],
     decision: ConversationSupervisorDecision,
+    latest_text: str = "",
 ) -> tuple[list[Issue] | None, bool, bool]:
     """Return (issues, too_many, force_offer) when a short-circuit path applies."""
+    if _is_error_catalog_documentation_request(latest_text):
+        return None, False, False
     if pending_issues:
         return [merge_pending_ticket_issues(pending_issues)], False, False
     if active_offer_contexts:
@@ -125,6 +134,9 @@ def finalize_planned_issues(
         ] or issues
     issues = _complete_complementary_pending_issue(
         issues, prior_pending_issues, request.message.text, decision=decision
+    )
+    issues = _promote_error_catalog_documentation_request(
+        issues, request.message.text
     )
     previous_count = max(
         (pending.clarificationCount for pending in prior_pending_issues),
@@ -230,6 +242,9 @@ async def extract_issues_via_extractor(
         ] or issues
     issues = _complete_complementary_pending_issue(
         issues, prior_pending_issues, request.message.text, decision=decision
+    )
+    issues = _promote_error_catalog_documentation_request(
+        issues, request.message.text
     )
     previous_count = max(
         (pending.clarificationCount for pending in prior_pending_issues),

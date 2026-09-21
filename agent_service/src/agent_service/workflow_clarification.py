@@ -250,6 +250,7 @@ class ClarificationWorkflowMixin:
             requested_offer_contexts=requested_offer_contexts,
             prior_pending_issues=prior_pending_issues,
             decision=decision,
+            latest_text=request.message.text,
         )
         if issues is None:
             issues, too_many_issues = await resolve_issues_for_extraction(
