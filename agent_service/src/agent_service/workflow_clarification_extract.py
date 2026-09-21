@@ -154,7 +154,15 @@ async def resolve_issues_for_extraction(
 ) -> tuple[list[Issue], bool]:
     """Prefer Turn Planner issues when enabled; otherwise run the extractor."""
     planned = state.get("planned_issues") or []
-    if planned and workflow.settings.turn_planner_enabled:
+    from .turn_planner_policy import resolve_turn_planner_mode
+
+    planner_mode = resolve_turn_planner_mode(
+        turn_planner_mode=getattr(workflow.settings, "turn_planner_mode", None),
+        turn_planner_enabled=bool(
+            getattr(workflow.settings, "turn_planner_enabled", False)
+        ),
+    )
+    if planned and planner_mode != "OFF":
         return finalize_planned_issues(
             planned=planned,
             request=request,
