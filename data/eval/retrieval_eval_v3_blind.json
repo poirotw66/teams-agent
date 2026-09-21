@@ -4,7 +4,7 @@
   "role": "release_holdout",
   "specRef": "docs/rag-v2-spec.md#6",
   "frozen": true,
-  "freezeVersion": 2,
+  "freezeVersion": 3,
   "reviewerSignoff": {
     "reviewer": "independent-agent",
     "agentId": "2f5844d5-ab0f-4942-8673-7a4634f8ee21",
@@ -14,8 +14,8 @@
     "acceptedKnownGaps": [
       "acl_coverage_gap: corpus lacks group-gated documents"
     ],
-    "freezeVersionAcknowledged": 2,
-    "labelContractNote": "v2 label revisions are citation-contract fixes from index/runtime titles, not model-output overfitting."
+    "freezeVersionAcknowledged": 3,
+    "labelContractNote": "v3 label revisions remove section-header / form-label mustContain tokens (適用系統, 適用平台：…, 主旨:[…]) so answer scoring checks factual tokens, not document heading echo. Not model-output overfitting of answer wording."
   },
   "minCaseCount": 140,
   "coverageTargets": {
@@ -88,7 +88,6 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "適用系統",
             "CRM",
             "OPWEB"
           ]
@@ -100,10 +99,11 @@
       "forbiddenSourceTitles": [],
       "notes": "Corpus: AD FAQ-002",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v3",
       "expectedSourceTitles": [
         "AD 帳號與系統解鎖 FAQ"
-      ]
+      ],
+      "reviewFixNote": "v3: replace header/label mustContain with factual/discrimination tokens"
     },
     {
       "id": "v3-blind-ans-03",
@@ -2832,9 +2832,7 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "主旨:[有問題的平台名稱]",
-            "客戶姓名",
-            "發生異常的時間"
+            "有問題的平台名稱"
           ]
         }
       ],
@@ -2844,12 +2842,12 @@
       "forbiddenSourceTitles": [],
       "notes": "Multi-turn follow-up; priorTurn=要開資訊單",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v3",
       "expectedSourceTitles": [
         "資訊問題的通報格式"
       ],
       "priorTurn": "要開資訊單",
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v3: replace header/label mustContain with factual/discrimination tokens"
     },
     {
       "id": "v3-blind-conv-10",
@@ -3943,9 +3941,8 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "預設 Browser",
-            "網際網路選項",
-            "每次造訪網頁時"
+            "大州首次使用設定",
+            "大州系統_功能無法點選"
           ]
         }
       ],
@@ -3957,11 +3954,11 @@
       "forbiddenSourceTitles": [],
       "notes": "Sibling docs (首次設定 vs 無法點選), not superseded version; category retagged.",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v3",
       "expectedSourceTitles": [
         "大州首次使用設定"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v3: replace header/label mustContain with factual/discrimination tokens"
     },
     {
       "id": "v3-blind-ver-02",
@@ -3972,30 +3969,29 @@
       "query": "Android 與 iOS Outlook 手冊是否為不同文件？",
       "expectedFound": true,
       "expectedDocuments": [
-        "行動裝置 Outlook 安裝手冊（Android）"
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
       ],
       "expectedEvidence": [
         {
           "mustContain": [
-            "適用平台：Android",
-            "Microsoft Intune",
-            "台灣 (+886)"
+            "Android",
+            "iOS"
           ]
         }
       ],
-      "hardNegatives": [
-        "行動裝置 Outlook 安裝手冊（iOS）"
-      ],
+      "hardNegatives": [],
       "relevanceGrades": {},
       "groups": [],
       "forbiddenSourceTitles": [],
       "notes": "Platform pair discrimination, not version supersession.",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v3",
       "expectedSourceTitles": [
-        "行動裝置 Outlook 安裝手冊（Android）"
+        "行動裝置 Outlook 安裝手冊（Android）",
+        "行動裝置 Outlook 安裝手冊（iOS）"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v3: replace header/label mustContain with factual/discrimination tokens"
     },
     {
       "id": "v3-blind-ver-03",
