@@ -242,6 +242,38 @@ def assign_source_roles(
     return roles
 
 
+def _rescue_top_score_from_incidental(
+    *,
+    results: Sequence[SearchResult],
+    roles: dict[str, SourceRole],
+    document_key: Callable[[SearchResult], str],
+) -> dict[str, SourceRole]:
+    """Keep a uniquely higher-score hit packable when Latin-boost heuristics misfire.
+
+    Follow-up rewrite can inject a product token (e.g. Outlook) that promotes
+    peripheral manuals to PRIMARY while the score=1.0 target becomes INCIDENTAL.
+    Only rescue when that seed clearly outscores already-kept evidence.
+    """
+    if not results:
+        return roles
+    best = max(results, key=lambda result: float(result.score or 0.0))
+    best_key = document_key(best)
+    if not best_key:
+        return roles
+    if roles.get(best_key, SourceRole.PRIMARY) != SourceRole.INCIDENTAL:
+        return roles
+    kept_scores = [
+        float(result.score or 0.0)
+        for result in results
+        if roles.get(document_key(result), SourceRole.PRIMARY) != SourceRole.INCIDENTAL
+    ]
+    best_score = float(best.score or 0.0)
+    if kept_scores and best_score <= max(kept_scores):
+        return roles
+    rescued = dict(roles)
+    rescued[best_key] = SourceRole.PRIMARY
+    return rescued
+
 def filter_results_for_generation(
     *,
     query: str,
@@ -256,6 +288,11 @@ def filter_results_for_generation(
     if len(results) <= 1:
         return list(results)
     roles = assign_source_roles(query=query, results=results, document_key=document_key)
+    roles = _rescue_top_score_from_incidental(
+        results=results,
+        roles=roles,
+        document_key=document_key,
+    )
     keep_roles = {
         SourceRole.PRIMARY,
         SourceRole.SUPPORTING,
@@ -290,6 +327,7 @@ def filter_results_for_generation(
                 roles.get(document_key(result), SourceRole.PRIMARY),
                 9,
             ),
+            -float(result.score or 0.0),
             next(
                 (
                     index

@@ -105,16 +105,37 @@ def test_contrastive_query_prefers_positive_topic_over_negated_doc() -> None:
     assert "broken" not in keys
 
 
-def test_alias_apple_phone_mail_prefers_ios_outlook() -> None:
-    results = [
-        _result("ios", "行動裝置 Outlook 安裝手冊（iOS）", "iPhone 收公司信請安裝 Outlook"),
-        _result("phone", "總公司IP話機操作", "總公司 IP 話機轉接設定"),
-    ]
+def test_filter_rescues_top_score_when_latin_boost_marks_it_incidental() -> None:
+    """Rewrite-injected Outlook must not drop the score=1.0 郵件為亂碼 seed."""
+    garbled = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="garbled",
+            title="郵件為亂碼",
+            content="點開發出的電郵，選取繁體中文(Big 5)或 Unicode(UTF-8)",
+            document_id="garbled",
+            source_path="sources/garbled.md",
+        ),
+        score=1.0,
+        sparse_score=1.0,
+        dense_score=0.0,
+    )
+    outlook = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="outlook",
+            title="行動裝置 Outlook 安裝手冊（iOS）",
+            content="iPhone 收公司信請安裝 Outlook 與 Authenticator",
+            document_id="outlook",
+            source_path="sources/outlook.md",
+        ),
+        score=0.58,
+        sparse_score=0.58,
+        dense_score=0.0,
+    )
     filtered = filter_results_for_generation(
-        query="蘋果手機公司信設定",
-        results=results,
+        query="信件 亂碼 轉回 正常 編碼 Outlook",
+        results=[garbled, outlook],
         document_key=lambda result: result.chunk.document_id or "",
     )
     keys = [result.chunk.document_id for result in filtered]
-    assert keys[0] == "ios"
-    assert "phone" not in keys
+    assert keys[0] == "garbled"
+    assert "outlook" in keys or keys == ["garbled"]

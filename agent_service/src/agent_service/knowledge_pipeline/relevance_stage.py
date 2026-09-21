@@ -133,16 +133,26 @@ async def _grade_relevance_with_llm(
         execution_context=execution_context,
         counter=counter,
     )
+    llm_relevant = bool(decision.relevant)
+    record_relevance_llm_outcome(
+        deterministic_relevant=deterministic_relevant,
+        llm_relevant=llm_relevant,
+    )
+    # Lexical/deterministic already matched selected evidence; do not let an LLM
+    # false-negative flip a contrastive or multi-doc pool into NO_RELEVANT_EVIDENCE.
+    if deterministic_relevant and not llm_relevant:
+        annotate_relevance_attempts(
+            state.trace_attempts,
+            decision="DETERMINISTIC_RELEVANCE_GUARD",
+            is_relevant=True,
+        )
+        return True
     annotate_relevance_attempts(
         state.trace_attempts,
         decision="LLM_RELEVANCE",
-        is_relevant=decision.relevant,
+        is_relevant=llm_relevant,
     )
-    record_relevance_llm_outcome(
-        deterministic_relevant=deterministic_relevant,
-        llm_relevant=bool(decision.relevant),
-    )
-    return decision.relevant
+    return llm_relevant
 
 
 async def documents_are_relevant(

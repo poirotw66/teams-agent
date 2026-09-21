@@ -307,8 +307,27 @@ def deterministic_relevance_without_model(
 
 
 def build_relevance_grade_context(results: list[SearchResult], *, limit: int = 3) -> str:
-    """Format top candidates for the LLM relevance grader."""
-    grade_results = results[:limit]
+    """Format top candidates for the LLM relevance grader.
+
+    Prefer highest-score unique titles. Fusion/document-selection order can put
+    hard-negatives first while the answerable hit sits just outside the top-N
+    window the grader sees.
+    """
+    ranked = sorted(
+        results,
+        key=lambda result: float(result.score or 0.0),
+        reverse=True,
+    )
+    grade_results: list[SearchResult] = []
+    seen_titles: set[str] = set()
+    for result in ranked:
+        title = (result.chunk.title or "").strip() or result.chunk.chunk_id
+        if title in seen_titles:
+            continue
+        seen_titles.add(title)
+        grade_results.append(result)
+        if len(grade_results) >= limit:
+            break
     return "\n\n".join(
         f"[{result.chunk.title}]\n{result.chunk.content}" for result in grade_results
     )
