@@ -85,6 +85,46 @@ def test_filter_results_for_generation_packs_primary_before_supporting() -> None
     assert "support" not in keys
 
 
+def test_negated_topic_fuzzy_demotes_interrupted_crm_title() -> None:
+    """Regression: 外網 CRM title must drop for 外網連線設定 even when score leads."""
+    primary = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="primary",
+            title="國金 CRM OTP 綁訂操作",
+            content="Google Authenticator 首次登入需使用 OTP Key",
+            document_id="primary",
+            source_path="sources/primary.md",
+        ),
+        score=0.72,
+        sparse_score=0.72,
+        dense_score=0.0,
+    )
+    support = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="support",
+            title="外網 CRM 登入連線設定方式",
+            content="手機綁定 FortiToken OTP；外網 CRM 權限才能綁定",
+            document_id="support",
+            source_path="sources/support.md",
+        ),
+        score=0.95,
+        sparse_score=0.95,
+        dense_score=0.0,
+    )
+    for query in (
+        "OTP 綁定操作，不是外網連線設定",
+        "國金 CRM 的 OTP 要怎麼綁定？不要給我外網 CRM 連線設定",
+    ):
+        filtered = filter_results_for_generation(
+            query=query,
+            results=[support, primary],
+            document_key=lambda result: result.chunk.document_id or "",
+        )
+        keys = [result.chunk.document_id for result in filtered]
+        assert keys[0] == "primary", query
+        assert "support" not in keys, query
+
+
 def test_contrastive_query_prefers_positive_topic_over_negated_doc() -> None:
     """Regression: 不是功能無法點選那篇 must keep 首次設定, not the negated doc."""
     results = [

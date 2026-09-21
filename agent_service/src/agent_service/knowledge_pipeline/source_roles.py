@@ -51,27 +51,99 @@ def _latin_query_tokens(query: str) -> set[str]:
     }
 
 
+_NEGATION_SPLIT_MARKERS: tuple[str, ...] = (
+    "不要給我",
+    "不是",
+    "而非",
+    "不要",
+    "排除",
+)
+
+
 def _negated_topic(query: str) -> str | None:
     """Extract the topic the user explicitly rejects (e.g. 不是功能無法點選那篇)."""
-    match = re.search(
-        r"不是\s*([^\s，,。.!！?？]{2,20}?)(?:那篇|那份|文件|流程|說明)?\s*$",
-        query or "",
+    text = query or ""
+    patterns = (
+        r"(?:不是|而非)\s*([^\s，,。.!！?？]{2,24}?)(?:那篇|那份|文件|流程|說明)?\s*$",
+        r"(?:不是|而非)\s*([^\s，,。.!！?？]{2,16})",
+        r"不要給我\s*(.+?)(?:\s*$|[。.!！?？])",
+        r"不要\s*([^\s，,。.!！?？]{2,24})",
+        r"排除\s*([^\s，,。.!！?？]{2,16})",
     )
-    if match:
-        return match.group(1).strip("，,。 ")
-    match = re.search(r"不是\s*([^\s，,。.!！?？]{2,16})", query or "")
-    if match:
-        return match.group(1).strip("，,。 ")
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if not match:
+            continue
+        topic = match.group(1).strip("，,。 /／")
+        if len(topic) >= 2:
+            return topic
     return None
 
 
 def _positive_topic_prefix(query: str) -> str | None:
     """Topic stated before an explicit negation clause."""
-    if "不是" not in (query or ""):
-        return None
-    prefix = (query or "").split("不是", 1)[0]
-    prefix = re.sub(r"[，,。.\s]+$", "", prefix).strip()
-    return prefix or None
+    text = query or ""
+    for marker in _NEGATION_SPLIT_MARKERS:
+        if marker not in text:
+            continue
+        prefix = text.split(marker, 1)[0]
+        prefix = re.sub(r"[，,。.\s]+$", "", prefix).strip()
+        return prefix or None
+    return None
+
+
+def _compact_cjk_text(text: str) -> str:
+    return re.sub(r"[\s\u3000／/·・\-_/]+", "", text or "")
+
+
+def _cjk_bigrams(text: str) -> list[str]:
+    bigrams: list[str] = []
+    for run in re.findall(r"[\u3400-\u9fff]+", text or ""):
+        if len(run) < 2:
+            continue
+        if len(run) == 2:
+            bigrams.append(run)
+            continue
+        for index in range(len(run) - 1):
+            bigrams.append(run[index : index + 2])
+    return bigrams
+
+
+def _matches_negated_topic(*, text: str, negated: str) -> bool:
+    """True when rejected topic appears in doc text, including interrupted titles.
+
+    Contiguous substring fails on titles like ``外網 CRM 登入連線設定方式`` when
+    the user rejects ``外網連線設定``; require strong CJK bigram / Latin overlap.
+    """
+    if not negated or not text:
+        return False
+    if negated in text:
+        return True
+    compact_negated = _compact_cjk_text(negated)
+    compact_text = _compact_cjk_text(text)
+    if len(compact_negated) >= 2 and compact_negated in compact_text:
+        return True
+
+    text_l = text.casefold()
+    compact_text_l = compact_text.casefold()
+    latin_tokens = [
+        match.group(0).lower()
+        for match in re.finditer(r"[A-Za-z][A-Za-z0-9_./:-]{1,}", negated)
+    ]
+    latin_hit = bool(latin_tokens) and all(
+        token in text_l or token in compact_text_l for token in latin_tokens
+    )
+
+    bigrams = _cjk_bigrams(negated)
+    if not bigrams:
+        return latin_hit
+    hits = sum(1 for bigram in bigrams if bigram in text)
+    coverage = hits / len(bigrams)
+    if latin_hit:
+        return coverage >= 0.4 or hits >= 1
+    if len(bigrams) < 2:
+        return False
+    return coverage >= 0.6
 
 
 def _doc_blob(
@@ -188,10 +260,18 @@ def _doc_overlap(
     negated = _negated_topic(query)
     positive = _positive_topic_prefix(query) if negated else None
     if negated:
-        negated_hit = negated in title or negated in blob
-        positive_hit = bool(positive) and (positive in title or positive in blob)
+        negated_hit = _matches_negated_topic(
+            text=title, negated=negated
+        ) or _matches_negated_topic(text=blob, negated=negated)
+        positive_hit = bool(positive) and (
+            positive in title
+            or positive in blob
+            or _compact_cjk_text(positive) in _compact_cjk_text(title)
+            or _compact_cjk_text(positive) in _compact_cjk_text(blob)
+        )
         if negated_hit and not positive_hit:
-            score -= _NEGATED_TOPIC_PENALTY
+            # Force INCIDENTAL even when retrieval score / Latin boost is high.
+            return min(score - _NEGATED_TOPIC_PENALTY, 0)
     return score
 
 
@@ -244,6 +324,7 @@ def assign_source_roles(
 
 def _rescue_top_score_from_incidental(
     *,
+    query: str,
     results: Sequence[SearchResult],
     roles: dict[str, SourceRole],
     document_key: Callable[[SearchResult], str],
@@ -253,6 +334,7 @@ def _rescue_top_score_from_incidental(
     Follow-up rewrite can inject a product token (e.g. Outlook) that promotes
     peripheral manuals to PRIMARY while the score=1.0 target becomes INCIDENTAL.
     Only rescue when that seed clearly outscores already-kept evidence.
+    Never rescue a doc the user explicitly rejected via contrastive negation.
     """
     if not results:
         return roles
@@ -262,6 +344,14 @@ def _rescue_top_score_from_incidental(
         return roles
     if roles.get(best_key, SourceRole.PRIMARY) != SourceRole.INCIDENTAL:
         return roles
+    negated = _negated_topic(query)
+    if negated:
+        title = best.chunk.title or ""
+        blob = f"{title}\n{best.chunk.content or ''}"
+        if _matches_negated_topic(text=title, negated=negated) or _matches_negated_topic(
+            text=blob, negated=negated
+        ):
+            return roles
     kept_scores = [
         float(result.score or 0.0)
         for result in results
@@ -273,6 +363,7 @@ def _rescue_top_score_from_incidental(
     rescued = dict(roles)
     rescued[best_key] = SourceRole.PRIMARY
     return rescued
+
 
 def filter_results_for_generation(
     *,
@@ -289,6 +380,7 @@ def filter_results_for_generation(
         return list(results)
     roles = assign_source_roles(query=query, results=results, document_key=document_key)
     roles = _rescue_top_score_from_incidental(
+        query=query,
         results=results,
         roles=roles,
         document_key=document_key,

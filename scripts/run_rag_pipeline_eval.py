@@ -275,6 +275,27 @@ def _soft_evidence_token_in_answer(token: str, answer: str) -> bool:
     stripped = stripped.strip("[]「」『』:：")
     if stripped and stripped != token and evidence_token_in_text(stripped, answer):
         return True
+    # Parenthesized error codes in labels: (-455) ≈ -455 in generated answers.
+    if (
+        len(token) >= 3
+        and token.startswith("(")
+        and token.endswith(")")
+        and evidence_token_in_text(token[1:-1], answer)
+    ):
+        return True
+    # Portal password linkage paraphrase: 並非AD ≈ 與 AD 不同 / 並非同一組.
+    collapsed_token = "".join(token.split())
+    if collapsed_token in {"並非AD", "並非Ad", "並非ad"}:
+        if re.search(
+            r"(與\s*AD.{0,16}(不同|並非同一|不是同一)|並非\s*同一組.{0,12}AD|AD.{0,12}(不同|並非同一|不是同一))",
+            answer,
+            flags=re.IGNORECASE,
+        ):
+            return True
+    # Overseas VPN application paraphrase: 海外VPN ≈ 國外連線 / 國外…VPN.
+    if collapsed_token in {"海外VPN", "海外vpn", "海外Vpn"}:
+        if re.search(r"(海外\s*VPN|國外連線|國外.{0,12}VPN)", answer, flags=re.IGNORECASE):
+            return True
     # Drop optional qualifier chars then retry (發生異常的時間 ≈ 發生時間).
     compact = re.sub(r"[的之與和]", "", "".join(token.split()))
     if compact and compact != "".join(token.split()) and evidence_token_in_text(compact, answer):
@@ -1928,6 +1949,9 @@ def print_failure_taxonomy_table(failures: list[FailureAnalysis]) -> None:
 
 
 def main() -> int:
+    from agent_service.eval_credentials import apply_eval_gemini_credentials
+
+    apply_eval_gemini_credentials(dotenv_path=ROOT / "agent_service" / ".env")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--eval-set",

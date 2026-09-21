@@ -73,10 +73,15 @@ class IssueProcessingWorkflowMixin(IssueKnowledgeOps, IssueTicketOps):
                     type(exc).__name__,
                     correlation_id,
                 )
+                from .provider_status import PROVIDER_BUSY
+                from .retrieval_embeddings import is_transient_embedding_error
+
+                terminal_reason = PROVIDER_BUSY if is_transient_embedding_error(exc) else None
                 return IssueResult(
                     issueId=issue.id,
                     resultType="FAILED",
                     error=f"{type(exc).__name__}: {exc}"[:300],
+                    terminalReason=terminal_reason,
                 )
 
         gathered = await asyncio.gather(
@@ -125,11 +130,18 @@ class IssueProcessingWorkflowMixin(IssueKnowledgeOps, IssueTicketOps):
                     type(outcome).__name__,
                     correlation_id,
                 )
+                from .provider_status import PROVIDER_BUSY
+                from .retrieval_embeddings import is_transient_embedding_error
+
+                terminal_reason = (
+                    PROVIDER_BUSY if is_transient_embedding_error(outcome) else None
+                )
                 issue_results.append(
                     IssueResult(
                         issueId=issue.id,
                         resultType="FAILED",
                         error=type(outcome).__name__[:300],
+                        terminalReason=terminal_reason,
                     )
                 )
             else:

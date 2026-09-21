@@ -692,6 +692,7 @@ async def _main_async(argv: list[str] | None = None) -> int:
     # docs/retrieval-ab-test-report.md "How to run") -- fail loudly instead
     # of silently reporting bogus results.
     try:
+        from agent_service.eval_credentials import apply_eval_gemini_credentials
         from agent_service.retrieval import HybridIndex
         from agent_service.settings import RagSettings
     except ImportError as exc:
@@ -702,6 +703,8 @@ async def _main_async(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    apply_eval_gemini_credentials(dotenv_path=ROOT / "agent_service" / ".env")
 
     cases = load_eval_set(args.eval_set)
     if args.limit:

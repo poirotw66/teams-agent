@@ -394,12 +394,18 @@ async def run_search_loop(
     if hit is not None:
         return hit
     set_llm_count(counter.count)
+    from agent_service.provider_status import PROVIDER_BUSY
+
+    terminal_reason = "NO_RELEVANT_EVIDENCE"
+    if float(state.stage_timings_ms.get("embeddingDegraded", 0.0) or 0.0) > 0.0:
+        # Dense retrieval was unavailable; empty sparse hits may be a false miss.
+        terminal_reason = PROVIDER_BUSY
     return with_trace(
         no_answer(),
         state,
         execution_context=execution_context,
         fallback_path="NO_RELEVANT_EVIDENCE",
-        terminal_reason="NO_RELEVANT_EVIDENCE",
+        terminal_reason=terminal_reason,
     )
 
 

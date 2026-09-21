@@ -238,6 +238,9 @@ async def evaluate_agent_workflow(
 
 
 def main() -> int:
+    from agent_service.eval_credentials import apply_eval_gemini_credentials
+
+    apply_eval_gemini_credentials(dotenv_path=ROOT / "agent_service" / ".env")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--eval-set",

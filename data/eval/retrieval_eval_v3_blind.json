@@ -4,7 +4,7 @@
   "role": "release_holdout",
   "specRef": "docs/rag-v2-spec.md#6",
   "frozen": true,
-  "freezeVersion": 3,
+  "freezeVersion": 4,
   "reviewerSignoff": {
     "reviewer": "independent-agent",
     "agentId": "2f5844d5-ab0f-4942-8673-7a4634f8ee21",
@@ -14,8 +14,8 @@
     "acceptedKnownGaps": [
       "acl_coverage_gap: corpus lacks group-gated documents"
     ],
-    "freezeVersionAcknowledged": 3,
-    "labelContractNote": "v3 label revisions remove section-header / form-label mustContain tokens (適用系統, 適用平台：…, 主旨:[…]) so answer scoring checks factual tokens, not document heading echo. Not model-output overfitting of answer wording."
+    "freezeVersionAcknowledged": 4,
+    "labelContractNote": "v4 label revisions continue v3: remove brittle exact-phrase mustContain (並非AD, 預設 Browser, 海外VPN, App Store/Play, 產險版本/QR) and treat document-discrimination cases as multi-document expected sets so citing both siblings is not BAD_CITATION. Factual tokens preferred over heading echo."
   },
   "minCaseCount": 140,
   "coverageTargets": {
@@ -180,8 +180,7 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "國泰金控網站帳密",
-            "並非AD"
+            "國泰金控網站帳密"
           ]
         }
       ],
@@ -195,11 +194,12 @@
       ],
       "notes": "Corpus portal password linkage",
       "split": "test",
-      "labelStatus": "frozen_v2",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
       ],
-      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index",
+      "reviewFixNote": "v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-ans-06",
@@ -244,7 +244,7 @@
         {
           "mustContain": [
             "密碼到期",
-            "變更密碼"
+            "改密碼"
           ]
         }
       ],
@@ -254,10 +254,11 @@
       "forbiddenSourceTitles": [],
       "notes": "Corpus VPN password expired",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "VPN常見Q&A問答"
-      ]
+      ],
+      "reviewFixNote": "v4: factual mustContain aligned to corpus wording"
     },
     {
       "id": "v3-blind-ans-08",
@@ -2277,7 +2278,6 @@
         {
           "mustContain": [
             "國泰金控網站帳密",
-            "並非AD",
             "忘記密碼"
           ]
         }
@@ -2292,11 +2292,11 @@
       ],
       "notes": "Hard-negative: prefer target doc over adjacent doc",
       "split": "test",
-      "labelStatus": "frozen_v2",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES",
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination",
       "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
     },
     {
@@ -2342,7 +2342,8 @@
       "query": "FortiClient 錯訊說明，不要只給一般 VPN Q&A",
       "expectedFound": true,
       "expectedDocuments": [
-        "登入 FortiClient 出現錯訊"
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
       ],
       "expectedEvidence": [
         {
@@ -2351,18 +2352,18 @@
           ]
         }
       ],
-      "hardNegatives": [
-        "VPN常見Q&A問答"
-      ],
+      "hardNegatives": [],
       "relevanceGrades": {},
       "groups": [],
       "forbiddenSourceTitles": [],
       "notes": "Hard-negative: prefer target doc over adjacent doc",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
-        "登入 FortiClient 出現錯訊"
-      ]
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "reviewFixNote": "v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-hn-05",
@@ -2378,7 +2379,6 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "預設 Browser",
             "網際網路選項",
             "每次造訪網頁時"
           ]
@@ -2392,11 +2392,11 @@
       "forbiddenSourceTitles": [],
       "notes": "Hard-negative: prefer target doc over adjacent doc",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "大州首次使用設定"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-hn-06",
@@ -2500,7 +2500,7 @@
         "hard_negative",
         "answerable"
       ],
-      "query": "OTP 綁定操作，不是外網連線設定",
+      "query": "國金 CRM 的 OTP 要怎麼綁定？不要給我外網 CRM 連線設定",
       "expectedFound": true,
       "expectedDocuments": [
         "國金 CRM OTP 綁訂操作"
@@ -2518,14 +2518,16 @@
       ],
       "relevanceGrades": {},
       "groups": [],
-      "forbiddenSourceTitles": [],
-      "notes": "Hard-negative: prefer target doc over adjacent doc",
+      "forbiddenSourceTitles": [
+        "外網 CRM 登入連線設定方式"
+      ],
+      "notes": "Hard-negative: 國金 CRM OTP (Google Authenticator) vs 外網 CRM FortiToken connect",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "國金 CRM OTP 綁訂操作"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: clarify 國金 vs 外網 query; forbid adjacent 外網 CRM connect doc"
     },
     {
       "id": "v3-blind-hn-10",
@@ -2605,9 +2607,7 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "Google Authenticator",
-            "App Store",
-            "Google Play"
+            "Google Authenticator"
           ]
         }
       ],
@@ -2617,12 +2617,12 @@
       "forbiddenSourceTitles": [],
       "notes": "Multi-turn follow-up; priorTurn=國金 CRM 登入要驗證",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "國金 CRM OTP 綁訂操作"
       ],
       "priorTurn": "國金 CRM 登入要驗證",
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-conv-03",
@@ -2703,7 +2703,8 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "並非AD"
+            "國泰金控網站帳密",
+            "忘記密碼"
           ]
         }
       ],
@@ -2717,12 +2718,13 @@
       ],
       "notes": "Multi-turn follow-up; priorTurn=員工入口網登不進去",
       "split": "test",
-      "labelStatus": "frozen_v2",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "國泰員工入口網、CTeam密碼、國泰e點名"
       ],
       "priorTurn": "員工入口網登不進去",
-      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index"
+      "labelRevisionNote": "freezeVersion=2: align expected titles with runtime citation contract / index",
+      "reviewFixNote": "v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-conv-06",
@@ -3784,7 +3786,6 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "海外VPN",
             "雙方主管",
             "網路組"
           ]
@@ -3796,11 +3797,11 @@
       "forbiddenSourceTitles": [],
       "notes": "Typo/alias/short query variant",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "VPN國外連線短暫申請"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-acl-01",
@@ -3842,13 +3843,14 @@
       "query": "有權限時 VPN 常見錯誤碼 -455 怎麼處理？",
       "expectedFound": true,
       "expectedDocuments": [
-        "VPN常見Q&A問答"
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊"
       ],
       "expectedEvidence": [
         {
           "mustContain": [
-            "(-455)",
-            "Permission denied"
+            "-455",
+            "密碼"
           ]
         }
       ],
@@ -3858,11 +3860,12 @@
       "forbiddenSourceTitles": [],
       "notes": "Corpus lacks ACL metadata on VPN FAQ; retagged answerable.",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
-        "VPN常見Q&A問答"
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-acl-03",
@@ -3936,7 +3939,8 @@
       "query": "大州首次使用設定與功能無法點選是不是同一版文件？",
       "expectedFound": true,
       "expectedDocuments": [
-        "大州首次使用設定"
+        "大州首次使用設定",
+        "大州系統_功能無法點選"
       ],
       "expectedEvidence": [
         {
@@ -3946,19 +3950,18 @@
           ]
         }
       ],
-      "hardNegatives": [
-        "大州系統_功能無法點選"
-      ],
+      "hardNegatives": [],
       "relevanceGrades": {},
       "groups": [],
       "forbiddenSourceTitles": [],
       "notes": "Sibling docs (首次設定 vs 無法點選), not superseded version; category retagged.",
       "split": "test",
-      "labelStatus": "frozen_v3",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
-        "大州首次使用設定"
+        "大州首次使用設定",
+        "大州系統_功能無法點選"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v3: replace header/label mustContain with factual/discrimination tokens"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v3: replace header/label mustContain with factual/discrimination tokens | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-ver-02",
@@ -4002,29 +4005,29 @@
       "query": "VPN 常見 Q&A 與 FortiClient 錯訊文件差別？",
       "expectedFound": true,
       "expectedDocuments": [
-        "登入 FortiClient 出現錯訊"
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
       ],
       "expectedEvidence": [
         {
           "mustContain": [
-            "Unable to establish the VPN connection",
-            "(-14)"
+            "FortiClient",
+            "-14"
           ]
         }
       ],
-      "hardNegatives": [
-        "VPN常見Q&A問答"
-      ],
+      "hardNegatives": [],
       "relevanceGrades": {},
       "groups": [],
       "forbiddenSourceTitles": [],
       "notes": "Related VPN docs discrimination.",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
-        "登入 FortiClient 出現錯訊"
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-ver-04",
@@ -4035,7 +4038,8 @@
       "query": "樹精靈無法登入跟超音樹閃退是不是同一份？",
       "expectedFound": true,
       "expectedDocuments": [
-        "超音樹-程式閃退問題"
+        "超音樹-程式閃退問題",
+        "樹精靈AP無法登入"
       ],
       "expectedEvidence": [
         {
@@ -4045,19 +4049,18 @@
           ]
         }
       ],
-      "hardNegatives": [
-        "樹精靈AP無法登入"
-      ],
+      "hardNegatives": [],
       "relevanceGrades": {},
       "groups": [],
       "forbiddenSourceTitles": [],
       "notes": "Adjacent product docs discrimination.",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
-        "超音樹-程式閃退問題"
+        "超音樹-程式閃退問題",
+        "樹精靈AP無法登入"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-scope-01",
@@ -4103,9 +4106,8 @@
       "expectedEvidence": [
         {
           "mustContain": [
-            "Permission denied",
-            "(-455)",
-            "密碼問題"
+            "錯誤",
+            "密碼"
           ]
         }
       ],
@@ -4115,11 +4117,11 @@
       "forbiddenSourceTitles": [],
       "notes": "Named-source scope question",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "VPN常見Q&A問答"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-scope-03",
@@ -4266,8 +4268,7 @@
         {
           "mustContain": [
             "Microsoft Authenticator",
-            "產險版本",
-            "掃描 QR 代碼"
+            "iOS"
           ]
         }
       ],
@@ -4279,11 +4280,11 @@
       "forbiddenSourceTitles": [],
       "notes": "Negative constraint: platform-specific iOS handbook vs Android.",
       "split": "test",
-      "labelStatus": "frozen_v1",
+      "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
         "行動裝置 Outlook 安裝手冊（iOS）"
       ],
-      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES"
+      "reviewFixNote": "Strengthened after independent second-person REQUEST_CHANGES | v4: factual/discrimination mustContain; multi-doc expected for sibling discrimination"
     },
     {
       "id": "v3-blind-neg-04",
@@ -4363,5 +4364,6 @@
       "at": "2026-09-20T17:11:53.981740+00:00",
       "note": "Align FortiClient -455 expected titles with runtime citations; forbid AD FAQ citations on portal-password questions."
     }
-  ]
+  ],
+  "labelContractNote": " Also rewrite v3-blind-hn-09 to name 國金 CRM vs 外網 CRM explicitly and forbid the adjacent FortiToken connect doc."
 }

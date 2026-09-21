@@ -16,7 +16,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def _is_transient_embedding_error(exc: BaseException) -> bool:
+def is_transient_embedding_error(exc: BaseException) -> bool:
     msg = str(exc).lower()
     markers = (
         "503",
@@ -36,6 +36,10 @@ def _is_transient_embedding_error(exc: BaseException) -> bool:
         "500",
     )
     return any(marker in msg for marker in markers)
+
+
+def _is_transient_embedding_error(exc: BaseException) -> bool:
+    return is_transient_embedding_error(exc)
 
 
 def _retry_on_transient(
@@ -121,5 +125,5 @@ def embed_single_query(client: Any, text: str) -> list[float]:
     return batch[0] if batch else []
 
 
-__all__ = ["embed_queries_batch", "embed_single_query"]
+__all__ = ["embed_queries_batch", "embed_single_query", "is_transient_embedding_error"]
 
