@@ -357,6 +357,27 @@ def test_format_teams_answer_converts_notes_to_callout() -> None:
     assert "> 💡 **注意事項**：若您需要申請的是「VPN 國外連線」" in formatted
 
 
+def test_format_teams_answer_separates_inline_callout_from_citation() -> None:
+    raw = "可使用 AD 自助解鎖 [S1]。> 💡 **注意事項**：請確認正式入口。"
+
+    assert format_teams_answer(raw) == (
+        "可使用 AD 自助解鎖 [S1]。\n\n"
+        "> 💡 **注意事項**：請確認正式入口。"
+    )
+
+
+def test_format_teams_answer_separates_follow_up_action() -> None:
+    raw = (
+        "國泰員工入口網的密碼與 AD 並非同一組，其密碼連動為國泰金控網站帳密 [S1]。"
+        "若需修改密碼，請至國泰員工入口網站的「忘記密碼」功能進行操作 [S1]。"
+    )
+
+    assert format_teams_answer(raw) == (
+        "國泰員工入口網的密碼與 AD 並非同一組，其密碼連動為國泰金控網站帳密 [S1]。\n\n"
+        "若需修改密碼，請至國泰員工入口網站的「忘記密碼」功能進行操作 [S1]。"
+    )
+
+
 def test_format_teams_answer_auto_numbers_and_dedupes_citations() -> None:
     raw = (
         "問題：IT 權限申請 如何申請\n\n"
@@ -438,4 +459,3 @@ def test_format_teams_answer_linkifies_bare_https_urls() -> None:
     assert format_teams_answer(f"請點 [{unlock_url}]({unlock_url})") == (
         f"請點 [{unlock_url}]({unlock_url})"
     )
-

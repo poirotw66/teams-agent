@@ -117,6 +117,14 @@ def format_teams_answer(answer: str) -> str:
 
     text = answer.strip()
 
+    # Models occasionally join a callout to the preceding citation or sentence.
+    # Keep it as a separate paragraph in both Teams and Playground cards.
+    text = re.sub(r"(?<!\n)([。.!?！？]|\[S\d+\])\s*(>\s*💡)", r"\1\n\n\2", text)
+
+    # Keep a follow-up action distinct from the direct answer when an older
+    # model response has combined them into one paragraph.
+    text = re.sub(r"(?<=。)[ \t]*(?=(?:若需|如需|如果要|如果需要))", "\n\n", text)
+
     # 1. Bold "問題：" header
     text = re.sub(r"(?m)^(?<!\*\*)問題：\s*([^\n]+)", r"**問題：** \1", text)
 

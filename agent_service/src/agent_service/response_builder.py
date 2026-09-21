@@ -197,7 +197,9 @@ def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
     # Teams adapter. Keeping them out of the answer body prevents duplicate
     # source sections in both plain text and Adaptive Cards.
     answer = strip_policy_overlay_for_display(result.answer)
-    return f"問題：{_safe_description(issue)}\n\n處理方式：\n{answer}"
+    # The chat already shows the user's question; multi-issue replies get a
+    # separate heading from _render_multi_issue_block.
+    return answer
 
 
 def _render_need_more_info(issue: Issue, result: IssueResult) -> str:

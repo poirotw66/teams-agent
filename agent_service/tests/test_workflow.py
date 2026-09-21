@@ -589,7 +589,7 @@ async def test_handoff_summary_changes_only_after_explicit_supplement_action(
     assert prompt.answer.startswith("請繼續補充問題")
     assert after_prompt is not None
     assert after_prompt.status == HandoffStatus.AWAITING_SUPPLEMENT
-    assert "問題：SAP Crystal Reports 授權到期無法開啟" in supplemented.answer
+    assert "**請確認你的問題**\n\n- SAP Crystal Reports 授權到期無法開啟" in supplemented.answer
     assert "待確認補充：錯誤碼 CR-1001" in supplemented.answer
     assert active is not None and active.status == HandoffStatus.SUMMARY_REVIEW
     assert active.summary.conversationHighlights == ["待確認補充：錯誤碼 CR-1001"]

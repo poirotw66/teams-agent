@@ -244,6 +244,22 @@ def offer_message(summary: SummaryDraft) -> str:
 
 
 def offer_message_from_summary_text(summary: str) -> str:
-    """Render a stored or freshly generated summary into the offer message."""
+    """Show only useful case details while retaining the full stored summary."""
 
-    return HANDOFF_OFFER_MESSAGE.format(summary=summary)
+    fields = dict(
+        line.split("：", 1)
+        for line in summary.splitlines()
+        if "：" in line
+    )
+    issue = fields.get("問題", "").strip() or "使用者需要 IT 協助"
+    details = [f"- {issue}"]
+    user_need = fields.get("使用者需求", "").strip()
+    if user_need and user_need != issue:
+        details.append(f"- 補充說明：{user_need}")
+    highlights = fields.get("對話重點", "").strip()
+    if highlights and highlights != "未提供":
+        details.append(f"- 其他線索：{highlights}")
+    attempts = fields.get("已嘗試方式", "").strip()
+    if attempts and attempts != "尚未提供":
+        details.append(f"- 已嘗試：{attempts}")
+    return HANDOFF_OFFER_MESSAGE.format(summary="\n".join(details))
