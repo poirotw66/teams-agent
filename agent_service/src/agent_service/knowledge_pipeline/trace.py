@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextvars import ContextVar
 
 from agent_service.contracts import (
     KnowledgeResult,
@@ -11,6 +12,18 @@ from agent_service.contracts import (
     RetrievalTrace,
 )
 from agent_service.retrieval import SearchResult
+
+_ANSWER_TRACE: ContextVar[dict[str, object] | None] = ContextVar(
+    "rag_answer_trace", default=None
+)
+
+
+def set_answer_trace(payload: dict[str, object] | None) -> None:
+    _ANSWER_TRACE.set(payload)
+
+
+def current_answer_trace() -> dict[str, object] | None:
+    return _ANSWER_TRACE.get()
 
 
 def build_retrieval_attempt(
@@ -57,6 +70,12 @@ def attach_retrieval_trace(
     terminal_reason: str | None,
     actual_backend: str = "HYBRID",
     query_tier: str | None = None,
+    evidence_progression: dict | None = None,
+    answer_model: str | None = None,
+    answer_escalated: bool = False,
+    answer_escalation_model: str | None = None,
+    answer_escalation_reason: str | None = None,
+    answer_attempt_count: int = 1,
 ) -> KnowledgeResult:
     """Attach a ``RetrievalTrace`` and terminal reason onto a knowledge result."""
     trace = RetrievalTrace(
@@ -76,6 +95,12 @@ def attach_retrieval_trace(
         terminalReason=terminal_reason,
         stageTimingsMs=dict(stage_timings_ms),
         queryTier=query_tier,
+        evidenceProgression=evidence_progression,
+        answerModel=answer_model,
+        answerEscalated=answer_escalated,
+        answerEscalationModel=answer_escalation_model,
+        answerEscalationReason=answer_escalation_reason,
+        answerAttemptCount=answer_attempt_count,
     )
     return result.model_copy(
         update={

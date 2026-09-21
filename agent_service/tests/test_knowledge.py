@@ -1063,7 +1063,9 @@ async def test_hybrid_sap_answer_never_falls_back_to_an_unrelated_dazhou_source(
     )
     model = FakeChatModel(
         relevant=True,
-        answer_text="請使用帳號管理入口重設 SAP 密碼。[S2]",
+        # Source-role filtering drops the unrelated 大州 hit before generation,
+        # so SAP is packed as [S1] (not [S2] from raw retrieval order).
+        answer_text="請使用帳號管理入口重設 SAP 密碼。[S1]",
     )
     service = HybridKnowledgeService(make_settings(tmp_path), index, model=model)
 
@@ -1375,25 +1377,25 @@ async def test_hybrid_search_groups_chunks_by_document_and_normalizes_citations(
         chunk_id="a1",
         title="員工 IT 支援服務手冊",
         source_path="sources/handbook.md",
-        content="請先登出 Teams，關閉程式後重新登入。",
+        content="Teams 無法登入 登出排除步驟。",
     )
     chunk_a2 = DocumentChunk(
         chunk_id="a2",
         title="員工 IT 支援服務手冊",
         source_path="sources/handbook.md",
-        content="若問題仍存在，可嘗試清除 Teams 快取。",
+        content="Teams 無法登入 清理快取教學。",
     )
     chunk_b1 = DocumentChunk(
         chunk_id="b1",
-        title="AD 帳號與系統解鎖 FAQ",
-        source_path="sources/ad_faq.md",
-        content="請優先前往「AD 自助解鎖專區」進行解鎖後再重新登入。",
+        title="通訊軟體快取清理 FAQ",
+        source_path="sources/teams_cache_faq.md",
+        content="若 Teams 仍無法登入，可先清除快取再重開。",
     )
     chunk_a3 = DocumentChunk(
         chunk_id="a3",
         title="員工 IT 支援服務手冊",
         source_path="sources/handbook.md",
-        content="可撥打 IT 支援專線：7711。",
+        content="Teams 支援專線說明。",
     )
 
     index = HybridIndex([chunk_a1, chunk_a2, chunk_b1, chunk_a3])
@@ -1404,8 +1406,8 @@ async def test_hybrid_search_groups_chunks_by_document_and_normalizes_citations(
             recorded_messages.extend(messages)
             return AIMessage(
                 content=(
-                    "請先登出 Teams [S1]。清除快取 [S1]。"
-                    "前往自助解鎖 [S2][S2]。若問題仍無法解決請撥專線 [S1]。"
+                    "請先登出 Teams [S1]。清除快取 [S2][S2]。"
+                    "若問題仍無法解決請撥專線 [S1]。"
                 )
             )
 
@@ -1421,7 +1423,7 @@ async def test_hybrid_search_groups_chunks_by_document_and_normalizes_citations(
     assert result.found is True
     system_prompt = recorded_messages[0].content
     assert "[S1] 員工 IT 支援服務手冊" in system_prompt
-    assert "[S2] AD 帳號與系統解鎖 FAQ" in system_prompt
+    assert "[S2] 通訊軟體快取清理 FAQ" in system_prompt
     assert "[S3]" not in system_prompt
 
     assert "[S1]" in result.answer
@@ -1432,7 +1434,7 @@ async def test_hybrid_search_groups_chunks_by_document_and_normalizes_citations(
 
     assert len(result.sources) == 2
     assert result.sources[0].title == "員工 IT 支援服務手冊"
-    assert result.sources[1].title == "AD 帳號與系統解鎖 FAQ"
+    assert result.sources[1].title == "通訊軟體快取清理 FAQ"
     assert result.sources[0].evidence is not None
     assert "[chunkId=a1]" in result.sources[0].evidence
     assert "[chunkId=a2]" in result.sources[0].evidence
@@ -1458,9 +1460,9 @@ async def test_hybrid_search_remaps_chunk_markers_to_document_citations(
     )
     chunk_b1 = DocumentChunk(
         chunk_id="b1",
-        title="AD 帳號與系統解鎖 FAQ",
-        source_path="sources/ad_faq.md",
-        content="Teams 登入 帳號遭鎖定請至自助解鎖專區。",
+        title="通訊軟體快取清理 FAQ",
+        source_path="sources/teams_cache_faq.md",
+        content="若 Teams 仍無法登入，可先清除快取再重開。",
     )
     chunk_a3 = DocumentChunk(
         chunk_id="a3",
@@ -1483,7 +1485,7 @@ async def test_hybrid_search_remaps_chunk_markers_to_document_citations(
     assert result.answer == "步驟一 [S1]。步驟二 [S1]。步驟三 [S2]。步驟四 [S1]。"
     assert len(result.sources) == 2
     assert result.sources[0].title == "員工 IT 支援服務手冊"
-    assert result.sources[1].title == "AD 帳號與系統解鎖 FAQ"
+    assert result.sources[1].title == "通訊軟體快取清理 FAQ"
     assert result.sources[0].evidence is None
 
 

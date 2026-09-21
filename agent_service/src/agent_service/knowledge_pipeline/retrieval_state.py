@@ -22,6 +22,8 @@ class RetrievalState:
     stage_timings_ms: dict[str, float] = field(default_factory=dict)
     query_tier: str | None = None
     enable_generation_retries: bool = True
+    candidate_chunk_ids: tuple[str, ...] = ()
+    generator_context_chunk_ids: tuple[str, ...] = ()
 
 
 __all__ = ["RetrievalState"]

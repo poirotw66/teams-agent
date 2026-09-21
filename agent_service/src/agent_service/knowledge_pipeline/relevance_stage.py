@@ -249,9 +249,15 @@ async def rewrite_search_query(
         search_query=rewritten,
         facet_queries=state.facet_queries,
         results=state.results,
+        raw_results=getattr(state, "raw_results", []) or [],
+        filter_displaced_top1=getattr(state, "filter_displaced_top1", False),
         trace_attempts=state.trace_attempts,
         attempt=state.attempt + 1,
         stage_timings_ms=state.stage_timings_ms,
+        query_tier=getattr(state, "query_tier", None),
+        enable_generation_retries=getattr(state, "enable_generation_retries", True),
+        candidate_chunk_ids=getattr(state, "candidate_chunk_ids", ()),
+        generator_context_chunk_ids=getattr(state, "generator_context_chunk_ids", ()),
     )
 
 

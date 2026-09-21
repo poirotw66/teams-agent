@@ -92,43 +92,26 @@ def _doc_blob(
     return title, f"{title}\n{content}"
 
 
-def _doc_overlap(
-    *,
-    doc_key: str,
-    results: Sequence[SearchResult],
-    document_key: Callable[[SearchResult], str],
-    anchors: set[str],
-    query: str,
-) -> int:
-    title, blob = _doc_blob(doc_key=doc_key, results=results, document_key=document_key)
-    if not blob or not anchors:
-        return 0
-    blob_l = blob.lower()
-    title_l = title.lower()
+def _usable_anchors(*, anchors: set[str], query: str) -> set[str]:
+    negated = _negated_topic(query)
+    if not negated:
+        return set(anchors)
+    positive = _positive_topic_prefix(query)
+    usable: set[str] = set()
+    for anchor in anchors:
+        # Ignore anchors that only belong to the rejected topic.
+        if anchor in negated or (len(anchor) >= 2 and anchor in negated):
+            if positive and (anchor in positive or (len(anchor) >= 2 and anchor in positive)):
+                usable.add(anchor)
+            continue
+        usable.add(anchor)
+    return usable
+
+
+def _title_span_bonus(*, title: str, query: str) -> int:
     negated = _negated_topic(query)
     positive = _positive_topic_prefix(query) if negated else None
-    usable_anchors = set(anchors)
-    if negated:
-        usable_anchors = set()
-        for anchor in anchors:
-            # Ignore anchors that only belong to the rejected topic.
-            if anchor in negated or (len(anchor) >= 2 and anchor in negated):
-                if positive and (anchor in positive or (len(anchor) >= 2 and anchor in positive)):
-                    usable_anchors.add(anchor)
-                continue
-            usable_anchors.add(anchor)
-    score = sum(1 for anchor in usable_anchors if anchor.lower() in blob_l)
-    for token in _latin_query_tokens(query):
-        if token in title_l:
-            score += _LATIN_ANCHOR_BOOST
-        elif token in blob_l:
-            score += _LATIN_ANCHOR_BOOST // 2
-
-    negated = _negated_topic(query)
-    positive = _positive_topic_prefix(query) if negated else None
-
-    # Prefer docs whose title contains distinctive query CJK spans (公槽、首次設定).
-    # Walk sliding windows so compounds like「公槽權限申請…」still match「公槽」.
+    score = 0
     title_span_hits = 0
     hit_pieces: set[str] = set()
     stop = {
@@ -158,7 +141,6 @@ def _doc_overlap(
                 piece = run[index : index + size]
                 if piece in stop or piece in hit_pieces:
                     continue
-                # Do not reward title hits that only belong to an explicitly negated topic.
                 if (
                     negated
                     and piece in negated
@@ -171,6 +153,30 @@ def _doc_overlap(
                     score += max(5, size + 2)
     if title_span_hits >= 2:
         score += 10
+    return score
+
+
+def _doc_overlap(
+    *,
+    doc_key: str,
+    results: Sequence[SearchResult],
+    document_key: Callable[[SearchResult], str],
+    anchors: set[str],
+    query: str,
+) -> int:
+    title, blob = _doc_blob(doc_key=doc_key, results=results, document_key=document_key)
+    if not blob or not anchors:
+        return 0
+    blob_l = blob.lower()
+    title_l = title.lower()
+    usable_anchors = _usable_anchors(anchors=anchors, query=query)
+    score = sum(1 for anchor in usable_anchors if anchor.lower() in blob_l)
+    for token in _latin_query_tokens(query):
+        if token in title_l:
+            score += _LATIN_ANCHOR_BOOST
+        elif token in blob_l:
+            score += _LATIN_ANCHOR_BOOST // 2
+    score += _title_span_bonus(title=title, query=query)
 
     query_l = (query or "").casefold()
     for query_cues, doc_cues in _ALIAS_HINTS:
@@ -179,6 +185,8 @@ def _doc_overlap(
         if any(cue.casefold() in title_l or cue.casefold() in blob_l for cue in doc_cues):
             score += _LATIN_ANCHOR_BOOST
 
+    negated = _negated_topic(query)
+    positive = _positive_topic_prefix(query) if negated else None
     if negated:
         negated_hit = negated in title or negated in blob
         positive_hit = bool(positive) and (positive in title or positive in blob)
@@ -258,6 +266,15 @@ def filter_results_for_generation(
         for result in results
         if roles.get(document_key(result), SourceRole.PRIMARY) in keep_roles
     ]
+    dropped = len(results) - len(filtered)
+    if dropped > 0:
+        from agent_service.observability import METRIC_EVIDENCE_DROP, record_metric_counter
+
+        record_metric_counter(
+            METRIC_EVIDENCE_DROP,
+            amount=float(dropped),
+            attributes={"result_type": "SOURCE_ROLE"},
+        )
     if not filtered:
         return list(results)
 
@@ -273,7 +290,6 @@ def filter_results_for_generation(
                 roles.get(document_key(result), SourceRole.PRIMARY),
                 9,
             ),
-            # Stable within role: preserve original retrieval order.
             next(
                 (
                     index
