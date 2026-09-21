@@ -136,6 +136,56 @@ def test_sanitize_strips_misattributed_test_link_policy_sec_001() -> None:
     assert "[POLICY-SEC-001]" in HybridKnowledgeService._sanitize_answer_security(valid)
 
 
+def test_sanitize_repairs_markdown_link_with_stray_code_span_backticks() -> None:
+    """Playground OTP answer: model kept source `` `url` `` backtick inside href."""
+    raw = (
+        "前往登入頁面（[https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp]"
+        "(https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp`)），輸入帳號 [S1]。"
+    )
+    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
+    assert (
+        "[https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp]"
+        "(https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp)"
+        in sanitized
+    )
+    assert "rwdLogon.jsp`)" not in sanitized
+
+    wrapped = (
+        "登入 [`入口`](`https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp`) "
+        "後繼續 [S1]。"
+    )
+    from agent_service.knowledge_pipeline.policy_overlay import sanitize_answer_security
+
+    repaired = sanitize_answer_security(
+        wrapped,
+        evidence_text="https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp",
+    )
+    assert (
+        "[`入口`](https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp)" in repaired
+    )
+    assert "`https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp`" not in repaired
+
+
+def test_sanitize_repairs_markdown_link_closed_with_fullwidth_paren() -> None:
+    """Live 18:09 answer used ） to close the href; Teams cannot parse that."""
+    from agent_service.knowledge_pipeline.policy_overlay import sanitize_answer_security
+
+    raw = (
+        "前往登入頁面（[https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp]"
+        "(https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp）），輸入帳號 [S1]。"
+    )
+    sanitized = sanitize_answer_security(raw)
+    assert (
+        "[https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp]"
+        "(https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp)"
+        in sanitized
+    )
+    assert "rwdLogon.jsp）" not in sanitized
+    # Outer Chinese parentheses around the link may remain.
+    assert "（[https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp]" in sanitized
+
+
+
 def test_sanitize_prunes_uncited_policy_after_stripping_sec_003() -> None:
     """QB-045 regression: stripping SEC-003 must not leave uncited policy prose."""
     raw = (

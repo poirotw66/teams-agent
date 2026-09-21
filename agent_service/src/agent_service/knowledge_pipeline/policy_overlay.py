@@ -64,6 +64,24 @@ _OVERBROAD_SEC002_BAN_RE = re.compile(
 )
 _PRECISE_SEC002_ADVISORY = "嚴禁於回報中提供登入密碼、憑證密碼與動態驗證碼 [POLICY-SEC-002]。"
 _SECURITY_POLICY_ADVISORY = f"\n\n{PROXY_ADVISORY_TEXT}"
+# Model may wrap evidence URLs in markdown links but keep code-span backticks or
+# Chinese fullwidth parentheses: [label](https://x`) / [label](https://x）)
+_MARKDOWN_LINK_HREF_RE = re.compile(
+    r"\[([^\]]*)\]\s*[（(]\s*`*(https?://[^)\s`（）]+)`*\s*[）)]",
+    re.IGNORECASE,
+)
+
+
+def repair_answer_markdown_links(answer: str) -> str:
+    """Normalize broken markdown links so hrefs stay clickable.
+
+    Common generation failures:
+    - stray code-span backticks around the URL
+    - fullwidth ``（）`` used instead of ASCII ``()`` to close the link
+    """
+    if not answer:
+        return answer
+    return _MARKDOWN_LINK_HREF_RE.sub(r"[\1](\2)", answer)
 
 
 def merge_policy_advisories(*groups: list[PolicyAdvisory]) -> list[PolicyAdvisory]:
@@ -95,8 +113,10 @@ def sanitize_answer_security(answer: str, *, evidence_text: str = "") -> str:
             return url
         return "來源僅包含測試連結，目前無法提供正式網址（請洽詢 IT 支援窗口）"
 
+    # 0. Repair broken markdown links before URL redaction runs on href text.
+    sanitized = repair_answer_markdown_links(answer)
     # 1. Replace ungrounded placeholder/test URLs with formal portal guidance
-    sanitized = _PLACEHOLDER_URL_PATTERN.sub(_replace_placeholder_url, answer)
+    sanitized = _PLACEHOLDER_URL_PATTERN.sub(_replace_placeholder_url, sanitized)
     # 2. Redact internal UNC paths and internal IPs
     sanitized = _INTERNAL_UNC_PATTERN.sub("內部公槽資料夾", sanitized)
     sanitized = _INTERNAL_URL_PATTERN.sub("內部系統伺服器路徑", sanitized)
