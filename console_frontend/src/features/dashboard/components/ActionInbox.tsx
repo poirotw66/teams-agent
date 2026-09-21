@@ -26,6 +26,9 @@ import {
   FaqItem,
 } from '../../../shared/api/types';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import { describeMutationError } from '../../../shared/api/mutationErrors';
+import { useCan } from '@refinedev/core';
+import { CONSOLE_WRITE_ACTIONS } from '../../../app/routing/routeRegistry';
 import { QuickFaqInitialData } from './QuickFaqDrawer';
 import { EscalateTicketInitialData } from './EscalateTicketModal';
 
@@ -53,6 +56,19 @@ export const ActionInbox: React.FC<ActionInboxProps> = ({
   onViewTicket,
 }) => {
   const [activeTab, setActiveTab] = useState<string>('negative');
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const { data: canWriteFaq } = useCan({
+    resource: CONSOLE_WRITE_ACTIONS.faqWrite.resource,
+    action: CONSOLE_WRITE_ACTIONS.faqWrite.action,
+  });
+  const { data: canEscalate } = useCan({
+    resource: CONSOLE_WRITE_ACTIONS.ticketEscalate.resource,
+    action: CONSOLE_WRITE_ACTIONS.ticketEscalate.action,
+  });
+  const { data: canResolve } = useCan({
+    resource: CONSOLE_WRITE_ACTIONS.conversationResolve.resource,
+    action: CONSOLE_WRITE_ACTIONS.conversationResolve.action,
+  });
 
   const pendingNegativeConvs = conversations.filter(
     (c) =>
@@ -62,9 +78,19 @@ export const ActionInbox: React.FC<ActionInboxProps> = ({
 
   const activeTickets = tickets.filter((t) => t.status !== 'CANCELLED');
 
-  const handleMarkResolved = (conversationId: string) => {
-    workbenchStore.resolveConversation(conversationId);
-    message.success('已標記為已確認/已排除！');
+  const handleMarkResolved = async (conversationId: string) => {
+    if (resolvingId || !canResolve?.can) {
+      return;
+    }
+    setResolvingId(conversationId);
+    try {
+      await workbenchStore.resolveConversation(conversationId);
+      message.success('已標記為已確認/已排除');
+    } catch (error) {
+      message.error(describeMutationError(error, '結案失敗，請稍後再試'));
+    } finally {
+      setResolvingId(null);
+    }
   };
 
   const renderNegativeCards = () => {
@@ -138,41 +164,45 @@ export const ActionInbox: React.FC<ActionInboxProps> = ({
                 </div>
 
                 <Space size="small" wrap style={{ maxWidth: 360, justifyContent: 'flex-end' }}>
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<ThunderboltOutlined />}
-                    onClick={() =>
-                      onOpenQuickFaq({
-                        question: conv.messages[0]?.content || conv.topic_summary,
-                        oldAnswer: botMessage?.content,
-                        category: '網路通訊',
-                        citationTitle: citation?.document_title,
-                        resolveConversationId: conv.id,
-                      })
-                    }
-                    style={{ backgroundColor: '#5b5fc7', borderColor: '#5b5fc7' }}
-                  >
-                    10秒修訂這筆 FAQ
-                  </Button>
+                  {canWriteFaq?.can ? (
+                    <Button
+                      type="primary"
+                      size="small"
+                      icon={<ThunderboltOutlined />}
+                      onClick={() =>
+                        onOpenQuickFaq({
+                          question: conv.messages[0]?.content || conv.topic_summary,
+                          oldAnswer: botMessage?.content,
+                          category: '網路通訊',
+                          citationTitle: citation?.document_title,
+                          resolveConversationId: conv.id,
+                        })
+                      }
+                      style={{ backgroundColor: '#5b5fc7', borderColor: '#5b5fc7' }}
+                    >
+                      修訂這筆 FAQ
+                    </Button>
+                  ) : null}
 
-                  <Button
-                    size="small"
-                    icon={<FileDoneOutlined />}
-                    onClick={() =>
-                      onOpenEscalateModal({
-                        conversationId: conv.id,
-                        reporterName: conv.reporter_name,
-                        reporterDept: conv.reporter_dept,
-                        reporterExt: conv.reporter_ext,
-                        title: conv.topic_summary,
-                        chatSnippet: negMessage?.content,
-                      })
-                    }
-                    style={{ borderColor: '#6264a7', color: '#6264a7' }}
-                  >
-                    轉立 IT 報修單
-                  </Button>
+                  {canEscalate?.can ? (
+                    <Button
+                      size="small"
+                      icon={<FileDoneOutlined />}
+                      onClick={() =>
+                        onOpenEscalateModal({
+                          conversationId: conv.id,
+                          reporterName: conv.reporter_name,
+                          reporterDept: conv.reporter_dept,
+                          reporterExt: conv.reporter_ext,
+                          title: conv.topic_summary,
+                          chatSnippet: negMessage?.content,
+                        })
+                      }
+                      style={{ borderColor: '#6264a7', color: '#6264a7' }}
+                    >
+                      轉立 IT 報修單
+                    </Button>
+                  ) : null}
 
                   <Button
                     size="small"
@@ -183,14 +213,20 @@ export const ActionInbox: React.FC<ActionInboxProps> = ({
                     檢視對話
                   </Button>
 
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<CheckOutlined />}
-                    onClick={() => handleMarkResolved(conv.id)}
-                  >
-                    標記已處理
-                  </Button>
+                  {canResolve?.can ? (
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<CheckOutlined />}
+                      loading={resolvingId === conv.id}
+                      disabled={resolvingId !== null && resolvingId !== conv.id}
+                      onClick={() => {
+                        void handleMarkResolved(conv.id);
+                      }}
+                    >
+                      標記已處理
+                    </Button>
+                  ) : null}
                 </Space>
               </div>
             </Card>
@@ -246,19 +282,21 @@ export const ActionInbox: React.FC<ActionInboxProps> = ({
                 </div>
               </div>
 
-              <Button
-                type="primary"
-                size="small"
-                icon={<ThunderboltOutlined />}
-                onClick={() =>
-                  onOpenQuickFaq({
-                    question: gap.sample_conversations[0] || gap.cluster_query,
-                    category: gap.category,
-                  })
-                }
-              >
-                ➕ 為此缺口建立 FAQ
-              </Button>
+              {canWriteFaq?.can ? (
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  onClick={() =>
+                    onOpenQuickFaq({
+                      question: gap.sample_conversations[0] || gap.cluster_query,
+                      category: gap.category,
+                    })
+                  }
+                >
+                  為此缺口建立 FAQ
+                </Button>
+              ) : null}
             </div>
           </Card>
         ))}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Card, Input, Segmented, List, Tag, Typography, Badge, Space } from 'antd';
+import { Card, Input, Segmented, List, Tag, Typography, Badge, Space, Empty, Spin } from 'antd';
 import {
   SearchOutlined,
   DislikeOutlined,
@@ -15,6 +15,8 @@ interface TriageQueueProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   filterTopic?: string | null;
+  emptyMessage?: string;
+  isLoading?: boolean;
 }
 
 export const TriageQueue: React.FC<TriageQueueProps> = ({
@@ -22,6 +24,8 @@ export const TriageQueue: React.FC<TriageQueueProps> = ({
   selectedId,
   onSelect,
   filterTopic,
+  emptyMessage,
+  isLoading = false,
 }) => {
   const [filterType, setFilterType] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>(filterTopic || '');
@@ -121,14 +125,27 @@ export const TriageQueue: React.FC<TriageQueueProps> = ({
           />
         </Space>
       }
-      style={{ borderRadius: 10, height: '100%', display: 'flex', flexDirection: 'column' }}
+      style={{ borderRadius: 10, height: '100%', minHeight: 320, display: 'flex', flexDirection: 'column' }}
       styles={{
-        body: { padding: '8px', flex: 1, overflowY: 'auto', maxHeight: '720px' },
+        body: { padding: '8px', flex: 1, overflowY: 'auto' },
       }}
     >
-      <List
-        dataSource={filteredList}
-        renderItem={(item) => {
+      {isLoading ? (
+        <div style={{ display: 'grid', placeItems: 'center', minHeight: 180 }}>
+          <Spin tip="載入對話佇列中…" />
+        </div>
+      ) : (
+        <List
+          dataSource={filteredList}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description={emptyMessage || '目前沒有符合條件的對話'}
+              />
+            ),
+          }}
+          renderItem={(item) => {
           const isSelected = item.id === selectedId;
           const hasNegative = item.messages.some((m) => m.feedback === 'negative');
           const isTicket = item.status === 'ESCALATED_TICKET';
@@ -191,7 +208,8 @@ export const TriageQueue: React.FC<TriageQueueProps> = ({
             </div>
           );
         }}
-      />
+        />
+      )}
     </Card>
   );
 };

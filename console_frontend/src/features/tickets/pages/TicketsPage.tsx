@@ -41,6 +41,7 @@ export const TicketsPage: React.FC = () => {
   const [activeTicket, setActiveTicket] = useState<ItTicketItem | null>(null);
 
   useEffect(() => {
+    void workbenchStore.ensureDomains(['tickets']);
     const unsubscribe = workbenchStore.subscribe(() => {
       setTickets(workbenchStore.getTickets());
     });
@@ -193,7 +194,7 @@ export const TicketsPage: React.FC = () => {
 
   return (
     <div>
-      <WorkbenchLoadErrorBanner />
+      <WorkbenchLoadErrorBanner domains={['tickets']} />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           IT 實體工單追蹤中心

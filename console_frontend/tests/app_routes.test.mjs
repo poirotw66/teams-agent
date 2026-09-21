@@ -20,6 +20,8 @@ test("console App keeps Refine shell wiring", () => {
   assert.match(appSource, /<Refine/);
   assert.match(appSource, /authProvider/);
   assert.match(appSource, /accessControlProvider/);
+  assert.match(appSource, /toRefineResources/);
+  assert.match(appSource, /Authenticated/);
 });
 
 test("console App lazy-loads feature routes under Suspense", () => {

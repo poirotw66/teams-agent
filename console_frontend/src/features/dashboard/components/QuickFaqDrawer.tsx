@@ -17,6 +17,10 @@ import {
   InfoCircleOutlined,
 } from '@ant-design/icons';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import {
+  describeMutationError,
+  isFormValidationError,
+} from '../../../shared/api/mutationErrors';
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -65,11 +69,15 @@ export const QuickFaqDrawer: React.FC<QuickFaqDrawerProps> = ({
   }, [open, initialData, form]);
 
   const handleSubmit = async () => {
+    if (saving) {
+      return;
+    }
+
     try {
       const values = await form.validateFields();
       setSaving(true);
 
-      workbenchStore.quickSaveFaq({
+      await workbenchStore.quickSaveFaq({
         id: initialData?.id,
         question: values.question,
         answer: values.answer,
@@ -77,11 +85,14 @@ export const QuickFaqDrawer: React.FC<QuickFaqDrawerProps> = ({
         resolveConversationId: initialData?.resolveConversationId,
       });
 
-      message.success('已儲存成功！新問答已同步推送至向量資料庫，Teams 機器人即刻生效。');
+      message.success('FAQ 已儲存成功。索引或發布狀態請以知識庫後續狀態為準。');
       onSaved?.();
       onClose();
-    } catch {
-      // Form validation error
+    } catch (error) {
+      if (isFormValidationError(error)) {
+        return;
+      }
+      message.error(describeMutationError(error, 'FAQ 儲存失敗，請稍後再試'));
     } finally {
       setSaving(false);
     }
@@ -103,7 +114,9 @@ export const QuickFaqDrawer: React.FC<QuickFaqDrawerProps> = ({
       open={open}
       extra={
         <Space>
-          <Button onClick={onClose}>取消</Button>
+          <Button onClick={onClose} disabled={saving}>
+            取消
+          </Button>
           <Button
             type="primary"
             icon={<CheckCircleOutlined />}
@@ -111,7 +124,7 @@ export const QuickFaqDrawer: React.FC<QuickFaqDrawerProps> = ({
             onClick={handleSubmit}
             style={{ backgroundColor: '#5B5FC7', borderColor: '#5B5FC7' }}
           >
-            儲存並立即生效
+            儲存 FAQ
           </Button>
         </Space>
       }
@@ -120,8 +133,8 @@ export const QuickFaqDrawer: React.FC<QuickFaqDrawerProps> = ({
         type="info"
         showIcon
         icon={<InfoCircleOutlined />}
-        message="即時生效機制"
-        description="一線客服具備直接修訂權限，送出後系統立即更新向量索引並記錄後台稽核。"
+        message="儲存後確認"
+        description="送出後會等待伺服器確認寫入。向量索引或 Teams 生效時間依後端實際狀態為準，不以本畫面假設即刻同步。"
         style={{ marginBottom: 20 }}
       />
 
@@ -192,7 +205,7 @@ export const QuickFaqDrawer: React.FC<QuickFaqDrawerProps> = ({
       <Divider />
       <div style={{ textAlign: 'center' }}>
         <Text type="secondary" style={{ fontSize: '12px' }}>
-          💡 提示：儲存後，您可以前往「知識手冊與問答」頁籤右側的 Playground 即時測試模擬效果。
+          提示：儲存成功後，可前往「知識手冊與問答」頁以 Playground 驗證效果。
         </Text>
       </div>
     </Drawer>

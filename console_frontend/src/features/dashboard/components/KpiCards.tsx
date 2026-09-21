@@ -1,5 +1,5 @@
 import React from 'react';
-import { Row, Col, Card, Statistic, Typography } from 'antd';
+import { Row, Col, Card, Statistic, Typography, Skeleton, Alert, Button } from 'antd';
 import {
   MessageOutlined,
   CheckCircleOutlined,
@@ -12,12 +12,55 @@ import { DashboardKpiMetrics } from '../../../shared/api/types';
 
 const { Text } = Typography;
 
+export type KpiLoadState = 'loading' | 'error' | 'ready';
+
 interface KpiCardsProps {
   metrics: DashboardKpiMetrics;
+  loadState?: KpiLoadState;
+  errorMessage?: string;
+  onRetry?: () => void;
   onSelectUrgent?: () => void;
 }
 
-export const KpiCards: React.FC<KpiCardsProps> = ({ metrics, onSelectUrgent }) => {
+export const KpiCards: React.FC<KpiCardsProps> = ({
+  metrics,
+  loadState = 'ready',
+  errorMessage,
+  onRetry,
+  onSelectUrgent,
+}) => {
+  if (loadState === 'loading') {
+    return (
+      <Row gutter={[16, 16]}>
+        {Array.from({ length: 5 }).map((_, index) => (
+          <Col key={`kpi-skeleton-${index}`} xs={24} sm={12} lg={4} style={{ flex: '1 1 20%' }}>
+            <Card style={{ borderRadius: 10 }}>
+              <Skeleton active paragraph={{ rows: 2 }} title={{ width: '60%' }} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+    );
+  }
+
+  if (loadState === 'error') {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="無法載入營運 KPI"
+        description={errorMessage || 'overview 資料來源失敗，以下不會以 0 件假裝完成。'}
+        action={
+          onRetry ? (
+            <Button size="small" onClick={onRetry}>
+              重試 overview
+            </Button>
+          ) : undefined
+        }
+      />
+    );
+  }
+
   return (
     <Row gutter={[16, 16]}>
       <Col xs={24} sm={12} lg={4} style={{ flex: '1 1 20%' }}>
@@ -79,14 +122,15 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ metrics, onSelectUrgent }) =
       <Col xs={24} sm={12} lg={4} style={{ flex: '1 1 20%' }}>
         <Card hoverable className="teams-card-hover" style={{ borderRadius: 10, borderLeft: '4px solid #008272' }}>
           <Statistic
-            title={<Text strong style={{ color: '#616161', fontSize: '13px' }}>同仁滿意度</Text>}
+            title={<Text strong style={{ color: '#616161', fontSize: '13px' }}>滿意度</Text>}
             value={metrics.satisfaction_rate}
             suffix={<span style={{ fontSize: '14px', color: '#616161' }}>%</span>}
+            precision={1}
             prefix={<SmileOutlined style={{ color: '#008272', marginRight: 8 }} />}
           />
           <div style={{ marginTop: 8 }}>
             <Text type="secondary" style={{ fontSize: '12px' }}>
-              {metrics.negative_feedback_count > 0 ? `好評滿意 (差評 ${metrics.negative_feedback_count} 件)` : '服務品質良好 (無差評)'}
+              負評 {metrics.negative_feedback_count} 件
             </Text>
           </div>
         </Card>
@@ -96,24 +140,18 @@ export const KpiCards: React.FC<KpiCardsProps> = ({ metrics, onSelectUrgent }) =
         <Card
           hoverable
           className="teams-card-hover"
-          onClick={metrics.urgent_attention_count > 0 ? onSelectUrgent : undefined}
-          style={{
-            borderRadius: 10,
-            borderLeft: metrics.urgent_attention_count > 0 ? '4px solid #c4314b' : '4px solid #107c41',
-            cursor: metrics.urgent_attention_count > 0 ? 'pointer' : 'default',
-            backgroundColor: metrics.urgent_attention_count > 0 ? '#fdf3f4' : undefined,
-          }}
+          style={{ borderRadius: 10, borderLeft: '4px solid #c4314b', cursor: onSelectUrgent ? 'pointer' : 'default' }}
+          onClick={onSelectUrgent}
         >
           <Statistic
-            title={<Text strong style={{ color: metrics.urgent_attention_count > 0 ? '#c4314b' : '#616161', fontSize: '13px' }}>待處理紅字項</Text>}
+            title={<Text strong style={{ color: '#616161', fontSize: '13px' }}>待處理緊急件</Text>}
             value={metrics.urgent_attention_count}
-            suffix={<span style={{ fontSize: '14px', color: metrics.urgent_attention_count > 0 ? '#c4314b' : '#616161' }}>筆需介入</span>}
-            valueStyle={{ color: metrics.urgent_attention_count > 0 ? '#c4314b' : '#107c41', fontWeight: 'bold' }}
-            prefix={<AlertOutlined style={{ color: metrics.urgent_attention_count > 0 ? '#c4314b' : '#107c41', marginRight: 8 }} />}
+            suffix={<span style={{ fontSize: '14px', color: '#616161' }}>件</span>}
+            prefix={<AlertOutlined style={{ color: '#c4314b', marginRight: 8 }} />}
           />
           <div style={{ marginTop: 8 }}>
-            <Text style={{ fontSize: '12px', color: metrics.urgent_attention_count > 0 ? '#c4314b' : '#8a8886' }}>
-              {metrics.urgent_attention_count > 0 ? '點擊立即跳轉下方處理' : '目前各項營運指標正常'}
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              點擊前往今日待辦
             </Text>
           </div>
         </Card>

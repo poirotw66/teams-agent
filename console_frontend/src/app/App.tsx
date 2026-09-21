@@ -7,10 +7,12 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom
 import { ConfigProvider, App as AntdApp, Result, Button, Spin } from 'antd';
 import zhTW from 'antd/locale/zh_TW';
 
+import { Authenticated } from '@refinedev/core';
 import { dataProvider } from './providers/dataProvider';
 import { authProvider } from './providers/authProvider';
 import { accessControlProvider } from './providers/accessControlProvider';
 import { AppLayout } from './shell/AppLayout';
+import { toRefineResources } from './routing/routeRegistry';
 
 const DashboardPage = React.lazy(() =>
   import('../features/dashboard/pages/DashboardPage').then((m) => ({ default: m.DashboardPage })),
@@ -178,110 +180,7 @@ export const App: React.FC = () => {
             authProvider={authProvider}
             accessControlProvider={accessControlProvider}
             routerProvider={routerBindings}
-            resources={[
-              {
-                name: 'dashboard',
-                list: '/dashboard',
-                meta: {
-                  label: '營運儀表板',
-                },
-              },
-              {
-                name: 'triage',
-                list: '/triage',
-                meta: {
-                  label: '對話與分診',
-                },
-              },
-              {
-                name: 'knowledge',
-                list: '/knowledge',
-                meta: {
-                  label: '知識庫與手冊',
-                },
-              },
-              {
-                name: 'knowledge-reviews',
-                list: '/knowledge/reviews',
-                meta: {
-                  label: '知識審核',
-                },
-              },
-              {
-                name: 'knowledge-releases',
-                list: '/knowledge/releases',
-                meta: {
-                  label: '知識 Release',
-                },
-              },
-              {
-                name: 'knowledge-sync',
-                list: '/knowledge/sync',
-                meta: {
-                  label: '知識 Sync',
-                },
-              },
-              {
-                name: 'tickets',
-                list: '/tickets',
-                meta: {
-                  label: 'IT 工單追蹤',
-                },
-              },
-              {
-                name: 'evaluations',
-                list: '/ai/evaluations',
-                meta: {
-                  label: '評測執行',
-                },
-              },
-              {
-                name: 'examples',
-                list: '/ai/examples',
-                meta: {
-                  label: 'Examples',
-                },
-              },
-              {
-                name: 'prompts',
-                list: '/ai/prompts',
-                meta: {
-                  label: 'Prompts',
-                },
-              },
-              {
-                name: 'health',
-                list: '/operations/health',
-                meta: {
-                  label: '系統健康',
-                },
-              },
-              { name: 'issues', list: '/operations/issues', meta: { label: '議題摘要' } },
-              { name: 'routes', list: '/operations/routes', meta: { label: '路由摘要' } },
-              { name: 'costs', list: '/operations/costs', meta: { label: '成本摘要' } },
-              { name: 'budgets', list: '/operations/budgets', meta: { label: '預算政策' } },
-              { name: 'models', list: '/ai/models', meta: { label: '模型設定' } },
-              { name: 'flags', list: '/ai/flags', meta: { label: 'Feature Flags' } },
-              { name: 'roles', list: '/governance/roles', meta: { label: '角色權限' } },
-              { name: 'retention', list: '/governance/retention', meta: { label: '保存政策' } },
-              { name: 'masking', list: '/governance/masking', meta: { label: '脫敏遮罩' } },
-              { name: 'audit', list: '/governance/audit', meta: { label: '治理稽核' } },
-              {
-                name: 'knowledge-analytics',
-                list: '/knowledge/analytics',
-                meta: { label: '知識成效' },
-              },
-              {
-                name: 'knowledge-audit',
-                list: '/knowledge/audit',
-                meta: { label: '知識稽核' },
-              },
-              {
-                name: 'search',
-                list: '/operations/search',
-                meta: { label: '跨實體搜尋' },
-              },
-            ]}
+            resources={toRefineResources()}
             options={{
               syncWithLocation: true,
               warnWhenUnsavedChanges: true,
@@ -292,9 +191,16 @@ export const App: React.FC = () => {
                 <Route path="/login" element={<LoginPage />} />
                 <Route
                   element={
-                    <AppLayout>
-                      <Outlet />
-                    </AppLayout>
+                    <Authenticated
+                      key="console-authenticated"
+                      redirectOnFail="/console-v2/login"
+                      appendCurrentPathToQuery
+                      loading={routeFallback}
+                    >
+                      <AppLayout>
+                        <Outlet />
+                      </AppLayout>
+                    </Authenticated>
                   }
                 >
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />

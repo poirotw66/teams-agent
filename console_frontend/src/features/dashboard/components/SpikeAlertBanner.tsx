@@ -1,13 +1,14 @@
 import React from 'react';
-import { Alert, Button, Space, Typography, message } from 'antd';
+import { Alert, Button, Space, Typography } from 'antd';
 import {
   NotificationOutlined,
   AlertOutlined,
-  SendOutlined,
   CloseCircleOutlined,
   RightOutlined,
 } from '@ant-design/icons';
+import { useCan } from '@refinedev/core';
 import { SpikeAlertItem } from '../../../shared/api/types';
+import { CONSOLE_WRITE_ACTIONS } from '../../../app/routing/routeRegistry';
 
 const { Text } = Typography;
 
@@ -24,13 +25,14 @@ export const SpikeAlertBanner: React.FC<SpikeAlertBannerProps> = ({
   onOpenBroadcastModal,
   onDismiss,
 }) => {
+  const { data: canBroadcast } = useCan({
+    resource: CONSOLE_WRITE_ACTIONS.broadcastWrite.resource,
+    action: CONSOLE_WRITE_ACTIONS.broadcastWrite.action,
+  });
+
   if (!alert || !alert.is_active) {
     return null;
   }
-
-  const handleNotifyNetworkTeam = () => {
-    message.success('已發送緊急通報至網路與機房維運團隊 Teams 頻道！');
-  };
 
   return (
     <div style={{ marginBottom: 16 }}>
@@ -65,39 +67,29 @@ export const SpikeAlertBanner: React.FC<SpikeAlertBannerProps> = ({
               >
                 查看 {alert.affected_count} 筆對話
               </Button>
-              <Button
-                size="small"
-                type="primary"
-                icon={<NotificationOutlined />}
-                onClick={onOpenBroadcastModal}
-                style={{ backgroundColor: '#5b5fc7', borderColor: '#5b5fc7' }}
-              >
-                設定機器人臨時置頂快答
-              </Button>
-              <Button
-                size="small"
-                icon={<SendOutlined />}
-                onClick={handleNotifyNetworkTeam}
-              >
-                通報網路組
-              </Button>
+              {canBroadcast?.can ? (
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<NotificationOutlined />}
+                  onClick={onOpenBroadcastModal}
+                  style={{ backgroundColor: '#5b5fc7', borderColor: '#5b5fc7' }}
+                >
+                  設定機器人臨時置頂快答
+                </Button>
+              ) : null}
               <Button
                 size="small"
                 type="text"
                 icon={<CloseCircleOutlined />}
                 onClick={onDismiss}
+                style={{ color: '#8c8c8c' }}
               >
-                關閉警報
+                關閉提醒
               </Button>
             </Space>
           </Space>
         }
-        style={{
-          border: '1px solid #ffe699',
-          backgroundColor: '#fff9e6',
-          borderRadius: 8,
-          padding: '12px 18px',
-        }}
       />
     </div>
   );

@@ -5,11 +5,16 @@ export async function fetchOverview(): Promise<OverviewApiResponse> {
   return apiClient<OverviewApiResponse>("/api/console/workbench/overview");
 }
 
+export type BroadcastResponse = {
+  ok: boolean;
+  expires_at: string;
+};
+
 export async function postBroadcast(
   message: string,
   durationHours: number,
-): Promise<void> {
-  await apiClient("/api/console/workbench/broadcast", {
+): Promise<BroadcastResponse> {
+  return apiClient<BroadcastResponse>("/api/console/workbench/broadcast", {
     method: "POST",
     body: JSON.stringify({ message, durationHours }),
   });

@@ -35,6 +35,7 @@ export const KnowledgePage: React.FC = () => {
   const [quickFaqData, setQuickFaqData] = useState<QuickFaqInitialData | null>(null);
 
   useEffect(() => {
+    void workbenchStore.ensureDomains(['documents', 'faqs', 'overview']);
     const unsubscribe = workbenchStore.subscribe(() => {
       setDocuments(workbenchStore.getDocuments());
       setFaqs(workbenchStore.getFaqs());
@@ -105,19 +106,19 @@ export const KnowledgePage: React.FC = () => {
 
   return (
     <div>
-      <WorkbenchLoadErrorBanner />
+      <WorkbenchLoadErrorBanner domains={['documents', 'faqs', 'overview']} />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           知識庫與手冊中心
         </Title>
         <Text type="secondary" style={{ fontSize: '13px' }}>
-          PDF/Word 手冊拖曳上傳 · 自動汰換舊版本 · 30秒 FAQ 快修 · 右側即時測試演練
+          PDF/Word 手冊上傳 · FAQ 快修 · 右側即時測試演練
         </Text>
       </div>
 
-      <Row gutter={16} style={{ height: '760px' }}>
-        {/* Left: Document & FAQ Managers (62%) */}
-        <Col xs={24} lg={15} style={{ height: '100%', overflowY: 'auto' }}>
+      <Row gutter={[16, 16]} style={{ minHeight: 'min(70vh, 720px)' }}>
+        {/* Left: Document & FAQ Managers */}
+        <Col xs={24} lg={15} style={{ minHeight: 320, overflowY: 'auto' }}>
           <Tabs
             activeKey={activeTab}
             onChange={setActiveTab}
@@ -127,8 +128,8 @@ export const KnowledgePage: React.FC = () => {
           />
         </Col>
 
-        {/* Right: Live Playground Simulator (38%) */}
-        <Col xs={24} lg={9} style={{ height: '100%' }}>
+        {/* Right: Live Playground Simulator */}
+        <Col xs={24} lg={9} style={{ minHeight: 320 }}>
           <PlaygroundSimulator initialQuery={playgroundQuery} />
         </Col>
       </Row>

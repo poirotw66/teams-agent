@@ -48,7 +48,11 @@ export class FaqsSlice {
     }
 
     this.ctx.notify();
-    this.ctx.reloads.loadAll().catch(() => {});
+    // Refresh only FAQ + overview surfaces affected by a FAQ write.
+    void Promise.allSettled([
+      this.ctx.reloads.loadFaqs(),
+      this.ctx.reloads.loadOverview(),
+    ]);
     return saved;
   }
 

@@ -1,13 +1,41 @@
 import { AuthProvider } from '@refinedev/core';
-import { apiClient } from '../../shared/api/client';
+import { apiClient, ApiError } from '../../shared/api/client';
 import { logoutWithRedirect, type EntraPublicConfig } from '../../shared/auth/msal';
 import {
   clearAuthSession,
   loadAuthSession,
   saveAuthSession,
 } from '../../shared/auth/session';
+import { workbenchStore } from '../../shared/api/workbenchStore';
 
 let lastEntraConfig: EntraPublicConfig | null = null;
+
+export interface UserSession {
+  userId: string;
+  userName: string;
+  displayName: string;
+  role: string;
+  capabilities: string[];
+  ownerUnitIds: string[];
+}
+
+let cachedSession: UserSession | null = null;
+
+function clearIdentityBoundState(): void {
+  cachedSession = null;
+  workbenchStore.resetForIdentityChange();
+}
+
+function resolveErrorStatus(error: unknown): number | undefined {
+  if (error instanceof ApiError) {
+    return error.status;
+  }
+  if (typeof error === 'object' && error !== null && 'status' in error) {
+    const status = (error as { status?: unknown }).status;
+    return typeof status === 'number' ? status : undefined;
+  }
+  return undefined;
+}
 
 async function loadEntraPublicConfig(): Promise<EntraPublicConfig | null> {
   try {
@@ -37,17 +65,6 @@ async function loadEntraPublicConfig(): Promise<EntraPublicConfig | null> {
   }
 }
 
-export interface UserSession {
-  userId: string;
-  userName: string;
-  displayName: string;
-  role: string;
-  capabilities: string[];
-  ownerUnitIds: string[];
-}
-
-let cachedSession: UserSession | null = null;
-
 export const authProvider: AuthProvider = {
   check: async () => {
     try {
@@ -57,7 +74,7 @@ export const authProvider: AuthProvider = {
         authenticated: true,
       };
     } catch {
-      cachedSession = null;
+      clearIdentityBoundState();
       return {
         authenticated: false,
         redirectTo: '/console-v2/login',
@@ -71,6 +88,8 @@ export const authProvider: AuthProvider = {
       accessToken?: string;
       redirectPath?: string;
     };
+    // Drop prior identity-bound server state before adopting a new session.
+    clearIdentityBoundState();
     if (payload.accessToken) {
       saveAuthSession({
         ...loadAuthSession(),
@@ -84,6 +103,7 @@ export const authProvider: AuthProvider = {
         redirectTo: payload.redirectPath || '/console-v2/work',
       };
     } catch {
+      clearIdentityBoundState();
       return {
         success: false,
         redirectTo: '/console-v2/login',
@@ -93,7 +113,7 @@ export const authProvider: AuthProvider = {
   },
 
   logout: async () => {
-    cachedSession = null;
+    clearIdentityBoundState();
     const entra = await loadEntraPublicConfig();
     clearAuthSession();
     if (entra) {
@@ -111,11 +131,19 @@ export const authProvider: AuthProvider = {
   },
 
   onError: async (error) => {
-    if (error?.status === 401 || error?.status === 403) {
+    const status = resolveErrorStatus(error);
+    if (status === 401) {
+      clearIdentityBoundState();
       return {
         logout: true,
         redirectTo: '/console-v2/login',
-        error: new Error('存取受限或憑證已失效'),
+        error: new Error('憑證已失效，請重新登入'),
+      };
+    }
+    if (status === 403) {
+      // Keep the session; the caller stays on the page with a permission error.
+      return {
+        error: new Error('目前身分沒有執行此操作的權限'),
       };
     }
     return { error };

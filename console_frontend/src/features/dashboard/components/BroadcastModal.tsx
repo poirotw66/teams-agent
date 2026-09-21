@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import { Modal, Form, Input, Select, Typography, Alert, message } from 'antd';
 import { NotificationOutlined } from '@ant-design/icons';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import {
+  describeMutationError,
+  isFormValidationError,
+} from '../../../shared/api/mutationErrors';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -23,16 +27,26 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   const [submitting, setSubmitting] = useState<boolean>(false);
 
   const handleSubmit = async () => {
+    if (submitting) {
+      return;
+    }
+
     try {
       const values = await form.validateFields();
       setSubmitting(true);
 
-      workbenchStore.setSpikeBroadcast(values.message, Number(values.durationHours));
-      message.success('已啟用 Teams 機器人置頂快答！相關問題將優先秒回此訊息，攔截重複進線。');
+      const result = await workbenchStore.setSpikeBroadcast(
+        values.message,
+        Number(values.durationHours),
+      );
+      message.success(`臨時廣播已啟用，預計到期：${result.expiresAt}`);
       onBroadcastSet?.();
       onClose();
-    } catch {
-      // Validation error
+    } catch (error) {
+      if (isFormValidationError(error)) {
+        return;
+      }
+      message.error(describeMutationError(error, '廣播啟用失敗，請稍後再試'));
     } finally {
       setSubmitting(false);
     }
@@ -50,15 +64,19 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
       onOk={handleSubmit}
       onCancel={onClose}
       confirmLoading={submitting}
-      okText="立即啟用廣播快答"
+      okText="啟用廣播"
       cancelText="取消"
-      okButtonProps={{ style: { backgroundColor: '#5B5FC7', borderColor: '#5B5FC7' } }}
+      okButtonProps={{
+        style: { backgroundColor: '#5B5FC7', borderColor: '#5B5FC7' },
+        disabled: submitting,
+      }}
+      cancelButtonProps={{ disabled: submitting }}
     >
       <Alert
         type="warning"
         showIcon
-        message="智能進線攔截機制"
-        description="啟用後，只要同仁在 Teams 問到與此事件相關的關鍵字，機器人將優先直接回覆這段廣播，不查閱一般文件，避免客服被重複進線灌爆。"
+        message="啟用前請確認"
+        description="送出後會等待伺服器確認。成功訊息會顯示後端回傳的到期時間；失敗時保留表單內容以便重試。"
         style={{ marginBottom: 16 }}
       />
 

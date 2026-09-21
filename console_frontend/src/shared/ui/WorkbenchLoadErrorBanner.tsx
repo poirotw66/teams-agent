@@ -1,12 +1,22 @@
 import React, { useEffect, useState } from "react";
 import { Alert, Button } from "antd";
-import { workbenchStore } from "../api/workbenchStore";
+import {
+  workbenchStore,
+  type WorkbenchDomain,
+} from "../api/workbench/store";
+
+type WorkbenchLoadErrorBannerProps = {
+  /** Domains this page owns; retry refreshes only these. */
+  domains?: readonly WorkbenchDomain[];
+};
 
 /**
  * Surfaces workbench fetch failures so empty KPI/list state is not mistaken
  * for a healthy zero-activity dashboard.
  */
-export const WorkbenchLoadErrorBanner: React.FC = () => {
+export const WorkbenchLoadErrorBanner: React.FC<WorkbenchLoadErrorBannerProps> = ({
+  domains,
+}) => {
   const [loadError, setLoadError] = useState<string | null>(
     workbenchStore.getLoadError(),
   );
@@ -25,6 +35,14 @@ export const WorkbenchLoadErrorBanner: React.FC = () => {
     return null;
   }
 
+  const handleRetry = () => {
+    if (domains && domains.length > 0) {
+      void workbenchStore.ensureDomains(domains, { force: true });
+      return;
+    }
+    void workbenchStore.loadAll();
+  };
+
   return (
     <Alert
       type="error"
@@ -33,7 +51,7 @@ export const WorkbenchLoadErrorBanner: React.FC = () => {
       message="無法載入工作台資料"
       description={loadError}
       action={
-        <Button size="small" onClick={() => void workbenchStore.loadAll()}>
+        <Button size="small" onClick={handleRetry}>
           重試
         </Button>
       }
