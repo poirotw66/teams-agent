@@ -243,6 +243,9 @@ _POLICY_MARKER_DISPLAY_RE = re.compile(r"\[POLICY-SEC-\d{3}\]")
 _SECURITY_POLICY_ADVISORY_LINE_RE = re.compile(
     r"(?m)^(?:>\s*)?[^\n]*系統資安政策提醒[^\n]*\n?",
 )
+_POLICY_SENTENCE_WITH_MARKER_RE = re.compile(
+    r"[^。！？\n]*\[POLICY-SEC-\d{3}\][^。！？\n]*[。！？]?",
+)
 
 
 def _strip_policy_overlay_for_display(answer: str) -> str:
@@ -250,6 +253,7 @@ def _strip_policy_overlay_for_display(answer: str) -> str:
     if not answer:
         return answer
     text = _SECURITY_POLICY_ADVISORY_LINE_RE.sub("", answer)
+    text = _POLICY_SENTENCE_WITH_MARKER_RE.sub("", text)
     text = _POLICY_MARKER_DISPLAY_RE.sub("", text)
     text = re.sub(r"[ \t]+([。．.，,！!？?])", r"\1", text)
     text = re.sub(r"[ \t]{2,}", " ", text)

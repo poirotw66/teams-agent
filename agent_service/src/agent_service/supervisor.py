@@ -53,7 +53,9 @@ Return structured JSON only. This is the single routing decision for the user's 
 
 Classify intent:
 - IT_SUPPORT: company systems, devices, accounts, permissions, software, errors, or follow-up
-  details for a pending IT clarification.
+  details for a pending IT clarification. IT service-request examples include 座位搬遷 / 座位遷移 /
+  換座位 / 電腦聯繫單 (seat relocation via computer contact form) — do not treat these as
+  facilities/general-affairs NON_IT.
 - GREETING: greetings, thanks, or brief courtesy (你好, 早安, 謝謝) without an IT question.
 - NON_IT: food/weather/general knowledge, or anything clearly outside IT (not mere greetings).
 - ASSISTANT_META: questions about what this assistant can do, its scope, or company IT service catalog / job responsibilities (例如: 你能做什麼, 能回答什麼, IT在做什麼, IT支援服務範圍, IT工作內容簡介).
@@ -67,7 +69,8 @@ When the assistant is waiting for clarification:
 - Otherwise keep intent=IT_SUPPORT and treat the message as the clarification answer.
 
 Prefer explicit user meaning over keyword matching. Mixed IT and non-IT messages should use IT_SUPPORT
-so downstream issue extraction can split them."""
+so downstream issue extraction can split them. Refusal remains gated by policy and evidence, not
+by this classifier alone."""
 
 _PURE_GREETING = re.compile(
     r"^(?:你好|您好|嗨|哈囉|hello|hi|早安|午安|晚安|謝謝|感謝)"
@@ -198,8 +201,11 @@ class ConversationSupervisor:
             )
         if decision.intent == "NON_IT":
             from .extractor import _has_helpdesk_domain_evidence
+            from .service_scope_evidence import has_service_scope_evidence
 
-            if _has_helpdesk_domain_evidence(message):
+            if has_service_scope_evidence(message) or _has_helpdesk_domain_evidence(
+                message
+            ):
                 return ConversationSupervisorDecision(
                     intent="IT_SUPPORT",
                     confidence=decision.confidence,

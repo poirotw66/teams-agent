@@ -17,9 +17,10 @@ def test_strip_policy_overlay_removes_markers_and_advisory_block() -> None:
     displayed = strip_policy_overlay_for_display(answer)
 
     assert "[S1]" in displayed
-    assert "向權責單位確認" in displayed
+    assert "請調整安全性設定" in displayed
     assert "POLICY-SEC" not in displayed
     assert "系統資安政策提醒" not in displayed
+    assert "向權責單位確認" not in displayed
 
 
 def test_filter_display_citations_drops_policy_advisory_entries() -> None:

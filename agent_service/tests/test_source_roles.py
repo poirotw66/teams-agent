@@ -179,3 +179,52 @@ def test_filter_rescues_top_score_when_latin_boost_marks_it_incidental() -> None
     keys = [result.chunk.document_id for result in filtered]
     assert keys[0] == "garbled"
     assert "outlook" in keys or keys == ["garbled"]
+
+
+def test_portal_not_ad_contrast_keeps_employee_portal_over_ad_and_holdings() -> None:
+    """Regression:「入口網密碼不是 AD」must keep 並非AD portal doc, not AD/金控."""
+    portal = _result(
+        "portal",
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "密碼連動為國泰金控網站帳密 (並非AD)，請至忘記密碼",
+    )
+    ad = _result("ad", "AD 帳號與系統解鎖 FAQ", "AD 帳號鎖定請自助解鎖")
+    holdings = _result(
+        "hold",
+        "金控入口網密碼變更方式",
+        "金控入口網畫面設定我的連結後可密碼變更與忘記密碼",
+    )
+    for query in (
+        "公司入口網站密碼不是 AD 對吧？",
+        "國泰員工入口密碼是不是 AD？",
+    ):
+        filtered = filter_results_for_generation(
+            query=query,
+            results=[ad, holdings, portal],
+            document_key=lambda result: result.chunk.document_id or "",
+        )
+        keys = [result.chunk.document_id for result in filtered]
+        assert keys[0] == "portal", query
+        assert "ad" not in keys, query
+
+
+def test_external_crm_connect_not_otp_keeps_connect_doc() -> None:
+    """Regression: 外網 CRM 連線設定，不是 OTP 綁定 must drop OTP sibling."""
+    connect = _result(
+        "crm",
+        "外網 CRM 登入連線設定方式",
+        "外網 CRM FortiToken 連線設定；手機也可綁定 OTP",
+    )
+    otp = _result(
+        "otp",
+        "國金 CRM OTP 綁訂操作",
+        "Google Authenticator 首次登入需使用 OTP Key 與 QR Code",
+    )
+    filtered = filter_results_for_generation(
+        query="外網 CRM 連線設定，不是 OTP 綁定",
+        results=[otp, connect],
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    keys = [result.chunk.document_id for result in filtered]
+    assert keys[0] == "crm"
+    assert "otp" not in keys

@@ -40,3 +40,13 @@ def test_soft_match_accepts_overseas_vpn_as_foreign_connection() -> None:
     eval_mod = _load_eval_module()
     answer = "若員工有國外連線需求，請寄信 CC 雙方主管，再由網路組開通。"
     assert eval_mod._soft_evidence_token_in_answer("海外VPN", answer)
+
+
+def test_soft_match_accepts_short_cjk_token_covered_by_cited_title() -> None:
+    eval_mod = _load_eval_module()
+    answer = "若要進行直接轉接，請在通話中按下 Transfer 鍵後輸入分機號碼 [S1]。"
+    assert eval_mod._answer_covers_evidence_fact(
+        answer=answer,
+        must_contain=["話機"],
+        cited_titles=["總公司IP話機操作"],
+    )

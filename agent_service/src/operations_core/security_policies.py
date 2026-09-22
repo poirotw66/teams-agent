@@ -1,9 +1,9 @@
 """Versioned global security-policy catalog and marker matching.
 
-Knowledge citations ([S#]) ground enterprise document facts. System-wide
-security rules use [POLICY-SEC-*] markers. This module holds only the catalog
-and pure text matching so Backoffice can resolve policy IDs without importing
-Agent Citation builders.
+Knowledge citations ([S#]) ground enterprise document facts. Synthetic
+POLICY-SEC overlays are outside the RAG answer scope; this catalog remains so
+runtime code can recognize and strip hallucinated policy IDs without importing
+Agent citation builders.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ class SecurityPolicy:
     body: str
 
 
-# Stable IDs are part of the evaluation contract; do not renumber casually.
+# Stable IDs may still appear in historical eval artifacts; do not renumber.
 SECURITY_POLICIES: dict[str, SecurityPolicy] = {
     "POLICY-SEC-001": SecurityPolicy(
         policy_id="POLICY-SEC-001",

@@ -13,6 +13,7 @@ from .knowledge_backends import KnowledgeBackendRouter
 from .knowledge_release import manifest_file_search_store
 from .release_artifacts import MANIFEST_FILENAME, KnowledgeIndexArtifact, validate_release_artifacts
 from .retrieval import HybridIndex
+from .service_scope_evidence import configure_service_scope_from_release
 from .settings import RagSettings
 from .source_refs import hydrate_index_sources
 from .workflow import build_knowledge_service
@@ -105,6 +106,10 @@ def apply_synced_knowledge_index(
     target_app.state.knowledge_index_source = "portal_release"
     target_app.state.knowledge_index_artifact = artifact
     target_app.state.agent = new_agent
+    release_root = resolved_settings.knowledge_release_dir or (
+        resolved_settings.data_dir / "releases"
+    )
+    configure_service_scope_from_release(release_root, active_release_id)
     logger.info(
         "Auto-synced knowledge index to active pointer: release_id=%s chunks=%d",
         active_release_id,

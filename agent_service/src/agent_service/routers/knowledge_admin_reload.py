@@ -19,6 +19,10 @@ from ..knowledge_release import (
 )
 from ..model_control import embedding_model_for_load
 from ..retrieval import HybridIndex, hybrid_index_fusion_kwargs
+from ..service_scope_evidence import (
+    configure_service_scope_from_release,
+    reset_service_scope_catalog,
+)
 from ..settings import RagSettings
 from ..source_refs import hydrate_index_sources
 from ..workflow import build_knowledge_service
@@ -189,6 +193,11 @@ async def perform_knowledge_reload(
     request.app.state.knowledge_index_source = source
     request.app.state.knowledge_index_artifact = resolved_artifact
     request.app.state.agent = new_agent
+
+    if target_release_id:
+        configure_service_scope_from_release(release_dir, target_release_id)
+    else:
+        reset_service_scope_catalog()
 
     logger.info(
         "Knowledge index reloaded: release_id=%s path=%s chunks=%d source=%s",

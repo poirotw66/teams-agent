@@ -19,6 +19,10 @@ from .knowledge_release import resolve_knowledge_index
 from .knowledge_release_control import build_firestore_release_control
 from .operations.runtime import build_ops_runtime
 from .retrieval import HybridIndex, hybrid_index_fusion_kwargs
+from .service_scope_evidence import (
+    configure_service_scope_from_release,
+    reset_service_scope_catalog,
+)
 from .settings import RagSettings
 from .source_refs import hydrate_index_sources
 from .ticket import build_ticket_service
@@ -51,6 +55,10 @@ def load_startup_index(settings: RagSettings) -> tuple[HybridIndex, Any]:
         release_dir=release_dir,
         release_id=resolved_index.release_id,
     )
+    if resolved_index.release_id:
+        configure_service_scope_from_release(release_dir, resolved_index.release_id)
+    else:
+        reset_service_scope_catalog()
     return index, resolved_index
 
 

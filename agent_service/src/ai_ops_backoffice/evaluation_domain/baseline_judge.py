@@ -51,12 +51,12 @@ Required-fact tiers (apply before marking incompleteness):
 Provenance rules:
 - Knowledge document facts must be grounded only on document chunk IDs from
   actual_citations (typically retrieved knowledge chunks).
-- System security overlays use chunk IDs like POLICY-SEC-001 / POLICY-SEC-002 /
-  POLICY-SEC-003 (sourceType POLICY_ADVISORY). Policy claims may be SUPPORTED
-  only by those policy chunk IDs, never by unrelated knowledge chunks.
+- Synthetic POLICY-SEC / POLICY_ADVISORY overlays are out of knowledge scope.
+  Treat leftover POLICY-SEC-* markers or citations as unsupported noise, not as
+  valid grounding for either document facts or global security policy claims.
 - FAQ answers may be grounded on faq:<faqId>:<versionId> citations.
-- Do not treat a knowledge chunk as evidence for a global security policy, and
-  do not treat a POLICY-SEC-* citation as evidence for document-specific facts.
+- Do not invent global security-policy overlays that are absent from retrieved
+  knowledge evidence.
 
 Verdicts:
 - PASS: correct, materially complete for must-answer (and applicable conditional)

@@ -95,7 +95,8 @@ def test_sanitize_answer_security_redacts_internal_ips_and_unc() -> None:
     assert "內部系統伺服器路徑" in sanitized
 
 
-def test_sanitize_strips_policy_sec_003_outside_its_scope() -> None:
+def test_sanitize_strips_all_policy_sec_markers() -> None:
+    """POLICY overlays are out of KB scope; sanitize must never keep markers."""
     raw = (
         "報價問題請蒐集商品代碼並寄送至 123@cathaysec.com.tw [S1]。"
         "若不確定資料是否可提交，請先向權責單位確認 [POLICY-SEC-003]。"
@@ -104,19 +105,14 @@ def test_sanitize_strips_policy_sec_003_outside_its_scope() -> None:
     assert "[POLICY-SEC-003]" not in sanitized
     assert "[S1]" in sanitized
 
-    # Hedge language like「若涉及安全性設定變更」must not keep SEC-003 alive.
-    hedged = (
-        "請遵守資料最小化 [POLICY-SEC-001]。"
-        "若涉及安全性設定變更，請務必先向權責單位確認 [POLICY-SEC-003]。"
-    )
-    assert "[POLICY-SEC-003]" not in HybridKnowledgeService._sanitize_answer_security(
-        hedged
-    )
-
     scoped = (
-        "若需關閉 Proxy，請先向權責單位確認是否受企業政策管制 [POLICY-SEC-003]。"
+        "若需關閉 Proxy 後重新連線 [S1]。"
+        "請先向權責單位確認是否受企業政策管制 [POLICY-SEC-003]。"
     )
-    assert "[POLICY-SEC-003]" in HybridKnowledgeService._sanitize_answer_security(scoped)
+    scoped_sanitized = HybridKnowledgeService._sanitize_answer_security(scoped)
+    assert "[POLICY-SEC-003]" not in scoped_sanitized
+    assert "關閉 Proxy" in scoped_sanitized
+    assert "[S1]" in scoped_sanitized
 
 
 def test_sanitize_strips_misattributed_test_link_policy_sec_001() -> None:
@@ -133,7 +129,9 @@ def test_sanitize_strips_misattributed_test_link_policy_sec_001() -> None:
     assert "[S1]" in sanitized
 
     valid = "提交畫面或附件前須避免與問題無關的個人及敏感資訊 [POLICY-SEC-001]。"
-    assert "[POLICY-SEC-001]" in HybridKnowledgeService._sanitize_answer_security(valid)
+    assert "[POLICY-SEC-001]" not in HybridKnowledgeService._sanitize_answer_security(
+        valid
+    )
 
 
 def test_sanitize_repairs_markdown_link_with_stray_code_span_backticks() -> None:
@@ -224,70 +222,47 @@ def test_sanitize_separates_citation_from_ui_key_brackets() -> None:
     assert "按 [電話號碼] [S1]" not in sanitized
 
 
-def test_sanitize_narrows_overbroad_sec002_password_ban() -> None:
-    """QB-052 regression: meeting-password fields must not conflict with SEC-002."""
+def test_sanitize_strips_overbroad_sec002_password_ban_overlay() -> None:
+    """QB-052: POLICY-SEC-002 overlays must be stripped, not rewritten."""
     raw = (
         "請將會議名稱、會議密碼等資料寄送至 123@cathaysec.com.tw [S1]。"
         "嚴禁於郵件中提供任何密碼資訊 [POLICY-SEC-002]。"
     )
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
-    assert "任何密碼" not in sanitized
+    assert "[POLICY-SEC-002]" not in sanitized
     assert "會議密碼" in sanitized
-    assert "登入密碼、憑證密碼與動態驗證碼" in sanitized
-    assert "[POLICY-SEC-002]" in sanitized
     assert "[S1]" in sanitized
 
 
-def test_sanitize_answer_security_appends_proxy_advisory_when_unqualified() -> None:
+def test_sanitize_answer_security_does_not_mint_proxy_advisory() -> None:
     raw = "若連線後 Wi-Fi 瞬斷，請至設定將 Proxy 設定全部關閉後重新連線。"
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
     assert "Proxy 設定全部關閉" in sanitized
-    assert "系統資安政策提醒" in sanitized
-    assert "[POLICY-SEC-003]" in sanitized
+    assert "系統資安政策提醒" not in sanitized
+    assert "[POLICY-SEC-003]" not in sanitized
 
 
-def test_sanitize_answer_security_appends_advisory_for_cert_bypass_and_ie() -> None:
-    # Certificate bypass advice
+def test_sanitize_answer_security_does_not_mint_advisory_for_cert_bypass_and_ie() -> None:
     raw_cert = "連線若出現憑證問題，可暫時忽略憑證錯誤繼續連線。"
     sanitized_cert = HybridKnowledgeService._sanitize_answer_security(raw_cert)
-    assert "系統資安政策提醒" in sanitized_cert
-    assert "[POLICY-SEC-003]" in sanitized_cert
+    assert "系統資安政策提醒" not in sanitized_cert
+    assert "[POLICY-SEC-003]" not in sanitized_cert
 
-    # IE security lowering advice
     raw_ie = "若頁面無法顯示，可至網際網路選項調低安全性等級後重試。"
     sanitized_ie = HybridKnowledgeService._sanitize_answer_security(raw_ie)
-    assert "系統資安政策提醒" in sanitized_ie
-    assert "[POLICY-SEC-003]" in sanitized_ie
+    assert "系統資安政策提醒" not in sanitized_ie
+    assert "[POLICY-SEC-003]" not in sanitized_ie
 
 
-def test_sanitize_answer_security_does_not_duplicate_proxy_advisory() -> None:
-    raw = "若需關閉 Proxy，請先向權責單位確認是否受企業政策管制。"
-    sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
-    assert sanitized.count("權責單位") == 1
-    assert "[POLICY-SEC-003]" in sanitized
-    assert "系統資安政策提醒" not in sanitized
-
-
-def test_sanitize_pairs_sec003_text_and_id_for_invalid_signature_topic() -> None:
-    """QB-048: in-scope security reminders must keep text + POLICY-SEC-003 together."""
+def test_sanitize_does_not_pair_sec003_for_invalid_signature_topic() -> None:
+    """Security reminders must not mint POLICY-SEC-003 overlays."""
     raw = (
         "文件畫面顯示「即使簽章無效也允許執行或安裝軟體」僅為大州首次使用設定內容 [S1]。"
         "此外，進行任何安全性設定變更前，請務必向權責單位確認。"
     )
     sanitized = HybridKnowledgeService._sanitize_answer_security(raw)
-    assert "向權責單位確認" in sanitized
-    assert "[POLICY-SEC-003]" in sanitized
+    assert "[POLICY-SEC-003]" not in sanitized
     assert "[S1]" in sanitized
-
-    # Hedge that only says 洽詢權責單位 (common model wording) must still pair.
-    soft = (
-        "關於「即使簽章無效也允許執行或安裝軟體」的設定，文件僅記載其位於進階安全性區塊 [S1]。"
-        "若您有安裝需求，建議洽詢權責單位確認操作規範。"
-    )
-    soft_sanitized = HybridKnowledgeService._sanitize_answer_security(soft)
-    assert "[POLICY-SEC-003]" in soft_sanitized
-    assert "洽詢權責單位確認" in soft_sanitized
-    assert soft_sanitized.count("[POLICY-SEC-003]") == 1
 
 
 def test_sanitize_adds_visual_inventory_caveats_for_invalid_signature() -> None:
@@ -301,7 +276,7 @@ def test_sanitize_adds_visual_inventory_caveats_for_invalid_signature() -> None:
     assert "畫面顯示為已勾選" in sanitized
     assert "不得據此作為通用排障" in sanitized or "不得" in sanitized
     assert "名稱未詳" in sanitized or "元件名稱" in sanitized
-    assert "[POLICY-SEC-003]" in sanitized
+    assert "[POLICY-SEC-003]" not in sanitized
 
 def test_repair_structured_answer_aligns_unknowns_and_answerability() -> None:
     # Case 1: PARTIAL without unknowns
@@ -911,7 +886,7 @@ def test_remap_claim_marker_ids_to_chunk_ids() -> None:
             "chk-deny": "VPN 不可使用公槽資料夾。",
         },
     )
-    assert remapped[0].chunkIds == ["chk-allow", "POLICY-SEC-002"]
+    assert remapped[0].chunkIds == ["chk-allow"]
     assert remapped[1].chunkIds == ["chk-deny"]
     assert all(claim.text != "完全無關的主張" for claim in remapped)
 
@@ -1072,47 +1047,37 @@ def test_filter_displaced_top1_prohibits_high_confidence_bypass(tmp_path: Path) 
     assert is_det is False
 
 
-def test_qb085_answer_prompt_rules_contain_global_security_baseline() -> None:
-    assert "全域資料最小化原則" in ANSWER_PROMPT
-    assert "絕對機敏資訊禁令" in ANSWER_PROMPT
-    assert "全域最高性" in ANSWER_PROMPT
-    assert "[POLICY-SEC-001]" in ANSWER_PROMPT
-    assert "[POLICY-SEC-002]" in ANSWER_PROMPT
-    assert "[POLICY-SEC-003]" in ANSWER_PROMPT
-    assert "該來源沒有規定" in ANSWER_PROMPT
+def test_qb085_answer_prompt_bans_policy_sec_overlays() -> None:
+    assert "嚴禁輸出 [POLICY-SEC-*]" in ANSWER_PROMPT
+    assert "不得使用 POLICY-SEC-* id" in ANSWER_PROMPT
+    assert "不得附加系統政策 overlay" in ANSWER_PROMPT
+    assert "全域資料最小化原則" not in ANSWER_PROMPT
+    assert "[POLICY-SEC-001]" not in ANSWER_PROMPT
+    assert "[POLICY-SEC-002]" not in ANSWER_PROMPT
+    assert "[POLICY-SEC-003]" not in ANSWER_PROMPT
 
 
-def test_answer_prompt_security_rules_align_with_policy_bodies() -> None:
+def test_answer_prompt_security_rules_ban_policy_overlays() -> None:
     from agent_service.security_policies import ANSWER_PROMPT_SECURITY_RULES
 
-    assert "POLICY-SEC-003" in ANSWER_PROMPT_SECURITY_RULES
-    assert "Proxy" in ANSWER_PROMPT_SECURITY_RULES or "憑證" in ANSWER_PROMPT_SECURITY_RULES
-    # Must not reintroduce the free-floating submit-confirmation rule that
-    # caused models to mis-attribute data-submit guidance to POLICY-SEC-003.
-    assert "不確定時確認原則" not in ANSWER_PROMPT_SECURITY_RULES
-    assert "嚴禁把「資料能否提交」「正式網址查詢」「一般通報流程」標成 [POLICY-SEC-003]。" in (
-        ANSWER_PROMPT_SECURITY_RULES
+    assert "嚴禁輸出 [POLICY-SEC-*]" in ANSWER_PROMPT_SECURITY_RULES
+    assert "POLICY-SEC-003" not in ANSWER_PROMPT_SECURITY_RULES or (
+        "嚴禁" in ANSWER_PROMPT_SECURITY_RULES
     )
-    assert "嚴禁把「測試連結／佔位網址／非正式連結」標成 [POLICY-SEC-001]" in (
-        ANSWER_PROMPT_SECURITY_RULES
-    )
-    assert "此提醒不是安全政策，嚴禁標成 [POLICY-SEC-001]" in ANSWER_PROMPT_SECURITY_RULES
-    assert "會議密碼" in ANSWER_PROMPT_SECURITY_RULES
-    assert "不得寫成「任何密碼／所有密碼」" in ANSWER_PROMPT_SECURITY_RULES
 
 
-def test_unknown_policy_markers_do_not_crash_advisories() -> None:
+def test_policy_markers_are_stripped_from_answers() -> None:
     from agent_service.security_policies import (
         advisories_from_text,
         strip_unknown_policy_markers,
     )
 
     text = "請遵守資料最小化 [POLICY-SEC-001]，並參考未知規則 [POLICY-SEC-999]。"
-    advisories = advisories_from_text(text)
-    assert [a.policyIds for a in advisories] == [["POLICY-SEC-001"]]
+    assert advisories_from_text(text) == []
     stripped = strip_unknown_policy_markers(text)
-    assert "[POLICY-SEC-001]" in stripped
+    assert "[POLICY-SEC-001]" not in stripped
     assert "[POLICY-SEC-999]" not in stripped
+    assert "資料最小化" in stripped
 
 
 def test_uncited_security_policy_leak_is_pruned() -> None:
@@ -1170,18 +1135,18 @@ def test_rule10_data_minimization_misattributed_as_source_limit_is_pruned() -> N
     assert "Rule 10" not in cleaned
 
 
-def test_legitimate_policy_sec_marker_is_preserved() -> None:
+def test_policy_sec_marker_lines_are_dropped() -> None:
     text = (
         "請將 Proxy 伺服器設為不勾選 [S1]。"
         "變更前請向權責單位確認 [POLICY-SEC-003]。"
     )
     cleaned = HybridKnowledgeService._prune_uncited_material_sentences(text)
     assert "Proxy" in cleaned
-    assert "[POLICY-SEC-003]" in cleaned
-    assert "向權責單位確認" in cleaned
+    assert "[POLICY-SEC-003]" not in cleaned
+    assert "向權責單位確認" not in cleaned
 
 
-def test_policy_advisory_line_body_is_preserved() -> None:
+def test_policy_advisory_line_body_is_dropped() -> None:
     text = (
         "可關閉 Proxy 後重新連線 [S1]。\n"
         "> ⚠️ **系統資安政策提醒** [POLICY-SEC-003]：此操作涉及安全性、Proxy 或憑證設定變更。"
@@ -1190,9 +1155,9 @@ def test_policy_advisory_line_body_is_preserved() -> None:
     )
     cleaned = HybridKnowledgeService._prune_uncited_material_sentences(text)
     assert "關閉 Proxy" in cleaned
-    assert "[POLICY-SEC-003]" in cleaned
-    assert "向權責單位或 IT 支援窗口確認" in cleaned
-    assert "切勿擅自變更" in cleaned
+    assert "[POLICY-SEC-003]" not in cleaned
+    assert "系統資安政策提醒" not in cleaned
+    assert "切勿擅自變更" not in cleaned
 
 
 def test_error_branch_coverage_helpers() -> None:
@@ -1371,7 +1336,7 @@ def test_companion_inject_disabled_skips_temporary_rules(tmp_path: Path) -> None
     assert [item.chunk.chunk_id for item in unchanged] == ["ad-1"]
 
 
-def test_policy_marked_security_advisory_is_retained() -> None:
+def test_policy_marked_security_advisory_is_dropped() -> None:
     text = (
         "申請共用公槽請填必要資料 [S1]。\n"
         "系統資安政策要求遵守資料最小化 [POLICY-SEC-001]。"
@@ -1386,12 +1351,13 @@ def test_policy_marked_security_advisory_is_retained() -> None:
         common_keys,
         _resolve,
     )
-    assert "[POLICY-SEC-001]" in cleaned
-    assert "資料最小化" in cleaned
+    assert "[POLICY-SEC-001]" not in cleaned
+    assert "資料最小化" not in cleaned
+    assert "申請共用公槽" in cleaned
 
 
 @pytest.mark.asyncio
-async def test_proxy_advisory_emits_policy_citation(tmp_path: Path) -> None:
+async def test_proxy_answer_does_not_emit_policy_citation(tmp_path: Path) -> None:
     chunk = DocumentChunk(
         chunk_id="wifi-1",
         title="Wi-Fi 瞬斷處理",
@@ -1431,11 +1397,10 @@ async def test_proxy_advisory_emits_policy_citation(tmp_path: Path) -> None:
     )
     result = await service.search("Wi-Fi 瞬斷要關閉 Proxy 嗎？", make_user())
     assert result.found is True
-    assert "[POLICY-SEC-003]" in result.answer
-    policy_sources = [s for s in result.sources if s.sourceType == "POLICY_ADVISORY"]
-    assert len(policy_sources) == 1
-    assert policy_sources[0].chunkId == "POLICY-SEC-003"
-    assert any(a.policyIds == ["POLICY-SEC-003"] for a in result.policyAdvisories)
+    assert "[POLICY-SEC-003]" not in result.answer
+    assert "系統資安政策提醒" not in result.answer
+    assert all(s.sourceType != "POLICY_ADVISORY" for s in result.sources)
+    assert result.policyAdvisories == []
 
 
 @pytest.mark.asyncio

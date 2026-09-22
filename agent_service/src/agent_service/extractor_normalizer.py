@@ -10,6 +10,10 @@ from .extractor_heuristics import (
     _is_known_dazhou_issue,
 )
 from .sanitize import sanitize_description
+from .service_scope_evidence import (
+    has_service_scope_evidence,
+    is_complete_service_scope_query,
+)
 
 # Terms that must never appear in a missingInfo follow-up question, per spec
 # §6.3 / §12 / §17. Matched case-insensitively, substring match, against both
@@ -151,15 +155,31 @@ def coerce_issue(
     data["missingInfo"] = strip_forbidden_missing_info(data.get("missingInfo") or [])
     data["missingInfo"] = data["missingInfo"][:max_missing_info]
 
+    scope_probe = " ".join(
+        part for part in (data["description"], raw_utterance) if part
+    ).strip()
+    has_scope_evidence = has_service_scope_evidence(data["description"]) or (
+        bool(raw_utterance) and has_service_scope_evidence(raw_utterance)
+    )
     has_domain_evidence = _has_helpdesk_domain_evidence(data["description"]) or (
         bool(raw_utterance) and _has_helpdesk_domain_evidence(raw_utterance)
     )
-    if not data["isIT"] and has_domain_evidence:
+    # Service-directory / alias evidence vetoes NOT_IT. Complete catalog or
+    # doc/process queries become READY+KNOWLEDGE; do not force NEED_MORE_INFO
+    # for self-contained seat / contact-form lookups. Ambiguous non-catalog
+    # domain signals still ask for system context.
+    if not data["isIT"] and (has_scope_evidence or has_domain_evidence):
         data["isIT"] = True
-        data["readiness"] = "NEED_MORE_INFO"
         data["route"] = "KNOWLEDGE"
-        data["missingInfo"] = data["missingInfo"] or ["請確認您希望查詢的系統與處理面向。"]
         data["faqKey"] = None
+        if has_scope_evidence and is_complete_service_scope_query(scope_probe):
+            data["readiness"] = "READY"
+            data["missingInfo"] = []
+        else:
+            data["readiness"] = "NEED_MORE_INFO"
+            data["missingInfo"] = data["missingInfo"] or [
+                "請確認您希望查詢的系統與處理面向。"
+            ]
 
     if not data["isIT"]:
         data["readiness"] = "NOT_IT"
@@ -170,6 +190,18 @@ def coerce_issue(
         if _is_known_dazhou_issue(data["description"]):
             data["readiness"] = "READY"
             data["missingInfo"] = []
+
+        # Catalog scope hits that arrived already marked isIT but NEED_MORE_INFO
+        # (or NOT_IT readiness) for a complete doc query should still normalize.
+        if (
+            has_scope_evidence
+            and is_complete_service_scope_query(scope_probe)
+            and data["readiness"] in {"NEED_MORE_INFO", "NOT_IT"}
+        ):
+            data["readiness"] = "READY"
+            data["missingInfo"] = []
+            if data["route"] == "NOT_IT":
+                data["route"] = "KNOWLEDGE"
 
         if data["readiness"] == "NOT_IT":
             data["readiness"] = "READY"
@@ -201,6 +233,9 @@ def postprocess_issues(
 
     allowed_faq_keys = set(faq_keys)
     coerced: list[Issue] = []
+    # Prefer utterance-level scope/domain evidence only on single-issue turns so
+    # a seat alias in a mixed message does not veto NOT_IT on unrelated issues.
+    utterance_for_coerce = raw_utterance if len(truncated) == 1 else ""
     for index, issue in enumerate(truncated, start=1):
         coerced.append(
             coerce_issue(
@@ -208,7 +243,7 @@ def postprocess_issues(
                 new_id=index,
                 allowed_faq_keys=allowed_faq_keys,
                 max_missing_info=max_missing_info,
-                raw_utterance=raw_utterance,
+                raw_utterance=utterance_for_coerce,
             )
         )
 

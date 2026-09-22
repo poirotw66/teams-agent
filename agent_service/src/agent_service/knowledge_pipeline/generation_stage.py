@@ -384,7 +384,7 @@ async def generate_grounded_answer(
     model: BaseChatModel | None = None,
     include_retrieval_evidence: bool,
 ) -> KnowledgeResult:
-    from .source_roles import filter_results_for_generation
+    from .source_roles import SourceRole, assign_source_roles, filter_results_for_generation
 
     query = str(getattr(state, "resolved_issue_query", "") or "")
     results = filter_results_for_generation(
@@ -394,8 +394,6 @@ async def generate_grounded_answer(
     )
     if not results:
         return host.no_answer()
-    from .source_roles import SourceRole, assign_source_roles
-
     roles = assign_source_roles(
         query=query,
         results=results,
@@ -437,7 +435,7 @@ async def generate_grounded_answer(
         counter=counter,
         execution_context=execution_context,
     )
-    return await _align_and_assemble(
+    assembled = await _align_and_assemble(
         host,
         response=response,
         answer=answer,
@@ -445,6 +443,65 @@ async def generate_grounded_answer(
         unique_doc_keys=unique_doc_keys,
         chunk_to_doc_idx=chunk_to_doc_idx,
         bundles=bundles,
+        answer_model=answer_model,
+        counter=counter,
+        execution_context=execution_context,
+        include_retrieval_evidence=include_retrieval_evidence,
+        resolved_issue_query=query,
+    )
+    if assembled.found:
+        return assembled
+
+    # Optional single-doc retry: when multi-doc packing produced an empty /
+    # ungrounded wipe but a clear PRIMARY remains, regenerate on that doc alone.
+    primary_results = [
+        result
+        for result in results
+        if roles.get(host.document_key(result), SourceRole.PRIMARY) == SourceRole.PRIMARY
+    ]
+    primary_keys = {
+        host.document_key(result) for result in primary_results if host.document_key(result)
+    }
+    all_keys = {host.document_key(result) for result in results if host.document_key(result)}
+    if len(all_keys) <= 1 or not primary_keys or primary_keys >= all_keys:
+        return assembled
+
+    narrow_results = [
+        result for result in results if host.document_key(result) in primary_keys
+    ]
+    narrow_unique, narrow_chunk_map, _ = build_chunk_document_maps(
+        narrow_results,
+        document_key=host.document_key,
+    )
+    narrow_context, narrow_markers, narrow_contents, narrow_bundles = (
+        _prepare_generation_context(
+            host,
+            state,
+            narrow_results,
+            narrow_chunk_map,
+            execution_context=execution_context,
+        )
+    )
+    response, answer, answer_model = await _invoke_with_optional_escalation(
+        host,
+        state=state,
+        results=narrow_results,
+        answer_model=answer_model,
+        context=narrow_context,
+        marker_to_chunk_ids=narrow_markers,
+        chunk_content_by_id=narrow_contents,
+        bundles=narrow_bundles or [],
+        counter=counter,
+        execution_context=execution_context,
+    )
+    return await _align_and_assemble(
+        host,
+        response=response,
+        answer=answer,
+        results=narrow_results,
+        unique_doc_keys=narrow_unique,
+        chunk_to_doc_idx=narrow_chunk_map,
+        bundles=narrow_bundles or [],
         answer_model=answer_model,
         counter=counter,
         execution_context=execution_context,

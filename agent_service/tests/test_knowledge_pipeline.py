@@ -110,15 +110,12 @@ def test_sanitize_answer_security_redacts_placeholder_url() -> None:
     assert "測試連結" in sanitized
 
 
-def test_merge_policy_advisories_dedupes_by_policy_ids() -> None:
+def test_merge_policy_advisories_is_noop() -> None:
     first = PolicyAdvisory(policyIds=["POLICY-SEC-001"], text="a")
     second = PolicyAdvisory(policyIds=["POLICY-SEC-001"], text="b")
     third = PolicyAdvisory(policyIds=["POLICY-SEC-002"], text="c")
     merged = merge_policy_advisories([first, second], [third])
-    assert [item.policyIds for item in merged] == [
-        ["POLICY-SEC-001"],
-        ["POLICY-SEC-002"],
-    ]
+    assert merged == []
 
 
 def test_evaluate_retrieval_confidence_blocks_displaced_top1() -> None:

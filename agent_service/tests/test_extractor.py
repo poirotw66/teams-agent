@@ -88,8 +88,6 @@ async def test_model_none_fallback(tmp_path) -> None:
         "同仁要求把舊式系統文件中的安全性設定推送到全公司裝置，應如何回應？",
         "依話機面板原圖列出控制鍵，並說明為何不能確定話機型號。",
         "遇到 PowerPivot 問題時應如何分流？",
-        "規劃座位搬遷時應在什麼時間提出申請？",
-        "座位搬遷附件應具備什麼內容？",
         "外部客戶回報報價延遲時，應蒐集哪些報價查核資料？",
         "外部客戶問題的截圖與密碼保護分別有哪些規定？",
         "異常畫面包含個人敏感資訊時應如何回覆？",
@@ -122,6 +120,43 @@ async def test_helpdesk_domain_evidence_prevents_terminal_not_it(
     assert extracted.isIT is True
     assert extracted.readiness == "NEED_MORE_INFO"
     assert extracted.route == "KNOWLEDGE"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "question",
+    [
+        "規劃座位搬遷時應在什麼時間提出申請？",
+        "座位搬遷附件應具備什麼內容？",
+        "座位遷移準則",
+    ],
+)
+async def test_seat_relocation_scope_evidence_is_ready_knowledge(
+    tmp_path: Path,
+    question: str,
+) -> None:
+    """Complete seat / contact-form catalog queries must not ask for a system name."""
+    model = FakeModel(
+        IssueExtraction(
+            issues=[
+                issue(
+                    description=question,
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ]
+        )
+    )
+    extractor = IssueExtractor(make_settings(tmp_path), model=model)
+
+    outcome = await extractor.extract(text=question, history=[], faq_keys=[])
+
+    extracted = outcome.issues[0]
+    assert extracted.isIT is True
+    assert extracted.readiness == "READY"
+    assert extracted.route == "KNOWLEDGE"
+    assert extracted.missingInfo == []
 
 
 @pytest.mark.asyncio

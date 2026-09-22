@@ -325,6 +325,18 @@ def test_procedure_step_coverage_detects_omitted_executable_steps() -> None:
     assert not answer_covers_procedure_steps(outline, steps)
     assert "intune_company_portal" in missing_procedure_steps(outline, steps)
 
+    otp_context = (
+        "首次登入需使用 OTP Key，請以 Google Authenticator 掃描 QR Code，"
+        "或點擊複製 OPT Key 後貼上設定金鑰。"
+    )
+    otp_steps = procedure_steps_in_text(otp_context)
+    assert "otp_key" in otp_steps
+    assert "qr_code_scan" in otp_steps
+    assert "authenticator" in otp_steps
+    assert query_asks_for_procedure("國金 CRM 的 OTP 要怎麼綁定？")
+    omit_qr = "下載 Google Authenticator 後輸入設定金鑰完成綁定。"
+    assert "qr_code_scan" in missing_procedure_steps(omit_qr, otp_steps)
+
 
 def test_visual_evidence_plate_coverage_requires_source_plates() -> None:
     from agent_service.knowledge import (

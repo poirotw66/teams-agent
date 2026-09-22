@@ -1,0 +1,419 @@
+{
+  "summary": {
+    "caseCount": 156.0,
+    "evidenceLabeledCaseCount": 116.0,
+    "recallAt4": 0.7275641025641025,
+    "precisionAt4": 0.7307692307692307,
+    "evidenceRecallAt4": 0.8879310344827587,
+    "evidencePrecisionAt4": 0.8879310344827587,
+    "recallAt5": 0.7275641025641025,
+    "recallAt10": 0.7275641025641025,
+    "recallAt20": 0.7275641025641025,
+    "mrrAt10": 0.7371794871794872,
+    "ndcgAt10": 0.7297400101172844,
+    "hitAt1": 0.7371794871794872,
+    "hitAt3": 0.7371794871794872,
+    "hardNegativeAccuracy": 0.9375,
+    "hardNegativeLabeledCaseCount": 16.0,
+    "aclLeakageCount": 0.0,
+    "forbiddenDocumentHitCount": 0.0,
+    "noAnswer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "truePositive": 40.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "inputCaseCount": 156.0,
+    "excludedMultiTurnCaseCount": 0.0,
+    "multiTurnCaseCount": 20.0,
+    "aclCoverageMode": "CORPUS_HAS_NO_GROUP_GATED_DOCUMENTS",
+    "layer": 3,
+    "liveModel": true,
+    "evidenceTokenBudgets": {
+      "cliOverride": null,
+      "configuredTokenBudget": 1200,
+      "effectiveTokenBudget": 1200,
+      "queryTier": null,
+      "trivial": 500,
+      "standard": 800,
+      "hard": 1200,
+      "usesQueryTier": true
+    },
+    "documentHitAt4": 0.9913793103448276,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 0.9913793103448276,
+    "candidateRecallAt24": 0.9913793103448276,
+    "rerankerHeadroomPp": 10.344827586206895,
+    "latencyMsP50": 2367.0280414808076,
+    "latencyMsP95": 3826.037173185614,
+    "latencyMsMean": 2565.7076348714045,
+    "fastPathRate": 0.08974358974358974,
+    "avgFacetCount": 0.07692307692307693,
+    "avgBatchEmbeddingMs": 545.105,
+    "embeddingMsP50": 403.5,
+    "embeddingMsP95": 830.0600000000001,
+    "sparseMsP50": 1.8,
+    "sparseMsP95": 4.415000000000001,
+    "denseMsP50": 7.9,
+    "denseMsP95": 22.1,
+    "fusionMsP50": 0.2,
+    "fusionMsP95": 0.6,
+    "searchTotalMsP50": 409.79999999999995,
+    "searchTotalMsP95": 851.2,
+    "batchEmbeddingMsP50": 473.57500000000005,
+    "batchEmbeddingMsP95": 808.1,
+    "facetGroupCounts": {
+      "facet0": 150.0,
+      "facet1": 0.0,
+      "facet2plus": 6.0
+    },
+    "facet0SearchTotalMsP50": 410.2,
+    "facet0SearchTotalMsP95": 852.4,
+    "facet2plusSearchTotalMsP50": 39.7,
+    "facet2plusSearchTotalMsP95": 61.7,
+    "approxCacheHitRate": 0.08974358974358974,
+    "answerAccuracy": 0.9551282051282052,
+    "singleTurnAnswerAccuracy": 0.9558823529411765,
+    "multiTurnAnswerAccuracy": 0.95,
+    "singleTurnCaseCount": 136.0,
+    "multiTurnScoredCaseCount": 20.0,
+    "citationPrecision": 0.9871794871794872,
+    "citationRecall": 0.9871794871794872,
+    "groundedness": 1.0,
+    "evidenceDropStages": {
+      "GENERATION_IGNORED": 11.0,
+      "SELECTION_OR_PACKING_DROP": 3.0,
+      "CANDIDATE_MISS": 1.0
+    },
+    "answerEvidenceRecallAt4": 0.9551282051282052,
+    "retrievalEvidenceRecallAt4": 0.9655172413793104,
+    "retrievalMsP50": 412.0,
+    "retrievalMsP95": 500.21000000000004,
+    "relevanceMsP50": 0.5,
+    "relevanceMsP95": 1668.5900000000001,
+    "generateMsP50": 1833.15,
+    "generateMsP95": 3558.5,
+    "totalMsP50": 2331.5,
+    "totalMsP95": 3832.0,
+    "llmCallsPerQuery": 1.5,
+    "inputTokensPerQuery": 4235.673076923077,
+    "outputTokensPerQuery": 343.6923076923077,
+    "costUsdPerQuery": 0.0015744567307692308,
+    "usageSourceCounts": {
+      "PROVIDER": 156
+    },
+    "queryTierCounts": {
+      "trivial": 72.0,
+      "standard": 40.0,
+      "hard": 44.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "ANSWER_OMISSION": 5,
+      "BAD_CITATION": 2,
+      "EVIDENCE_NOT_PASSED_TO_GENERATOR": 2
+    },
+    "failureCount": 9,
+    "split": "all",
+    "evalSet": "../data/eval/retrieval_eval_v3_blind.json",
+    "provenance": {
+      "datasetPath": "../data/eval/retrieval_eval_v3_blind.json",
+      "datasetHash": "7c36b301c78c7e8d67f628b4454480a567d7e3cdacc9daf89ed86eceddc6855c",
+      "commitSha": "2bb806b6a5405b082ced5fec84e17defbdcd15f3",
+      "freezeVersion": 4,
+      "model": "google_genai:gemini-3.1-flash-lite",
+      "agentModel": "google_genai:gemini-3.8-flash",
+      "answerModel": "google_genai:gemini-3.1-flash-lite",
+      "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+      "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "liveModel": true,
+      "releaseId": "release-713b5b02dfc2",
+      "region": null,
+      "knowledgeReleaseTenantId": "default",
+      "startedAt": null,
+      "completedAt": "2026-09-22T07:29:09.996615+00:00"
+    }
+  },
+  "provenance": {
+    "datasetPath": "../data/eval/retrieval_eval_v3_blind.json",
+    "datasetHash": "7c36b301c78c7e8d67f628b4454480a567d7e3cdacc9daf89ed86eceddc6855c",
+    "commitSha": "2bb806b6a5405b082ced5fec84e17defbdcd15f3",
+    "freezeVersion": 4,
+    "model": "google_genai:gemini-3.1-flash-lite",
+    "agentModel": "google_genai:gemini-3.8-flash",
+    "answerModel": "google_genai:gemini-3.1-flash-lite",
+    "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+    "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "liveModel": true,
+    "releaseId": "release-713b5b02dfc2",
+    "region": null,
+    "knowledgeReleaseTenantId": "default",
+    "startedAt": null,
+    "completedAt": "2026-09-22T07:29:09.996615+00:00"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-ans-07",
+      "query": "VPN 密碼到期了要怎麼處理？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼到期",
+          "改密碼"
+        ]
+      ],
+      "answer": "若您的 VPN 密碼到期，請依據您的筆電類型採取以下處理方式：\n1. 若為**內網型筆電**：請直接變更密碼，請勿前往金控入口網同步開機密碼 (AD) [S1]。",
+      "citations": [
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus VPN password expired | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='若您的 VPN 密碼到期，請依據您的筆電類型採取以下處理方式：\\n1. 若為**內網型筆電**：請直接變更密碼，請勿前往金控入口網同步開機密碼 (AD) [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-38",
+      "query": "VPN 密碼不對且不要保存密碼是什麼意思？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼不對",
+          "不要保存密碼"
+        ]
+      ],
+      "answer": "這是指在遇到 **Permission denied (-455)** 錯誤代碼時，系統提示的排解方式之一，代表當前輸入的密碼錯誤，請在登入時選擇不要勾選保存密碼的選項，以重新輸入正確密碼 [S1]。",
+      "citations": [
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for VPN常見Q&A問答 | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='這是指在遇到 **Permission denied (-455)** 錯誤代碼時，系統提示的排解方式之一，代表當前輸入的密碼錯誤，請在登入時選擇不要勾選保存密碼的選項，以重新輸入正確密碼 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-44",
+      "query": "筆電在內網但 VPN 仍異常怎麼查？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "內網筆電 VPN 連線問題",
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "內網筆電 VPN 連線問題",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "筆電",
+          "VPN"
+        ]
+      ],
+      "answer": "若您的內網型筆電已連線但仍無法進入內網，請依下列步驟排查：\n1. 請點選「中斷連接」後重新開機，並重新登入 **FortiClient VPN** [S1]。\n2. 若仍無法排除，請駐點工程師協助重新安裝 [S1]。\n\n若您遇到的異常為 **FortiClient** 連線後出現 Wi-Fi 網路瞬斷，請依下列步驟處理：\n1. 請中斷連接、重新開機、重新登入 [S1]。\n2. 請至「設定 > 網路和網際網路」，將 **Proxy** 設定全部關閉後重新連線 [S1]。\n\n若您遇到的是其他特定錯誤代碼（如 -455、-14 等）或訊息，請提供具體錯誤內容，以便確認對應的處理方式 [S2]。",
+      "citations": [
+        "內網筆電 VPN 連線問題|chk-doc-intranet-laptop-vpn-conn-adeb3187a7-a1a5b2fc0421ab69",
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 內網筆電 VPN 連線問題 | evidenceDrop=NONE facts=['NONE'] | answer_preview='若您的內網型筆電已連線但仍無法進入內網，請依下列步驟排查：\\n1. 請點選「中斷連接」後重新開機，並重新登入 **FortiClient VPN** [S1]。\\n2. 若仍無法排除，請駐點工程師協助重新安裝 [S1]。\\n\\n若您遇到的異常為 **FortiClient** 連線後出現 Wi-Fi 網路瞬斷，請依下列步驟處理：\\n1. 請中斷連接、重新開機、重新登入 [S1]。\\n2. 請至「設定 > 網路和網際網路」，將 **Proxy** 設定全部關閉後重新連線 [S1]。\\n\\n若您遇到的是其他特定錯誤代碼（如 -455、-14 等）或訊息，請提供具體錯誤內容，以便確認對應的處理方式 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-hn-02",
+      "query": "員工入口網密碼要去哪改？不要給我 AD 解鎖流程",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "金控入口網密碼變更方式"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名",
+        "金控入口網密碼變更方式"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "忘記密碼"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼與國泰金控網站帳密連動（並非 AD），請至國泰員工入口網站，點選「忘記密碼」進行修改 [S1]。若需進行密碼變更或忘記密碼設定，亦可於金控入口網首頁 UI 介面操作，步驟如下：\n1. 於金控入口網畫面 UI 選單點選「齒輪」。\n2. 選擇「設定我的連結」後進入「網站管理」。\n3. 勾選「密碼變更」與「忘記密碼」並儲存。\n4. 回到首頁 UI 介面即可找到「密碼變更」與「忘記密碼」選項進行設定 [S2]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|chk-doc-cteam-e-8813813da1-8e46657baf64cbc5",
+        "金控入口網密碼變更方式|chk-doc--f17b814091-7ccdd1c10a75921f"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Hard-negative: prefer target doc over adjacent doc | evidenceDrop=NONE facts=['NONE'] | answer_preview='國泰員工入口網的密碼與國泰金控網站帳密連動（並非 AD），請至國泰員工入口網站，點選「忘記密碼」進行修改 [S1]。若需進行密碼變更或忘記密碼設定，亦可於金控入口網首頁 UI 介面操作，步驟如下：\\n1. 於金控入口網畫面 UI 選單點選「齒輪」。\\n2. 選擇「設定我的連結」後進入「網站管理」。\\n3. 勾選「密碼變更」與「忘記密碼」並儲存。\\n4. 回到首頁 UI 介面即可找到「密碼變更」與「忘記密碼」選項進行設定 [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-05",
+      "query": "那密碼不是 AD 的話要去哪改？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "忘記密碼"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼與 AD 並非連動，若需修改密碼，請至國泰員工入口網站，點選「忘記密碼」進行修改 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|chk-doc-cteam-e-8813813da1-8e46657baf64cbc5"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=員工入口網登不進去 | multiTurn priorTurn='員工入口網登不進去' | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='國泰員工入口網的密碼與 AD 並非連動，若需修改密碼，請至國泰員工入口網站，點選「忘記密碼」進行修改 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-ver-04",
+      "query": "樹精靈無法登入跟超音樹閃退是不是同一份？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入"
+      ],
+      "selectedEvidenceTitles": [
+        "樹精靈AP無法登入"
+      ],
+      "expectedEvidence": [
+        [
+          "新版簽章元件",
+          "國泰期貨"
+        ]
+      ],
+      "answer": "不是同一份。樹精靈無法登入與超音樹閃退分別屬於不同的系統異常，且處理方式不同：樹精靈無法登入主要涉及網路環境檢查與系統連線設定調整 [S1]。",
+      "citations": [
+        "樹精靈AP無法登入|chk-doc-ap-1f8ba2b78c-28fad8992f2b9d0f"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Adjacent product docs discrimination. | evidenceDrop=SELECTION_OR_PACKING_DROP facts=['SELECTION_OR_PACKING_DROP'] | answer_preview='不是同一份。樹精靈無法登入與超音樹閃退分別屬於不同的系統異常，且處理方式不同：樹精靈無法登入主要涉及網路環境檢查與系統連線設定調整 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-scope-02",
+      "query": "「VPN常見Q&A問答」這份文件主要涵蓋什麼？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "錯誤",
+          "密碼"
+        ]
+      ],
+      "answer": "「VPN常見Q&A問答」文件主要涵蓋 VPN 連線時常見的錯誤代碼、異常情況及其對應的處理方式，並包含相關的截圖或附件說明 [S1]。",
+      "citations": [
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Named-source scope question | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='「VPN常見Q&A問答」文件主要涵蓋 VPN 連線時常見的錯誤代碼、異常情況及其對應的處理方式，並包含相關的截圖或附件說明 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-scope-03",
+      "query": "「資訊問題的通報格式」文件是在規範什麼？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "資訊問題的通報格式"
+      ],
+      "selectedEvidenceTitles": [
+        "資訊問題的通報格式"
+      ],
+      "expectedEvidence": [
+        [
+          "信件主旨格式",
+          "提問所需資訊",
+          "客戶帳號/ID"
+        ]
+      ],
+      "answer": "「資訊問題的通報格式」文件主要規範客服人員在處理資訊問題時，應遵循的信件主旨格式與提問所需資訊，以利問題通報與處理 [S1]。",
+      "citations": [
+        "資訊問題的通報格式|chk-doc--a5c4ab8ab8-8e6d6f7534b4ed4d"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Named-source scope question | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='「資訊問題的通報格式」文件主要規範客服人員在處理資訊問題時，應遵循的信件主旨格式與提問所需資訊，以利問題通報與處理 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-neg-03",
+      "query": "iPhone 收公司信應依哪份 Outlook 手冊，為何不能直接套用 Android 步驟？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "selectedEvidenceTitles": [
+        "行動裝置 Outlook 安裝手冊（Android）"
+      ],
+      "expectedEvidence": [
+        [
+          "Microsoft Authenticator",
+          "iOS"
+        ]
+      ],
+      "answer": "不能直接套用 Android 步驟是因為兩者在安裝流程、驗證方式及設定細節上存在平台差異，且 Android 版本包含 Intune 公司入口網站的安裝與登入步驟 [S1]。\n\n以下為 iPhone 設定步驟：",
+      "citations": [
+        "行動裝置 Outlook 安裝手冊（Android）|chk-doc-outlook-android-23bd5417ef-0491adf2ca76b276"
+      ],
+      "citationPrecision": 0.0,
+      "terminalReason": null,
+      "notes": "Negative constraint: platform-specific iOS handbook vs Android. | evidenceDrop=SELECTION_OR_PACKING_DROP facts=['SELECTION_OR_PACKING_DROP'] | answer_preview='不能直接套用 Android 步驟是因為兩者在安裝流程、驗證方式及設定細節上存在平台差異，且 Android 版本包含 Intune 公司入口網站的安裝與登入步驟 [S1]。\\n\\n以下為 iPhone 設定步驟：'"
+    }
+  ]
+}

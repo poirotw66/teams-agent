@@ -12,6 +12,7 @@ from .confirmation import (
 from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
 from .graph import user_context_from_identity
+from .service_scope_evidence import has_service_scope_evidence
 from .supervisor import ConversationSupervisorDecision
 from .turn_planner import (
     planned_issues_to_issues,
@@ -73,6 +74,11 @@ class ClarificationWorkflowMixin:
             return routing
 
         if decision.intent == "NON_IT":
+            # In-scope service-directory evidence vetoes high-confidence NON_IT
+            # short-circuit. Continue into the issue pipeline so retrieval (or
+            # a knowledge-miss) decides answerability — never claim「非 IT」.
+            if has_service_scope_evidence(request.message.text):
+                return routing
             return {
                 **routing,
                 "skip_issue_pipeline": True,

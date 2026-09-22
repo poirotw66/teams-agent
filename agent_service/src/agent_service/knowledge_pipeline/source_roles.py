@@ -4,7 +4,7 @@ Roles:
 - PRIMARY: strongest query-anchor overlap; must stay in context and citations
 - SUPPORTING: positive but weaker overlap; keep only when competitive
 - CONTRASTIVE: reserved for explicit contrast/negation queries
-- POLICY_OVERLAY: security advisories (handled elsewhere)
+- POLICY_OVERLAY: legacy synthetic advisories (stripped; out of knowledge scope)
 - INCIDENTAL: low/no overlap peripheral docs; drop before generation
 """
 
@@ -27,7 +27,13 @@ _ALIAS_HINTS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("蘋果", "iphone"), ("ios", "iphone", "蘋果")),
     (("公司信", "公司郵件"), ("outlook", "郵件", "信")),
     (("安卓", "android"), ("android", "安卓")),
+    # Portal password contrast queries often say「公司入口網站」not「員工入口網」.
+    (
+        ("公司入口", "入口網站密碼", "員工入口", "入口網密碼"),
+        ("員工入口", "cteam", "並非ad", "並非 ad", "金控網站帳密"),
+    ),
 )
+_SHORT_LATIN_NEGATED = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,3}$")
 
 
 class SourceRole(str, Enum):
@@ -63,9 +69,18 @@ _NEGATION_SPLIT_MARKERS: tuple[str, ...] = (
 def _negated_topic(query: str) -> str | None:
     """Extract the topic the user explicitly rejects (e.g. 不是功能無法點選那篇)."""
     text = query or ""
+    # Confirmation questions「是不是 AD」must not treat the embedded「不是」alone.
+    confirm = re.search(
+        r"是不是\s*([A-Za-z][A-Za-z0-9_./:-]{0,15}|[^\s，,。.!！?？]{1,16})",
+        text,
+    )
+    if confirm:
+        topic = confirm.group(1).strip("，,。 /／對吧嗎呢")
+        if len(topic) >= 1:
+            return topic
     patterns = (
         r"(?:不是|而非)\s*([^\s，,。.!！?？]{2,24}?)(?:那篇|那份|文件|流程|說明)?\s*$",
-        r"(?:不是|而非)\s*([^\s，,。.!！?？]{2,16})",
+        r"(?<![是])(?:不是|而非)\s*([^\s，,。.!！?？]{2,16})",
         r"不要給我\s*(.+?)(?:\s*$|[。.!！?？])",
         r"不要\s*([^\s，,。.!！?？]{2,24})",
         r"排除\s*([^\s，,。.!！?？]{2,16})",
@@ -83,8 +98,15 @@ def _negated_topic(query: str) -> str | None:
 def _positive_topic_prefix(query: str) -> str | None:
     """Topic stated before an explicit negation clause."""
     text = query or ""
+    if "是不是" in text:
+        prefix = text.split("是不是", 1)[0]
+        prefix = re.sub(r"[，,。.\s]+$", "", prefix).strip()
+        return prefix or None
     for marker in _NEGATION_SPLIT_MARKERS:
         if marker not in text:
+            continue
+        # Avoid splitting「是不是」on the embedded「不是」marker.
+        if marker == "不是" and "是不是" in text:
             continue
         prefix = text.split(marker, 1)[0]
         prefix = re.sub(r"[，,。.\s]+$", "", prefix).strip()
@@ -109,14 +131,42 @@ def _cjk_bigrams(text: str) -> list[str]:
     return bigrams
 
 
-def _matches_negated_topic(*, text: str, negated: str) -> bool:
+def _short_latin_token(text: str) -> str | None:
+    stripped = (text or "").strip()
+    if _SHORT_LATIN_NEGATED.fullmatch(stripped):
+        return stripped.lower()
+    return None
+
+
+def _title_about_short_latin(*, title: str, token: str) -> bool:
+    """True when a short Latin product token is a title subject, not a body aside."""
+    title_l = (title or "").casefold()
+    needle = token.casefold()
+    if not title_l or needle not in title_l:
+        return False
+    # Titles like「AD 帳號與系統解鎖」or「國金 CRM OTP 綁訂」are about the token.
+    return True
+
+
+def _matches_negated_topic(
+    *,
+    text: str,
+    negated: str,
+    title: str | None = None,
+) -> bool:
     """True when rejected topic appears in doc text, including interrupted titles.
 
     Contiguous substring fails on titles like ``外網 CRM 登入連線設定方式`` when
     the user rejects ``外網連線設定``; require strong CJK bigram / Latin overlap.
+
+    Short Latin rejects (AD / OTP) require title-level aboutness so contrast
+    phrases like「並非 AD」in an employee-portal FAQ do not demote the primary doc.
     """
     if not negated or not text:
         return False
+    short_latin = _short_latin_token(negated)
+    if short_latin is not None:
+        return _title_about_short_latin(title=title if title is not None else text, token=short_latin)
     if negated in text:
         return True
     compact_negated = _compact_cjk_text(negated)
@@ -144,6 +194,25 @@ def _matches_negated_topic(*, text: str, negated: str) -> bool:
     if len(bigrams) < 2:
         return False
     return coverage >= 0.6
+
+
+def _positive_topic_hits(*, title: str, blob: str, positive: str) -> bool:
+    """Fuzzy positive-topic match so aliases like 公司入口 ≈ 員工入口 still hit."""
+    if not positive:
+        return False
+    if (
+        positive in title
+        or positive in blob
+        or _compact_cjk_text(positive) in _compact_cjk_text(title)
+        or _compact_cjk_text(positive) in _compact_cjk_text(blob)
+    ):
+        return True
+    bigrams = _cjk_bigrams(positive)
+    if len(bigrams) < 2:
+        return False
+    title_hits = sum(1 for bigram in bigrams if bigram in title)
+    blob_hits = sum(1 for bigram in bigrams if bigram in blob)
+    return (title_hits / len(bigrams)) >= 0.4 or (blob_hits / len(bigrams)) >= 0.5
 
 
 def _doc_blob(
@@ -261,13 +330,13 @@ def _doc_overlap(
     positive = _positive_topic_prefix(query) if negated else None
     if negated:
         negated_hit = _matches_negated_topic(
-            text=title, negated=negated
-        ) or _matches_negated_topic(text=blob, negated=negated)
-        positive_hit = bool(positive) and (
-            positive in title
-            or positive in blob
-            or _compact_cjk_text(positive) in _compact_cjk_text(title)
-            or _compact_cjk_text(positive) in _compact_cjk_text(blob)
+            text=title, negated=negated, title=title
+        ) or (
+            _short_latin_token(negated) is None
+            and _matches_negated_topic(text=blob, negated=negated, title=title)
+        )
+        positive_hit = bool(positive) and _positive_topic_hits(
+            title=title, blob=blob, positive=positive
         )
         if negated_hit and not positive_hit:
             # Force INCIDENTAL even when retrieval score / Latin boost is high.
@@ -348,9 +417,13 @@ def _rescue_top_score_from_incidental(
     if negated:
         title = best.chunk.title or ""
         blob = f"{title}\n{best.chunk.content or ''}"
-        if _matches_negated_topic(text=title, negated=negated) or _matches_negated_topic(
-            text=blob, negated=negated
-        ):
+        negated_hit = _matches_negated_topic(
+            text=title, negated=negated, title=title
+        ) or (
+            _short_latin_token(negated) is None
+            and _matches_negated_topic(text=blob, negated=negated, title=title)
+        )
+        if negated_hit:
             return roles
     kept_scores = [
         float(result.score or 0.0)

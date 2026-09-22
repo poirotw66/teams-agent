@@ -71,6 +71,68 @@ def test_prefer_query_aligned_citations_keeps_single_source() -> None:
     assert kept == ["ad"]
 
 
+def test_prefer_query_aligned_citations_drops_dazhou_sibling_on_single_topic() -> None:
+    results = [
+        _result(
+            "first",
+            "大州首次使用設定",
+            "大州首次使用需完成網際網路選項設定、申請高權及安裝附加元件",
+        ),
+        _result(
+            "broken",
+            "大州系統_功能無法點選",
+            "功能無法點選時請檢查相容性檢視，部分設定需重新啟動",
+        ),
+    ]
+    kept = prefer_query_aligned_citations(
+        query="大州第一次登入要完成什麼？",
+        ordered_cited_doc_keys=["first", "broken"],
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["first"]
+
+
+def test_prefer_query_aligned_citations_drops_holdings_sibling_for_employee_portal() -> None:
+    results = [
+        _result(
+            "portal",
+            "國泰員工入口網、CTeam密碼、國泰e點名",
+            "國泰員工入口網密碼與國泰金控網站帳密連動（並非 AD），忘記密碼",
+        ),
+        _result(
+            "hold",
+            "金控入口網密碼變更方式",
+            "金控入口網畫面設定我的連結密碼變更忘記密碼",
+        ),
+    ]
+    kept = prefer_query_aligned_citations(
+        query="員工入口網密碼要去哪改？不要給我 AD 解鎖流程",
+        ordered_cited_doc_keys=["portal", "hold"],
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["portal"]
+
+
+def test_prefer_query_aligned_citations_keeps_multi_topic_pair() -> None:
+    results = [
+        _result("ad", "AD 帳號與系統解鎖 FAQ", "AD 帳號鎖定請自助解鎖"),
+        _result(
+            "portal",
+            "國泰員工入口網、CTeam密碼、國泰e點名",
+            "入口網密碼連動金控網站帳密",
+        ),
+    ]
+    kept = prefer_query_aligned_citations(
+        query="AD 與入口網密碼各屬哪個系統",
+        ordered_cited_doc_keys=["ad", "portal"],
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["ad", "portal"]
+
+
 def test_drop_ad_unlock_citations_for_crm_otp_query() -> None:
     from agent_service.knowledge_pipeline.generation_stage_result import (
         drop_ad_unlock_citations_for_product_query,

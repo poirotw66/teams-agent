@@ -12,6 +12,10 @@ from .graph import RagAgent
 from .knowledge_backends import KnowledgeBackendRouter
 from .knowledge_release import read_active_release_id, release_index_path
 from .retrieval import HybridIndex
+from .service_scope_evidence import (
+    configure_service_scope_from_release,
+    reset_service_scope_catalog,
+)
 from .settings import RagSettings
 from .source_refs import hydrate_index_sources
 from .workflow import build_knowledge_service
@@ -151,3 +155,7 @@ def _install_index(
     app.state.knowledge_release_id = release_id
     app.state.knowledge_index_source = "portal_release" if release_id else "bundled_index"
     app.state.agent = new_agent
+    if release_id:
+        configure_service_scope_from_release(release_dir, release_id)
+    else:
+        reset_service_scope_catalog()

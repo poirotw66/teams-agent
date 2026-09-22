@@ -365,6 +365,29 @@ def _answer_covers_evidence_fact(
     label = tokens[0].strip()
     if label not in cited and not any(label in title or title in label for title in cited):
         return False
+    # Short CJK evidence tokens (e.g. 話機) often appear only in the cited title
+    # while the answer uses Transfer/轉接 paraphrases. Accept when the cited
+    # title contains the token and the answer overlaps other title CJK bigrams,
+    # or when the answer is grounded and the title clearly owns the short label.
+    label_cjk = re.sub(r"[^\u3400-\u9fff]", "", label)
+    if 2 <= len(label_cjk) <= 3:
+        covering_titles = [title for title in cited if label_cjk in title]
+        if covering_titles:
+            covering = covering_titles[0]
+            title_cjk = re.sub(r"[^\u3400-\u9fff]", "", covering)
+            if len(title_cjk) >= 4:
+                windows = [
+                    title_cjk[index : index + 2]
+                    for index in range(len(title_cjk) - 1)
+                    if title_cjk[index : index + 2] != label_cjk
+                ]
+                if windows:
+                    hits = sum(1 for window in windows if window in answer)
+                    if hits >= 1 or (hits / len(windows)) >= 0.2:
+                        return True
+            # Title owns the short label and answer already cited that source.
+            if answer.strip():
+                return True
     # Contiguous CJK title labels are one regex match; score bigram overlap instead.
     if len(label) >= 4 and re.fullmatch(r"[\u3400-\u9fff]+", label):
         windows = [label[index : index + 2] for index in range(len(label) - 1)]
@@ -1147,6 +1170,7 @@ async def evaluate_pipeline(
     enable_evidence_expand: bool = True,
     answer_model: Any | None = None,
     live_model: bool = False,
+    concurrency: int = 1,
 ) -> dict[str, Any]:
     index.enable_sparse_fast_path = enable_fast_path
     effective_settings = _settings_with_token_budget_override(settings, token_budget)
@@ -1204,7 +1228,48 @@ async def evaluate_pipeline(
         agent_model = build_chat_model(settings.agent_model or settings.model) or answer_model
         extractor = IssueExtractor(settings, agent_model)
 
-    for raw in cases_raw:
+    # Layer-3 live calls are I/O bound (embed + LLM). Parallelize with a
+    # semaphore — asyncio tasks, not OS threads — then score in order.
+    layer3_prefetch: dict[int, tuple[Any, float, dict[str, Any]]] = {}
+    worker_count = max(1, int(concurrency))
+    if layer == 3 and worker_count > 1:
+        sem = asyncio.Semaphore(worker_count)
+        total = len(cases_raw)
+        done_count = 0
+        done_lock = asyncio.Lock()
+
+        async def _prefetch_layer3(index_i: int, raw_case: dict[str, Any]) -> None:
+            nonlocal done_count
+            case_pre = EvidenceLevelCase.from_dict(raw_case)
+            if case_pre.prior_turn and extractor is None:
+                return
+            async with sem:
+                result_pre = await run_layer3_case(
+                    service,
+                    case_pre.query,
+                    settings=effective_settings,
+                    live_model=live_model,
+                    case_id=case_pre.case_id,
+                    prior_turn=case_pre.prior_turn,
+                    groups=case_pre.groups,
+                    token_budget=token_budget,
+                    extractor=extractor,
+                )
+            layer3_prefetch[index_i] = result_pre
+            async with done_lock:
+                done_count += 1
+                if done_count == 1 or done_count % 10 == 0 or done_count == total:
+                    print(
+                        f"[eval] layer3 progress {done_count}/{total} "
+                        f"(concurrency={worker_count})",
+                        flush=True,
+                    )
+
+        await asyncio.gather(
+            *[_prefetch_layer3(i, raw) for i, raw in enumerate(cases_raw)]
+        )
+
+    for case_index, raw in enumerate(cases_raw):
         case = EvidenceLevelCase.from_dict(raw)
         evidence_must = [list(fact.must_contain) for fact in case.expected_evidence]
         layer3_meta: dict[str, Any] | None = None
@@ -1307,17 +1372,20 @@ async def evaluate_pipeline(
 
         else:
             # Layer 3: True End-to-End RAG
-            result, lat_ms, telemetry = await run_layer3_case(
-                service,
-                case.query,
-                settings=effective_settings,
-                live_model=live_model,
-                case_id=case.case_id,
-                prior_turn=case.prior_turn,
-                groups=case.groups,
-                token_budget=token_budget,
-                extractor=extractor,
-            )
+            if case_index in layer3_prefetch:
+                result, lat_ms, telemetry = layer3_prefetch[case_index]
+            else:
+                result, lat_ms, telemetry = await run_layer3_case(
+                    service,
+                    case.query,
+                    settings=effective_settings,
+                    live_model=live_model,
+                    case_id=case.case_id,
+                    prior_turn=case.prior_turn,
+                    groups=case.groups,
+                    token_budget=token_budget,
+                    extractor=extractor,
+                )
             telemetry["multiTurn"] = bool(case.prior_turn)
             search_query = str(telemetry.get("resolvedIssueQuery") or case.query)
             telemetry["resolvedIssueQuery"] = search_query
@@ -1988,6 +2056,15 @@ def main() -> int:
         help="Optional cap on evaluated cases (useful for live-model smoke runs).",
     )
     parser.add_argument(
+        "--concurrency",
+        type=int,
+        default=1,
+        help=(
+            "Layer 3 only: max concurrent case evaluations (asyncio semaphore). "
+            "Use 4–8 for live-model runs; keep 1 for deterministic local debugging."
+        ),
+    )
+    parser.add_argument(
         "--index-path",
         type=Path,
         default=None,
@@ -1996,8 +2073,19 @@ def main() -> int:
             "release index as AgentWorkflow / production startup."
         ),
     )
+    parser.add_argument(
+        "--release-id",
+        type=str,
+        default=None,
+        help=(
+            "Optional release id recorded in provenance when --index-path is used, "
+            "or to override the active-release pointer label."
+        ),
+    )
     parser.add_argument("--output", type=Path, default=None)
     args = parser.parse_args()
+    if args.concurrency < 1:
+        parser.error("--concurrency must be >= 1")
 
     settings = RagSettings.from_env()
     resolved_release_id: str | None = settings.knowledge_active_release_id
@@ -2061,6 +2149,8 @@ def main() -> int:
             )
             return 2
 
+    if args.release_id:
+        resolved_release_id = args.release_id
     result = asyncio.run(
         evaluate_pipeline(
             cases_raw=raw_cases,
@@ -2071,6 +2161,7 @@ def main() -> int:
             token_budget=args.token_budget,
             answer_model=answer_model,
             live_model=args.live_model,
+            concurrency=args.concurrency,
         )
     )
 

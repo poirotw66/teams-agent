@@ -614,10 +614,10 @@ def test_build_response_hides_policy_overlay_from_user_facing_text():
     built = build_response(issues=[issue], results=[result], settings=make_settings())
 
     assert "[S1]" in built.text
-    assert "向權責單位確認" in built.text
     assert "請調整 IE 信任的網站設定" in built.text
     assert "POLICY-SEC-003" not in built.text
     assert "系統資安政策提醒" not in built.text
+    assert "向權責單位確認" not in built.text
     assert [citation.chunkId for citation in built.citations] == ["chunk-1"]
 
 
