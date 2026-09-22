@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:6320bc26dca7e31371b24392737f419fd720e1dba96cc84954aa0a28273ebed7",
+  "pageVersion": "sha256:a3a7e7df8c7e9e7eb6a828dd9fc8aba553b7f74341746b799ab3fc57757b716d",
   "claims": [
     {
       "id": "claim_228c94f1da1443b3ae06cbaaddd7affb",
       "statement": "Adapter tests and Agent Service tests are separate pytest projects. The documented commands run agent_service/tests and then the root tests.",
       "evidence": [
         {
-          "resource": "repo://agent_service/pyproject.toml#L63-L65",
-          "version": "repo-lines-v1:sha256:05de825dad5b281756059b817c02cbceee859227c8f4550d4ef455a100b87937:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTBiYjUyNzdiM2M1ZDgyOGQxM2UxMDg4M2E4NTE0NmNiMmZiOGEwYzJjMDAwZjBjNTRjYzk2YmEwZGY3MDA1OSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNzZjMTkxYjNmM2NjM2M4ZjJmMmEwZTk1MWY1ZDU0NWVlYzE5OTk0MzZmNGNmY2U4NmRjZmU1ODU2ODBkMzdkZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGI0NWQ1Yzc5ZjE4Njg2OGNmMTg0M2Y4ZjRhZDNiMGIxYmEyZDI3MDZmMDA5MTcwMTliMjk5NmY4MGRiYmI0NiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2U3NmIzZTliNjkzMDk2MWIwNjdkNjYwYTFiZmZmNjcyOGY4N2JjMjVhZDYyNmJkMDg3NjJkYmY4Y2EyZGFjYSJ9"
+          "resource": "repo://agent_service/pyproject.toml#L84-L86",
+          "version": "repo-lines-v1:sha256:82982065fc69775e2e41ec5d44bcad76534a97392b066d20e9fdf64d31c2fa4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYmM5M2YxMzY4ZWNiYjNmN2Y3NDJiNjI0ODBhMjc5ZmIyNTE1YjcwODZiMmM0YzE4YTgzNzFjMWQwZjNiN2YyZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDNhMzY2OTNlNzRlZGJmOTk2M2I5NTM0MTk2ODI0NGFhYmRiYTcwNzE3MmU5YmJhNjg0ZGY5NzkwN2JhMzk1NCJ9"
         },
         {
           "resource": "repo://docs/poc-acceptance-checklist.md#L8-L12",
           "version": "repo-lines-v1:sha256:067305a995ed0dae05e8f52497ce781780194d876aadf92deb0143ddca249089:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ViNzAyNTc1OTNkYTA2ZjY4MmEzZGRkYTU0YTlkMjYwZDRmYzUxNGY2NDUyMzdmNWNhNzRiMDhmOGRhNjFhNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODQ2YzQ1ODRlZDg2YTI1ZDU2ZjkyOWMwYzcwYjcyODM4YjY3MmZkNzNmNjFhNzYxYmE2NzdkNjllMTMyMzRlZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjFkNmQ3YjRiNjg2YTEzYzVkMGM3NmJiMWIyYTJkZTRlYWU3OWIwMzQ2Y2ZhNzYwMmRlMzEyYzA3NDhiZTMzZCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMmY0NzkyNjhjODcyMGIxYjAwYzc0ZWVlYjkyMzlmNTQwZjg0MTY4MDUyN2YxYWEyNmMyMjI0YTc3MzllOTFkYyJ9"
         },
         {
-          "resource": "repo://pyproject.toml#L38-L40",
-          "version": "repo-lines-v1:sha256:82982065fc69775e2e41ec5d44bcad76534a97392b066d20e9fdf64d31c2fa4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjU1MTBkNjBjZjVkZGJkOWY1ZGJlNDNmZGUwYTg1NWY0OWFkMGNlODY3ZjBhYWFiOWYyOTUyNDU1MjQwNTMwMCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDNhMzY2OTNlNzRlZGJmOTk2M2I5NTM0MTk2ODI0NGFhYmRiYTcwNzE3MmU5YmJhNjg0ZGY5NzkwN2JhMzk1NCJ9"
+          "resource": "repo://pyproject.toml#L48-L50",
+          "version": "repo-lines-v1:sha256:82982065fc69775e2e41ec5d44bcad76534a97392b066d20e9fdf64d31c2fa4c:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODY3NmU2NDE0NjVhNjU1MWU5ZTljZmZkN2ZhYTFlNmE0MmY5YjcyNDgwOTgxM2M5MDNkN2VkY2I1MmYzMDA2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDEwODVhZDA5MDQyNTcxMWFkYjRmMTVmMjhlMjVjMTcxMDc5MmMxZDQ1ZGE3Mzk0ZWU5MTJlMDM4MTkwNDU5MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMzlkOTI1YTYwMTlkOWVhOTZlZjQ1NDUzNjMwOWNmM2ZmZmUzY2IyMDJmM2EwNzZkNjk2ZWZlNmQwMWEwYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDNhMzY2OTNlNzRlZGJmOTk2M2I5NTM0MTk2ODI0NGFhYmRiYTcwNzE3MmU5YmJhNjg0ZGY5NzkwN2JhMzk1NCJ9"
         }
       ]
     },
@@ -57,10 +57,32 @@
           "version": "repo-lines-v1:sha256:d8cb62af22063eaae1d147cdd6c4b4840591f144023dd637f91b0ff45f14e1e4:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjQzYzQ1ZmRjMDc1YmY3M2U3NmM4NjU0YThhZmQwYTc3ZmRjYmZjNDA4NmEzOTM2NjAwOTcwMGEzNzVlN2UxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODlhOWZmYzc1MjAwNjFlOGE5YmRiMDg0YzA0ZjgyOTgxMTI2NTZiMjMxYjkwMmRmMmU4OTRlODk4MWRmNzhkZiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDJhMjU0Y2RkYmFkYmU5NzE1ZmFlY2Y0MzQyNmI3NGUwNTVhYTAwNjE5YjdmYTFmZGM2OGEwMWJkMjBlOGI1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNjFhNjg0YjM3NDllNGI5YjRjMTI5Nzg5NTY3Yzc2MjdjNzI5NjAyYmQyNDY4YzAzMGM1MjQ4N2U1Yzg0MDdiNCJ9"
         }
       ]
+    },
+    {
+      "id": "claim_854d1b6bbbf74e76a046bd2dabfbd25f",
+      "statement": "Knowledge control-plane regressions are anchored by sync acceptance tests, GCS reload-syncs-first coverage, and the console Sync Now helper unit tests.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/tests/test_knowledge_gcs_reload_syncs_first.py#L1-L4",
+          "version": "repo-lines-v1:sha256:5944822c4df8aa5f28b0ec0fcc4e91fc766703a600f2afef47a68822b9feb2b1:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTVmYWNhOTFjZjMwYmRjODM0MmIzN2U5ZjJlOTJhODk5NDcwOWVjMDFkMGFhOTFiYjY5NTZkMzZjMGQ4YzYyOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiN2ViNzAyNTc1OTNkYTA2ZjY4MmEzZGRkYTU0YTlkMjYwZDRmYzUxNGY2NDUyMzdmNWNhNzRiMDhmOGRhNjFhNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYWE5MDg2NzNkZTc2YWFlMzI1M2Y4MTI0NWQ5MGU0MTIyNDM0YmJiMjUwMTg5NDhlMDE1Y2I5YWI5YzAzMjU4OCJ9"
+        },
+        {
+          "resource": "repo://agent_service/tests/test_knowledge_gcs_reload_syncs_first.py#L40-L45",
+          "version": "repo-lines-v1:sha256:8f00dcd565ce97fe65c67dc9ef233695c1101bbfe9bd22585f84e4fe8bc0a6bb:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZDQ2ZmEwMTNjN2NmOWE1NjEzYjZmNTc3MTIxMGY1NWVkNDQ0NDg1Y2I1NjZiMmU0YWNhNTJjMTM1NWI5MmVhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGFiYzE5MGEwZjg4MWEwMzEzYTM4ZTFjMzQ3NGMxNzY2ZDljYjcyNTY4NGE4N2YyMTg1YmU2YWMxZDdlOTIwMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNTViMDljMGI3M2FiYjY4NDFlMTgwOGI4NTQyODM5YTY1ODU4OTAwYTZhY2NkMWI4ZGEyNzJiYjA4NmY3NjBlNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmJkNTJiMGFlZDQxMDYyYzhmZmQ0ZTNjYmQ5YjRiZjM3ZjI3MzE2NTY5ZjU5YmNmODQ1MTI1YzcxODE2YjI0NyJ9"
+        },
+        {
+          "resource": "repo://agent_service/tests/test_knowledge_release_sync_acceptance.py#L66-L70",
+          "version": "repo-lines-v1:sha256:d479ae066ac48cff7a3e687baa6cacfc5a83f46fcf570b0b8ae6d73094f1ccae:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYmI2MDZlNzI0ZTU2Yzc2MTkxYzIyOWE1MDc1NGFkY2FhM2RlN2NhY2NkZGUxMjcwMzJkNzBmMDExMDk4YWY3MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMDFmYjdiYmU1YjZlZTc4MWI1OTQ4MGY0NWYwZTAzMzMxNjE2NTQwYTU5ZDY3NDJjMmNiZjdiYTI1OWY3ZmQ2NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDdmYmQyYmVmNzA3OTI0ZjU5Mzk1NjEzNTI5NWQxNjE3ZGUxNDMyMmE2YWU0MTBjOGU4ZGQxZTkzZDFjYWU2MyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDBkNWZlZTg0YjY2NmRjYmY2NzI2OWNjYWY2NDU5NDNmMjQyNTFiMDIwMDI5ZGM1YTI0MTUyY2QyMmIyZTI4ZCJ9"
+        },
+        {
+          "resource": "repo://console_frontend/src/features/knowledge/lib/syncLocalKnowledgeMirror.test.ts#L25-L35",
+          "version": "repo-lines-v1:sha256:6bf115c96e149a75255c40697d106f438939976f722212c93eccb38f54036a58:eyJzZWxlY3RlZExpbmVDb3VudCI6MTEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNiNGI2NGY2ZGJiODdmODU4NmIzMDYzMzE0M2NhMTkyNDFjY2QzNjQyNWFiZGYxMGQ1NTJjOGE4ODBjMmVjMDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQxMGU0NTliOGFiZWIzZmQxODE2ODE4NGJiNjI1ZTI3ZWMzNWNhMjM0NTQ4YTMxZmEwMDlkZTczMTQ3NzkyOTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjljYTQ4MDAyNmEyZGQxM2QyODljZWY1OTMxMDQyNGRlNGRlOGNiYTNiNzFmYjdmMjk1ZGJmMDVhOTdkMDczMzUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjFjZGQ4NGFlODJjODQxYTkwZjA4ZGRhMTlmNjFhZDM4Yjc3NjI0NTNhN2JkMWI1YmFkNDIyOTQ2NmY3M2I4OWMifQ"
+        }
+      ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-14T06:27:21.319Z"
+    "at": "2026-09-22T17:10:06.227Z"
   }
 }

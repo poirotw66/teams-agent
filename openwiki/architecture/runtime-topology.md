@@ -3,19 +3,29 @@ type: architecture
 title: Runtime topology
 description: Process boundaries, default ports, and call directions among the Teams adapter, Agent Service, AI Ops Console, Knowledge Portal, and supporting processes.
 tags: [architecture, ports, processes, teams]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-14T06:27:21.319Z
 sources:
+  - id: openwiki-source-16ddc0709266832daba50e28
+    resource: repo://agent_service/src/agent_service/knowledge_release_sync.py
+  - id: openwiki-source-26e5f04fe4ca52bd844900b2
+    resource: repo://agent_service/src/agent_service/knowledge_release.py
+  - id: openwiki-source-d921879dd91e318a90c7566d
+    resource: repo://agent_service/src/agent_service/lifespan_wiring.py
   - id: openwiki-source-cde372bc3fe9c7b85835a0eb
     resource: repo://agent_service/src/knowledge_portal/main.py
   - id: openwiki-source-5a7466d2024d71b2c73525f3
     resource: repo://services/pdf_converter/app/main.py
+  - id: openwiki-source-11164ff60d3496c610fdb78d
+    resource: repo://src/teams_agent/settings_env.py
+  - id: openwiki-source-00f5285c274a481599602f5c
+    resource: repo://src/teams_agent/settings_validate.py
   - id: openwiki-source-7053a919f2ff79ac83709efa
     resource: repo://src/teams_agent/settings.py
   - id: openwiki-source-d61d83066a37e33b8d45f791
     resource: repo://start.sh
-generated: { by: "cursor", at: "2026-09-14T06:27:21.319Z" }
+generated: { by: "cursor", at: "2026-09-22T17:10:06.227Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-22T17:10:06.227Z
 ---
 
 # Runtime topology
@@ -58,4 +68,8 @@ The console talks to the portal on `KNOWLEDGE_PORTAL_INTERNAL_URL`. `start.sh` s
 
 The PDF converter is an integration helper for the portal (`POST /api/v1/convert-pdf`). It is not part of the Teams message path. Production prefers the upstream converter image; the in-repo service is the contract shim and local fallback.
 
-Related: [Local runtime](/openwiki/operations/local-runtime.md), [Teams inbound messaging](/openwiki/workflows/teams-inbound.md), [Cloud deployment](/openwiki/operations/cloud-deployment.md).
+## Knowledge data plane
+
+Cloud formal knowledge is not stored on Agent Service disk. Firestore holds release state and the active-release pointer; private GCS holds immutable release artifacts (manifest, index, sources, assets, catalog). When `KNOWLEDGE_RELEASE_STORE_MODE=GCS`, a background syncer mirrors the cloud active release into the local `knowledge_cache` directory (default under the Agent data dir). Playground and local Agent RAG load that verified snapshot; they do not query Firestore or GCS on each chat turn. Follow-cloud selection can hot-switch after a successful sync; pinned and local-sandbox selections keep their loaded release.
+
+Related: [Local GCS knowledge sync](/openwiki/workflows/local-gcs-knowledge-sync.md), [Knowledge release](/openwiki/workflows/knowledge-release.md), [Local runtime](/openwiki/operations/local-runtime.md), [Teams inbound messaging](/openwiki/workflows/teams-inbound.md), [Cloud deployment](/openwiki/operations/cloud-deployment.md).

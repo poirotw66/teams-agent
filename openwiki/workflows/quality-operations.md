@@ -3,19 +3,29 @@ type: workflow
 title: Quality and governance operations
 description: How a quality case moves from triage to observation, and how an evaluation gate can block a knowledge or FAQ activation.
 tags: [quality, evaluation, governance, gates]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-14T06:27:21.319Z
 sources:
-  - id: openwiki-source-1b16db647140da3b1a590f74
-    resource: repo://agent_service/src/agent_service/release_gate.py
+  - id: openwiki-source-7b79dfc8132f204fb40adf18
+    resource: repo://agent_service/src/ai_ops_backoffice/evaluation_domain/gate_checks.py
   - id: openwiki-source-52be07291e599ae2dc29a1e8
     resource: repo://agent_service/src/ai_ops_backoffice/evaluation_domain/gate_evaluator.py
-  - id: openwiki-source-d98846c5e7f8177afe1c1e46
-    resource: repo://agent_service/src/ai_ops_backoffice/governance_domain/service_helpers.py
-  - id: openwiki-source-2dc54d4cd70b0c353e4ad6bd
-    resource: repo://agent_service/src/ai_ops_backoffice/quality_domain/service.py
-generated: { by: "cursor", at: "2026-09-14T06:27:21.319Z" }
+  - id: openwiki-source-ed53850e6c355061ab149276
+    resource: repo://agent_service/src/ai_ops_backoffice/governance_domain/helpers.py
+  - id: openwiki-source-7e0a7daf9aa96937bfd92b87
+    resource: repo://agent_service/src/ai_ops_backoffice/quality_domain/case_lifecycle_ops.py
+  - id: openwiki-source-62ee4046051a356785a72ea9
+    resource: repo://agent_service/src/ai_ops_backoffice/quality_domain/case_ops.py
+  - id: openwiki-source-abf55aa4066270e53ad23e4d
+    resource: repo://agent_service/src/knowledge_core/release_gate.py
+  - id: openwiki-source-f4515829e97820b021f34d4d
+    resource: repo://console_frontend/src/features/knowledge/components/DocumentGovernanceActions.tsx
+  - id: openwiki-source-8add648ab1337cba4a3734fb
+    resource: repo://console_frontend/src/features/knowledge/components/KnowledgeWorkspaceBanner.tsx
+  - id: openwiki-source-9112d5f823ae8eb5419e1db2
+    resource: repo://console_frontend/src/features/knowledge/pages/ReleasesPage.tsx
+generated: { by: "cursor", at: "2026-09-22T17:10:06.227Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-22T17:10:06.227Z
 ---
 
 # Quality and governance operations
@@ -54,6 +64,12 @@ stateDiagram-v2
 
 The console is the operator surface. It does not replace the knowledge release path. A knowledge edit still has to go through review and publish before retrieval changes. See [Knowledge release](/openwiki/workflows/knowledge-release.md).
 
+## Knowledge workspace honesty and Sync Now
+
+Console-v2 shows `LOCAL_SANDBOX` versus `CLOUD_FORMAL` workspace banners so operators know whether they are editing a local test workspace or the formal cloud path. Switching workspace does not by itself enable formal publish (see [Identity and access](/openwiki/integrations/identity-and-access.md)).
+
+After a successful publish action, Document governance auto-runs Console Sync Now against the Console-connected Agent (local Playground when the BFF points locally). That is separate from Portal cloud `/admin/reload-knowledge`. Releases page surfaces stuck `RELOAD_FAILED` candidates that never became cloud-active and offers 「重試啟用」 for that Portal compensate path—not the same control as 「立即同步」 for the Console-connected Agent mirror. Lag banners warn 「可能落後雲端」 when cloud / mirrored / loaded diverge.
+
 ## Evaluation gate
 
 An activation checker, when wired, evaluates the candidate run against the gate policy before the active pointer moves. Blocking reasons include:
@@ -72,4 +88,4 @@ An activation checker, when wired, evaluates the candidate run against the gate 
 
 Prompt and model governance is a different store from the case file. Candidate prompt text and datasets are rejected if they contain secret material or injection markers. Production model credentials stay secret references, not copied values. A governance change that is not activated through the release gate does not by itself change what the agent answers.
 
-Related: [Verification](/openwiki/testing/verification.md), [Cloud deployment](/openwiki/operations/cloud-deployment.md).
+Related: [Verification](/openwiki/testing/verification.md), [Local GCS knowledge sync](/openwiki/workflows/local-gcs-knowledge-sync.md), [Cloud deployment](/openwiki/operations/cloud-deployment.md).

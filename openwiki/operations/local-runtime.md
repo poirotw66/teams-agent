@@ -3,15 +3,19 @@ type: operations
 title: Local runtime
 description: How start.sh launches the local stack, which files it requires, and which URLs mean the stack is usable.
 tags: [local, startup, readiness, configuration]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-14T06:27:21.319Z
 sources:
   - id: openwiki-source-5f5b95b3d6a215fa02ceb945
     resource: repo://.env.example
+  - id: openwiki-source-b03fddd110ee2dd693bc0987
+    resource: repo://agent_service/.env.example
+  - id: openwiki-source-35ea64099371cd2b6ea0c6bf
+    resource: repo://agent_service/src/agent_service/settings_env.py
   - id: openwiki-source-d61d83066a37e33b8d45f791
     resource: repo://start.sh
-generated: { by: "cursor", at: "2026-09-14T06:27:21.319Z" }
+generated: { by: "cursor", at: "2026-09-22T17:10:06.227Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-22T17:10:06.227Z
 ---
 
 # Local runtime
@@ -35,6 +39,10 @@ The script does not trust process defaults. It forces the local integration shap
 - The knowledge bridge is on unless `AI_OPS_KNOWLEDGE_BRIDGE_ENABLED` is set false. It will not start without a delegation secret.
 - Playground is a test client on port 3979. Dev Tunnel stays off unless `START_TUNNEL=true`.
 
+## Local GCS knowledge mirror
+
+Optional `agent_service/.env.knowledge-gcs.local` (gitignored) is sourced by `start.sh` when present and exports `KNOWLEDGE_RELEASE_*` into the Agent process. Typical FOLLOW_CLOUD knobs: `KNOWLEDGE_RELEASE_STORE_MODE=GCS`, bucket/prefix, tenant, `KNOWLEDGE_RELEASE_CACHE_DIR`, `KNOWLEDGE_RELEASE_SYNC_INTERVAL_SECONDS` (default 300), `KNOWLEDGE_RELEASE_SELECTION_MODE=FOLLOW_CLOUD`, and Firestore project/collections. Settings loaders in `settings_env.py` parse the same names. Sync runs in Agent lifespan wiring, not on each Playground turn. Console-v2 Sync Now proxies through Backoffice to the configured `AGENT_API_URL` admin sync endpoint.
+
 Services can be skipped with `START_MOCK_TICKET`, `START_PORTAL`, `START_PDF_CONVERTER`, `START_AI_OPS_BACKOFFICE`, and `START_PLAYGROUND`. Skipping the portal while leaving the bridge enabled leaves the console without its knowledge dependency.
 
 ## What ready means
@@ -52,4 +60,4 @@ The script waits, in order, for:
 
 Open `http://127.0.0.1:8092/` for operations and `http://127.0.0.1:3979/login` for chat. Do not open the Playground internal port. Do not mix `localhost` and `127.0.0.1`; the login cookie will not match. After login, the knowledge backend switch is Hybrid or Gemini File Search.
 
-Related: [Runtime topology](/openwiki/architecture/runtime-topology.md), [Verification](/openwiki/testing/verification.md).
+Related: [Runtime topology](/openwiki/architecture/runtime-topology.md), [Local GCS knowledge sync](/openwiki/workflows/local-gcs-knowledge-sync.md), [Verification](/openwiki/testing/verification.md).

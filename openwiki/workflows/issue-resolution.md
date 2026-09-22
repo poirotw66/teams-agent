@@ -3,9 +3,6 @@ type: workflow
 title: Issue resolution workflow
 description: How one user turn is loaded, split into IT issues, answered, clarified, or turned into a confirmed ticket without mid-graph resume.
 tags: [workflow, langgraph, faq, tickets]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-14T06:27:21.319Z
 sources:
   - id: openwiki-source-329931999eadfc6f0734811e
     resource: repo://agent_service/src/agent_service/settings.py
@@ -13,7 +10,10 @@ sources:
     resource: repo://agent_service/src/agent_service/workflow_issue_processing.py
   - id: openwiki-source-b87001a951cc6df431b62bbb
     resource: repo://agent_service/src/agent_service/workflow_subgraphs.py
-generated: { by: "cursor", at: "2026-09-14T06:27:21.319Z" }
+generated: { by: "cursor", at: "2026-09-22T17:10:06.227Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-22T17:10:06.227Z
 ---
 
 # Issue resolution workflow
@@ -48,7 +48,7 @@ For each issue, the order is fixed:
 
 1. A deterministic ticket intent of delete-denied or cancel returns that result and does not search.
 2. `CREATE` or `QUERY` ticket intent calls the ticket handler. Query returns the current user's tickets. Create still requires the confirmation path. The extractor marking a route as `TICKET` is not enough.
-3. `NEED_MORE_INFO` returns the missing questions and does not search.
+3. `NEED_MORE_INFO` runs a retrieval probe first. If the probe is answerable it returns that knowledge result; otherwise it returns the missing questions with `CLARIFICATION_REQUIRED` and does not invent an answer.
 4. Route `FAQ` loads the FAQ entry for the user's groups and returns the answer verbatim. No model rewrite. A miss or a disabled entry falls through to knowledge search. It does not fail the turn.
 5. Route `KNOWLEDGE` searches. Retrieval details are in [Retrieval backends](/openwiki/workflows/retrieval.md).
 6. Route `TICKET` without a `CREATE` or `QUERY` intent does not call the ticket API. It returns `NO_KNOWLEDGE`.

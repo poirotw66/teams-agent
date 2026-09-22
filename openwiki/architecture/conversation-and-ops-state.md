@@ -5,7 +5,7 @@ description: Where conversation context, tickets, operational events, and backof
 tags: [conversation, firestore, operations, persistence]
 verified:
   - by: openwiki/0.5.1
-    at: 2026-09-14T06:27:21.319Z
+    at: 2026-09-22T17:10:06.227Z
 sources:
   - id: openwiki-source-850a265ac2fd33fc481fc8d2
     resource: repo://agent_service/src/agent_service/conversation/factory.py
@@ -15,17 +15,17 @@ sources:
     resource: repo://agent_service/src/agent_service/conversation/helpers.py
   - id: openwiki-source-d5a4c9203e7ce8ed4c2cc4f1
     resource: repo://agent_service/src/agent_service/operations/runtime.py
-  - id: openwiki-source-2402eb5a382e5c31c06d6872
-    resource: repo://agent_service/src/agent_service/operations/settings.py
   - id: openwiki-source-dfb0ee5c00b9d1a4c3454d56
     resource: repo://agent_service/src/agent_service/operations/stores/firestore_store.py
   - id: openwiki-source-329931999eadfc6f0734811e
     resource: repo://agent_service/src/agent_service/settings.py
-  - id: openwiki-source-153a5a68ed320206caa2d743
-    resource: repo://agent_service/src/ai_ops_backoffice/settings.py
+  - id: openwiki-source-a3e534da9fe30fe3de9a9aa7
+    resource: repo://agent_service/src/ai_ops_backoffice/settings_env.py
+  - id: openwiki-source-d55d4514a99ed5fd0350e1f3
+    resource: repo://agent_service/src/operations_core/settings.py
   - id: openwiki-source-5320b5afa6d918cacd453fb5
     resource: repo://src/teams_agent/mock_ticket_service.py
-generated: { by: "cursor", at: "2026-09-14T06:27:21.319Z" }
+generated: { by: "cursor", at: "2026-09-22T17:10:06.227Z" }
 ---
 
 # Conversation and operations state
@@ -58,7 +58,7 @@ Related: [Issue resolution workflow](/openwiki/workflows/issue-resolution.md).
 
 ## Operational events
 
-`OPS_STORE_MODE` selects the primary operational-event store. The default is `FILE`, under `OPS_STORE_PATH` (`data/ops/events` when unset). `MEMORY` and `FIRESTORE` are the other primary modes. `FIRESTORE` writes append-only documents keyed by `event_id`; a second append of the same id is rejected.
+`OPS_STORE_MODE` selects the primary operational-event store. The default is `FILE`, under `OPS_STORE_PATH` (`data/ops/events` when unset). `MEMORY` and `FIRESTORE` are the other primary modes. `FIRESTORE` writes append-only documents keyed by `event_id`; a second append of the same id returns false and does not overwrite.
 
 BigQuery is not the primary store. It is an optional sink (`OPS_BIGQUERY_ENABLED`). A sink requires durable delivery. In production, that delivery path requires `OPS_STORE_MODE=FIRESTORE` and a Firestore journal. File mode can deliver through a local SQLite outbox, which is not shared across instances. The journal records the event before sinks run, so a sink failure does not drop the accepted primary write.
 
@@ -68,7 +68,7 @@ Related: [Quality and governance operations](/openwiki/workflows/quality-operati
 
 ## Backoffice working sets
 
-The AI Ops Console reads and writes file datasets under `OPS_DATA_DIR`, which defaults to `data/ops`. Those files are the local working set for FAQs, examples, quality cases, budgets, prompt candidates, governance, pricing rules, evaluation gates, and source records. They are not a second copy of the conversation transcript or the operational-event log. Point the directory with `OPS_DATA_DIR` or the per-store path variables when a deployment must not use the repository checkout.
+The AI Ops Console reads and writes file datasets under `OPS_DATA_DIR`, which defaults to `{data_dir}/ops` (typically `data/ops` beside the repo checkout). Those files are the local working set for FAQs, examples, quality cases, budgets, prompt candidates, governance, pricing rules, evaluation gates, and source records. They are not a second copy of the conversation transcript or the operational-event log. Point the directory with `OPS_DATA_DIR` or the per-store path variables when a deployment must not use the repository checkout.
 
 ## Tickets
 

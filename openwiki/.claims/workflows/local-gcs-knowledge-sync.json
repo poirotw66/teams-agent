@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "pageVersion": "sha256:1162737a47661b3f3e2367b3e3d972ef410c85fe88c6878daa8153e44be4ecfa",
+  "claims": [
+    {
+      "id": "claim_1a804f41149e43229333dc3b59ce3b6e",
+      "statement": "GCS knowledge mirrors use a tenant-scoped cache under KNOWLEDGE_RELEASE_CACHE_DIR/tenants/<tenantId>/releases/<releaseId>/, verified by manifest plus .qa_snapshot_verified, and sandbox releases must not live in that mirror tree.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release_cache.py#L1-L10",
+          "version": "repo-lines-v1:sha256:41be8e858467d320de74408d9746c3f69882a1065286996bf2c20506ff7b3ed7:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3YWZiMjQyZjY3MzcyMWY3ZDk0YmJkZmRkY2NjMGFmY2IwOGUzNDhkNTgxNjhjMGE2ODU4NzllNGM4NWM5ZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ3NWQ0NTg5ZTkxY2M4Y2I5NzQ4ODlkYWIwMWRlMTVkYjE1NzRjYTEwZWVjNzI5MGExMDliZjU4OGM5NGUwMWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjowLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0MzBhMDhmOTllNzNjOTUwNjE0MWUyY2IwZGY2Y2RkOTM2NWVkZGE5ZjQwY2IwZWUwY2IzYTdjZGRhYTFhMjIifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release_cache.py#L48-L86",
+          "version": "repo-lines-v1:sha256:3a4b7aeb146c289d0fc3e08e6145956fe9d990b111b7ce925fc6a6f80929ff5c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMyMmRjMWIxYTgyZThmYmNlN2ViMGQyOTI0ZWIyMTljOGUzYTA5OTMzODI3YjBmYTM4OGU0OTU1YjhlMjRiNGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNTAzYjgyNWViYjIwYmEzMzcxYjA2M2I4Y2NhY2VlYmExNzEwZDIwMmZjYjRlMGMyNjBiOTM5ZTNhMmY2NjkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhlMzI1ZTFhODM3OGQyMWQwY2NlYzYwMTNiY2JmMjIyODk5OTU3MWMyYzAxMDBiMDE4ZDQyYmEzMzViYzU3NDkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhNmMzNGRlNmY4NDM2Zjc1YjMyMWNjMDBhNWUwMTQzY2YxZGUxYmY3YTAxZGMzMmJlMmM2MWExNDM1ZDJmYTQifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c44cca4d06674c2c865aa5bd75ab9f32",
+      "statement": "KnowledgeReleaseSyncer sync_now is off the Playground Q&A path; FOLLOW_CLOUD/PINNED/LOCAL_SANDBOX control whether loaded may hot-switch, and alignedWithCloud is true only for FOLLOW_CLOUD with matching three-column IDs and complete runtime inventory.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release_sync.py#L1-L5",
+          "version": "repo-lines-v1:sha256:14de5c912f67fac8650ef8d8055772826df5471e26fc80039edc5270bb33cc66:eyJzZWxlY3RlZExpbmVDb3VudCI6NSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMjFjMjcxNGU4NTMyMTQyNzQwMWVjODJhNDZkZTU4MGZiMzdlM2M2OWIxMjk4OGZlZGFhMjdmMzYyMzczNzkwNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTgxYjc3ZDNjZDlkZTdiNTk2NDg4YjVjYjlhMzdmYjRhY2VkMzU3Zjc4ZWFmZDgyZjQ5MDU3ZDQ0YzI0N2VkMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjAsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZTNiMGM0NDI5OGZjMWMxNDlhZmJmNGM4OTk2ZmI5MjQyN2FlNDFlNDY0OWI5MzRjYTQ5NTk5MWI3ODUyYjg1NSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWFhZjc2MzdjYjZlN2U1ZGI4NWQ2MzQyNzQ2MDE0ZGYwNDFjY2Q1NThhOTIwYjI5ZWI2YWM3MTlkN2JhZjVjMiJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release_sync.py#L206-L222",
+          "version": "repo-lines-v1:sha256:ea4dbb77531c973ef295f8129fd853ac41e4fc886c32682b235d58a9f5e06e50:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJlYTQyNWVkZjU5MjEyYTJmMTJlYmNjNDlkMDkwNzI2MzQ3Y2E0MjBlY2JlMjE2MTk5NTZiN2Y1MWJlZmExMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgxYThlZmEzYjhiMGFmNmE1OTU2OGZkMjBiZTI1YjFhZjIyNzUzNmE1NGY3ZjRiZTY3YzM3NTMyNmIzMTQ5MWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjNkZWRmMDNkMDIwZmQ4YmYwNmNiNTRiN2JjMWY2NTQ3NzZhNjMxZDkwMTdjMDRmZmZiYTEzZDBkZWYyY2QzYzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI0Y2EyY2QwMGJkNjg0OTM2NWFlMTA2YzYxODExYmFlZGY1ODM1MzdjNTdjMTlkMmM5ZjRmMGNiZmFhMmQxYTYifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release_sync.py#L52-L55",
+          "version": "repo-lines-v1:sha256:22db5ca1e5398a8f92aec23d749b5d6ea5a06ac7cd149502a2faa5ea995db6a3:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMThjOTI3NWRlNDI1MWNjOWExOWIwYjA4MWZhODgwMzY1MDQ0YTVkNGE2ZTlhZWUyNzlmMjNhMzFlMWU4YTJhOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODExMDQ5NDE1MWY3YzAxZWMzNzg4MGY1NDRhN2VhZDY0ZWE1YTZiOTA5YmJlMTYxMDMwY2U2N2I4NTQxYzZiZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGYyMTE2YTE4ODA4MzMxNjAwZGY5MGIxY2RmNjRiODlkY2ExZjM2N2Y0ZTkzZDYwNjhhMzdiZTUzYWJhYmJkZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZjMxMTNjYTljNTI4MGEzOTIwNjAxYTNjOWVjNDBmNWFiNDVjMzY4NGExZDcxNjlkYTJlODM1NTU4YjFlYWZhZSJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release_sync.py#L92-L133",
+          "version": "repo-lines-v1:sha256:1c076ae7306cfb32423664b593c04aa644ab31446d8c1bc3659b0c465d1788b3:eyJzZWxlY3RlZExpbmVDb3VudCI6NDIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjVkMzY2Nzc3NjlmZGZiYWQ1MzVjZjFlMGJlOTU5NDc1YzU0ZWY4ZjlmNTgzZDRmYjZlMmU1Y2U3NzBhMTcwMmIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU2YjA0NDkxNDY5NzIyZTgzNjNhOTRlNDA0NDUzOGUwMTNhMmEyMTdlMzZiMWU1NjhiYTYwYWNiN2I0YzhmMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI5MTQxMTIyMjNiYzk2MzVjNWRjNGJiZDNmNTA0OWJhOTBkMzA3Y2I2NzYwYzE2YWM5M2NlNThiODFhMTI2YjAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjcwY2UzZjI0YWI0N2MyZjVhOWQzMzdmMzc3ZWQ4NTczZmE1NjU4NDA3NjQwMmYxYWYwNTRhM2RlZDYxOTQ2MmYifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_81f1126c5f8a4613ba8d541249abb8d6",
+      "statement": "Console Sync Now proxies ops.sync.write to the Console-connected Agent admin knowledge-sync endpoint and must not claim Playground parity on Agent unreachable 503, distinct from Portal cloud reload-knowledge.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/routers/agent_knowledge_sync_routes.py#L35-L49",
+          "version": "repo-lines-v1:sha256:d36cfcc63f7706545dbeeaa7601756adcce3e22f47f8a4c95468edce4d0bb03e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMjk3YzU4ZDcyNGQ4MDljOTE5MDYzZjU1NGM2MzBhY2NmYTU2MTAwMDE5NjI5YmNiNjA4MWIxMTVjOGE2ZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkNTk3ZmNhNzE1MmVmZTgzMTdiZjVlNzNiYzZlMGM5NWQyZmYxMmJlNDIwYTE0NGExN2M2OTRiNTgwYmY4NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhOWFmYWFkODVjNjNlZThhZTg5YzhiZWE2MWJjNzMzYjZlZGMxMTZlZTlhNTdiMDBkNWUxZDk4OWQ5ZjFmMjgifQ"
+        },
+        {
+          "resource": "repo://console_frontend/src/features/knowledge/components/KnowledgeSyncLagBanner.tsx#L22-L28",
+          "version": "repo-lines-v1:sha256:686028deafa23147fca22a7e2be831c6ff87756d5a9c64d7a44e1b0fa924ee33:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVkNWFiYWNhMjI2ODBhZTk1MzM2NzAwZGY3NjYzNjE5N2E3Y2I2YzAwNGY0Y2Q3OWFjMWIxZmQyZjBhYzRhNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODkwNmFkZDAyZGY5YzZlZTU4OGY5MmUwZWEyNThlN2Y0ZjU4MWY4NzUzZGM2NzcxNmMzYmZhNGVhNGE5ODhjNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNDI1MWFlMDkxNWVkOGY2MWY1MmVhNzA4MzA3YjJmYzNjZTU3MjBmNmE5NTVkNDk4ODgyMDY3OTNiYWM4NTMwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTIyYTg5OWVjM2FiMGM4NTA1ODgyM2VmMDZmMzE5YTE1YmNkNDVjNzAxZmNiMzE4YjQ0MTAwZGE4NzQ2MTllYSJ9"
+        },
+        {
+          "resource": "repo://console_frontend/src/features/knowledge/lib/syncLocalKnowledgeMirror.ts#L70-L93",
+          "version": "repo-lines-v1:sha256:6df8cacc06c345ea01ea5fcd45e409ececffe9343127e757a755f9c4f1d38378:eyJzZWxlY3RlZExpbmVDb3VudCI6MjQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ1ZDVhYmFjYTIyNjgwYWU5NTMzNjcwMGRmNzY2MzYxOTdhN2NiNmMwMDRmNGNkNzlhYzFiMWZkMmYwYWM0YTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlODI3ZGM2NzRiOGE3MWFmOWMxNjRiN2VkMWFmNTQ5ODI5NGZlYzZhNTcyMjQ0ZWU2OWU5ODhhMGE5YjA5MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjdkOWY4NjE0NzEzOGQ3OTc2MjljOTY5ZWM4NzQ1MDVjMzFkY2ViOWVmNTkxODk0NDcwMjdkMDMzZjQwM2I2NDEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjE0NmJmZGVjZmE3YTdjMjk3ZTBiYjllMDA0ODJmOTkzYTgwNWVjMGRlZThmYWM3MGIyZDVkNzc0N2RhNjU4MzIifQ"
+        }
+      ]
+    }
+  ],
+  "verification": {
+    "by": "openwiki/0.5.1",
+    "at": "2026-09-22T17:10:06.227Z"
+  }
+}

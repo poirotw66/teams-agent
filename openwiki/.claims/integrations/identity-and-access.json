@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:e421544066440ea6c5083052aabfd023e7dcc610c3ed6bba6ebda440f68f8599",
+  "pageVersion": "sha256:490d1a35f586b821ab5ee0dc3c26812b5da279b1d99f485a4895e1b929342864",
   "claims": [
     {
       "id": "claim_7ffdad6ab72f451ca0d27a0b8ec1ee8f",
@@ -35,12 +35,12 @@
       "statement": "Console ENTRA auth requires a bearer token validated for tenant, client audience, and issuer. Actor id is oid or sub. Signature validation cannot be disabled outside dev, test, and poc.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/auth.py#L46-L75",
-          "version": "repo-lines-v1:sha256:0c0a765d5032655c181866ca0bb64bb86c15f11612e8535d83cd40ba1267514c:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUyNmM4ZmU4YTg0NzBjN2ViNjE0Y2IxYzFjYWMzYzQzYjk0ZWNkMWQ5YjE3YmRkODU3MDE0MTdhMzJiNGQyNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk0MTg5NzYzM2YxNzY3NzkzODZkOGZhOTU4NjY1M2Q3OWJlYzZiYTVjMjZhNzE0ZDRhNDMwMzY3YjUxOGFjZTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkzNGM2OTMzMTc3YzhhMTg1ZmNkNzA0MzEyYjdhZmU2NTFkYTJjZjU0NmJjNzE5OTkyMGZlMmQ2NWFiZDMyNzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM3NWU5MjBjNzc5YTVkNzY1ZmJlYzNjOGM5NmI1Njk0N2JmYmJmODE3YmUyN2RlMTk4YjI1YTA2YTkwOTUwYWQifQ"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/auth.py#L46-L73",
+          "version": "repo-lines-v1:sha256:4e6bc9caf63c53374b8a75a63ca6971a4a69f7ec858ef930fa7b238919bd65ba:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc1MTI5YTA5ODUxMTM2YTQxNzI1MmM0MjRmM2Y3ZjIzMWZlZWZlYTc4OWExNzZjM2EwMGRiZGZmMTJhMjdlMjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkxZTFiOTMxZWYyYzA5MjRkOGM5MDVhYjcxZjg3Njc3NGNlZmY0MTQ5ZTY2YWNhM2Q4Y2I1YmVhYTEwMjFhODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg2MmU3ZjdjNmJjMTgyMjBjNmIyYTc0M2NjNmRkZDg4MjI5NThjYzU5ZWZlM2QzNTkxZmRjYjYwZTNjNWIxNTIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzNzFlYTUxNDU4YjM0ODgwZTYzYjMxNTZkYWYwMzgyMTM5MjQ4NmVkMTMyNTU0YjlkNmU2YjI2YTFhZmEzNDAifQ"
         },
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/entra_auth.py#L116-L155",
-          "version": "repo-lines-v1:sha256:76e98c28b459f1c5dc880c6131e69454381465e9138a41010f1228ba2d712b36:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg4MmNhY2M2ZDkwZWQ2YTM0YjZmN2RlOGEwOGExMDU0MDU1MTA1MDZiZTFiYWU5MDY4OGJkMWFhODhiNjVmOWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRiZGViYzc0YjRjYmQ2YjZkY2VkMDZkZWNmODIxNDY4YTIyNmU4NGY0OTVmNDU4MmZmODc2ODI4ZmM1ZGMzMmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjAzZWVkMTE3YjJhM2ZiY2ZlNWVjOGUzMmJjOTVmNWVjZWE2MjM3MzkzNDUxMjFlMDM1YjE5MGMxMmM4M2JhZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjY4NzE4NzIwZDFlMzI0MzNkYTEzZDBmZjE5ZmZiY2VmNTIwMWU1ZWM4MmUwMmM0YzM5N2ZkYWUzZjM0NDNkOWYifQ"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/entra_auth.py#L116-L160",
+          "version": "repo-lines-v1:sha256:27632398f95ca08cdd0837a10476c614e08c3668bc0b95c1dd74140da60af832:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZjOWVkZTE5OGE5ZTc4MmFjN2Q4OTYzMzJmZTdjZjg3NDZiZTg5ODM3OGZkNTQwNmM1N2RhMzMyNDY1NGMxNzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM0NGU5OGFhZmJmYzA0MzAzZWE5ODRiNGZmM2Y5MmU3MGZkYzRkNTk5OWE1Y2UxYmUzZWFiZjAwYWRiYmVhNjYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJlNzI1NzBmYzY0MTBmNTY5MmY3ZTFkZWFkODVlNzg3ZGNmYjI5MDIyMDhiYjY0YzdiZDA2ZDYwYTZiMDBiNmUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijc5Zjc4Yzc0N2U1M2M3N2U4YTg2ODE3Y2ZlM2ViZDg2NDllMmI2ZjIzM2EyZWQ1YmM5MzI5ZGMxODcxZjlhMGEifQ"
         }
       ]
     },
@@ -49,8 +49,12 @@
       "statement": "Header auth is a local shortcut. Outside dev and test it fails closed and requires ENTRA auth.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/auth.py#L77-L79",
-          "version": "repo-lines-v1:sha256:a1f3d27f9a3cd04db014c817df3ba387b9065b29525a0f2ff1e55cad3a2b5be5:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODdkMWEzMDRjMjBhN2EzMmU4YzE5MDRhMTUyMjZlZDQ2MGZhODQ2NWI4MjRlYmMzY2EzMzJmZmU3ZjNjODQ2ZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiZWZmZWY0M2RiMWNmZTg0NjBlMjJlNWRiYWU3ZDcyYzY2NTMxY2M3NWNlOTFkZmRjNmIxZGQ0M2Y4Y2U5NTgzMSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjk4ZmY4MjBlYjMwMjI2ZmJkMWIyZTIzMDIyMzlhOWE3MjFkMTAyNzM3ZDEzMTE0MDVlODYzNWRkYmY2MWJmMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiYjQzYWRjNTgxOTMzYzJiOWY5YTM4ZTc5YmVjODIzYjM1ZDU2OWE4N2VhYTRmMDgwNzg4OGIyY2E2YzFjYTQ0MyJ9"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/auth.py#L15-L28",
+          "version": "repo-lines-v1:sha256:01bb44e7b2913c0d67aac0fd77d8af30088349adfb987c316e7cba84ef71f15c:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiMDE3M2RhZDY4ZDgyOWZlNmU1NDY2OThhZjUyMTI2NWZjNzNmOGE5NTEwNTcyNGY2Y2Q4NzRlN2I2ZmQ2MjQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQ4OTNmNDBlMzc4MWViODk2YzgyZDA0NmEwODA2N2ExMWUzNWNkZjJmMWRmYWYyNmZlYTkwYjhkYjY2NzY0MTMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg1NDEyNzMwOWZkZTJiZWUxOWQzODY1MWRkOWU5ZmJiZmQzM2E5MGM2Yjc1ODk4NjY4MzM3N2U1YmNjNzUyOWUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwNDIxNzYyNTNhODVkNmZlYzhlN2IwNDliYzIxNjlhNTQ2N2JhZGU2MmUzYWI5MzdkYTU2N2Y4MGQ3N2VmNjAifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/auth_header.py#L23-L26",
+          "version": "repo-lines-v1:sha256:d2d526c945d4cf4322b6db0d36c9305850e9c43ffc7c90f95924d242f262a010:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMDU1ZjZhODkyYmUzZjgwZThmOGJmNThiZDUyOGNlZDRiZTUxMDExNzU3NDU4NTM4NjQ1NTBhNzU4MGQzODcwMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmE5ZjhjMmJjN2ExNDFhMDIyYWYzZmViOGFiNTAwOGVjMjU3NTdlZjI0YWNkMDQ5ZjUwODlhNzRiN2M5YWU4MSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2YzZWRkODFlZWYyYjFhNjZkOWM3Njg4YzU1MjcxMjM2MWNlMDdjNzRlZDk3Mzk0YjI2MDMwOGUxMTllOTAwNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMTRmYmE5YTcyZjU0ZTYzYTMzNzY3NWU2YjY0YjcxYTMxMDVmMTNlOGI4ODY5YjY3MDhhNTcwYjE2ZjYyOTU4NSJ9"
         }
       ]
     },
@@ -59,12 +63,12 @@
       "statement": "Portal review requires REVIEWER, MANAGER, or PLATFORM. Publish requires MANAGER or PLATFORM. A reviewer or manager cannot approve their own submission unless the workflow is relaxed or the actor is PLATFORM. AUDITOR is read-only.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/knowledge_portal/rbac.py#L100-L116",
-          "version": "repo-lines-v1:sha256:0fadb2450fcd4abc802589ad87007d8b1e317149e6985de5098e0e805b7eaf4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExYzk4N2NhMDkzN2RmOTE2YzYyNGRkMmQxY2U3Mjg3Zjk2MWUzZjc3MDFjZmMyNTk0YjJjZWM2NjU5ODg4YjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MTZjOTBhNGEyMTYyODIyNDYyZGVkMjQ0NmQ1NTU1NGJlMjc4MmVkODA1YzMxM2E5YjI1ODA0ZWMwNWNlMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxMzcwYTVlOTY3ZmEyMjNlYjEwMWE0NjQ3ZjQ5NjZjMmY1ZmUzNzcxNTcyNWNkZDAzODViYjg3N2FjMzM1NTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM0ZjkyM2E4YzFlZTMyODJkYWY5ODVjOGZmMGFhYmU1ZjExNGQzNzE4MmJkNjg2NDY0YTdmY2JhNWUzNmEyZmEifQ"
+          "resource": "repo://agent_service/src/knowledge_portal/rbac.py#L102-L118",
+          "version": "repo-lines-v1:sha256:0fadb2450fcd4abc802589ad87007d8b1e317149e6985de5098e0e805b7eaf4d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjExYzk4N2NhMDkzN2RmOTE2YzYyNGRkMmQxY2U3Mjg3Zjk2MWUzZjc3MDFjZmMyNTk0YjJjZWM2NjU5ODg4YjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2MTZjOTBhNGEyMTYyODIyNDYyZGVkMjQ0NmQ1NTU1NGJlMjc4MmVkODA1YzMxM2E5YjI1ODA0ZWMwNWNlMDQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQxMzcwYTVlOTY3ZmEyMjNlYjEwMWE0NjQ3ZjQ5NjZjMmY1ZmUzNzcxNTcyNWNkZDAzODViYjg3N2FjMzM1NTAiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1MTZjMzJiNWE3MzYwYjY1N2IyMmJjMjE2N2I5Nzk5MmI3OTY4MDMxMDYyNzMwOWQ3MzFhNDFlODZkNTQ5MTYifQ"
         },
         {
-          "resource": "repo://agent_service/src/knowledge_portal/rbac.py#L12-L37",
-          "version": "repo-lines-v1:sha256:c3b7057bbebad98e272fe7a239fcea5eab59822066b930c1b08c67d953dfe2b4:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNTEwODk1OTcyMTU4Nzc4YTJiMzhhZmRmODRkNTg1NzFmMDQwNmEyNzRjZjk1YjEwOGEyZmQxNDE0NDAxNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI0OTZjYWY1Mzk2NTI3OTYwZTVkZjMwOTI4NGUwZTQ0NzU5MDJmZDRhYmVlNmQ3NzdiOTkzMWRmMTdjNjY5YmUiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ZWU1MTdjNjU5ZmQxMTQ1OGFkZTJiOTg1YTRkNGM5Y2JjN2Q1NWIzNDA5NTM1ZTc3YTUxMzM3ZjMyZjJiZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI4NmFhMjU3ZTI1NzBjNWRmNzMxYjExYzQ2ODQxNGJhMGRlN2M3MDUwOTljNWRkMzlkYTA1MmU3YTRmNzM2ZmEifQ"
+          "resource": "repo://agent_service/src/knowledge_portal/rbac.py#L12-L23",
+          "version": "repo-lines-v1:sha256:6ab626ad94703777cc343dbec598cf4ad39f0a9e8941f7c7274a242cab4a184d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMzNTEwODk1OTcyMTU4Nzc4YTJiMzhhZmRmODRkNTg1NzFmMDQwNmEyNzRjZjk1YjEwOGEyZmQxNDE0NDAxNjAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRiODViZmY5MTkzODljOTlmMWRlY2IwMmZjOWQ1MGZiMzMwYTdhZmYzNjQ0Njg5MTFkZGMzZjlhNWJhYjc3NjQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY5ZWU1MTdjNjU5ZmQxMTQ1OGFkZTJiOTg1YTRkNGM5Y2JjN2Q1NWIzNDA5NTM1ZTc3YTUxMzM3ZjMyZjJiZWMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRkMjQ3MTliOTY5NzE3YzE5MDFlMDJjNTc0YWFkZDBkMjVkYTUyNTI1YWU4ZjY5OTcwMDhkMDdjNTM1Y2YyNTYifQ"
         }
       ]
     },
@@ -73,14 +77,42 @@
       "statement": "Document access denies missing actors, tenant mismatches, deleted documents, and unauthorized archived documents as not found so existence is not leaked. A revoked actor is forbidden.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/document_authorization.py#L61-L119",
-          "version": "repo-lines-v1:sha256:db46c9a961228837ddd2ed9ddf3fb0bbb3da6db4230e1bbd9e445c5f922a1d99:eyJzZWxlY3RlZExpbmVDb3VudCI6NTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE4NmU4NGJkZDY1YTE2MzJmMzhjZWQ2NTM0NDlkMDI2MGQwNTEyM2RhOTYyYmQ1YzBlZTFhMDliNTkxYmExZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU1MDMyZTk2NGQwOTMyMzUxZTVkMTg1MjY5MjgxYjE3MWEzYTA5YjA4YjI4NmU2NjFlYTQ3MDMyM2M4MmViNGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgwY2NmNTM4Y2YyNTU1MzBlZWZkM2I5N2MwMjFkMjk2ODIxNTgzNDFkY2RiY2E4ZWJjNjZmOWVkMWM4ZDU2ZDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlMzNlMDhlOGVmZWJjYzg5Yjc5NjlkMTBiMTg2ZGU5NzE5OWQ3ODQyYzY5NGRmZjVhZWJlNThkYjljOGQ2MTcifQ"
+          "resource": "repo://agent_service/src/operations_core/document_authorization.py#L180-L224",
+          "version": "repo-lines-v1:sha256:c1465a2ffc5ab6b29e2e620f63888f439334337e8e65099848a9c39b8ef65494:eyJzZWxlY3RlZExpbmVDb3VudCI6NDUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ2ODU1MDk1NTYzMzI0YjlmODE3MTM2NDYxZTJiN2FlYmIyZGM1NjIzMTQ5YjhhYzM5Mjg2MzExMmVjZGMzNTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjYxNGZjMGZkODgzMDQ1ODVlNGY0ODZhYWMyOTg5NjQwZTJiOGU2NjM0ZWZhZDcyMDBmZGMzZDJmNGU1ZTg4MjciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEwMDRlMzBhYjViNDE4YzMyMzllNzE4OWU2NmJmNjg3OGI0YWE2YjY1Zjc0YmUwNGFmOTM2YzAzZWEzM2Q2MjcifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/operations_core/document_authorization.py#L70-L121",
+          "version": "repo-lines-v1:sha256:7055cbc6bf59dac1377b2b0dcac39b7aec1392ad7c8354300b037f1d6c56c0f7:eyJzZWxlY3RlZExpbmVDb3VudCI6NTIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjlkNDJhZmIwN2FjYzYwMmQ0M2M1YTI0M2YzODc5MDM3NGJmNzc0MDlhZjEyMzc0MTRjYzRlMWZhMmI1MDhlZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhjYzRhN2QxY2M3OTZhYmEzZTQ2NzIzMzI3ZjUxN2U5ZjgxMTk4MmQyNTBmMDcwMjk4NmU0YjU3NjRhZDk1ODkiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUxMWMxYTI3YTljM2ZlNWM4NDg1OTBiZGEzZDg1ZDNlMTFiYjg5NDI4MDBlODQ1NDI1YzQwZWQ1ODNjY2I5YjUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_d7d8f795f27e4f349fa610bde523d910",
+      "statement": "CLOUD_FORMAL knowledge workspace mode does not enable publish by itself; formal write capabilities require ENTRA identity, non-relaxed workflow, Entra IDs, and AI_OPS_KNOWLEDGE_CLOUD_FORMAL_WRITES, while workspace mode may persist without bypassing that gate.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/knowledge_bridge/formal_write_gate.py#L159-L208",
+          "version": "repo-lines-v1:sha256:d90f3eeebc9e492c3a9d2dd27422b401d11c4f0424fe29f5f5d09cf8acc8310b:eyJzZWxlY3RlZExpbmVDb3VudCI6NTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNjNmY5ZjUzZTBkZTI4ZTNjZWUyZGRmOTgyNWMwMWJlNzYyYzVmMmZmMzc3YTAwODRmODg3ZGRiMmViODNlM2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdlYjcwMjU3NTkzZGEwNmY2ODJhM2RkZGE1NGE5ZDI2MGQ0ZmM1MTRmNjQ1MjM3ZjVjYTc0YjA4ZjhkYTYxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlZjdkZWRmMmUwYWE2ODg0ZDQ4MTk5OTgxZjg0ZDZkYmY0MzRhZGU3ZmY1ODAxMmQyNjZmOGY4NzgzZjIxY2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzZmFmMGQ4ZWI3ZTM3NjdkZTQ2ZDc1MjBiZjgwNmY5NTkyNWUyYTkxODUyYWFiOWVjZjYyYzA3YzA3YzNiMGEifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/knowledge_bridge/formal_write_gate.py#L94-L121",
+          "version": "repo-lines-v1:sha256:5d41d393d8742fcc22ce94413a618b0451d85282b0a940e45e7f7ed2fc4e29d8:eyJzZWxlY3RlZExpbmVDb3VudCI6MjgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjEzYTQwMzI3MTA2NWJiYzNkYjNmYWFhMzMyNDg4ZjBkODJjMDU4OTZkZGY2MWFhNzZhOTFlMzQzZDkxMTg3ZTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiOTIxZDlkOTM1ZmQzY2RlZjU0Y2U3ZDM5YjU0ZWUwMGRiYzhkYWM5YWE1NWI3NTdlNTEwMmU2Mjk3ZTc3OTkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjY1YmE4NDRhOWIzZTE3NmQ0YmQ2MjE3MTUwN2UxZmMwZGVmODFlOWU5YjEzNWFjZjMyYTZhZmVjZjM4MjRkY2YiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA4Y2U2MDg4OWQ3YWZmNmEwNDdiNTlhNmVjOTYxYWQ2Nzc3YzZmYWNiMzRhOTYxNjI1YjEzMzdhNzE3ZTNmOTMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_15107dd473f34fc1a64b8cab90598bce",
+      "statement": "Console Agent knowledge Sync Now requires ops.sync.write and proxies to the configured Agent API admin knowledge-sync endpoint; status reads require ops.knowledge.read.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/routers/agent_knowledge_sync_routes.py#L35-L49",
+          "version": "repo-lines-v1:sha256:d36cfcc63f7706545dbeeaa7601756adcce3e22f47f8a4c95468edce4d0bb03e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZkMjk3YzU4ZDcyNGQ4MDljOTE5MDYzZjU1NGM2MzBhY2NmYTU2MTAwMDE5NjI5YmNiNjA4MWIxMTVjOGE2ZDQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZkNTk3ZmNhNzE1MmVmZTgzMTdiZjVlNzNiYzZlMGM5NWQyZmYxMmJlNDIwYTE0NGExN2M2OTRiNTgwYmY4NmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhOWFmYWFkODVjNjNlZThhZTg5YzhiZWE2MWJjNzMzYjZlZGMxMTZlZTlhNTdiMDBkNWUxZDk4OWQ5ZjFmMjgifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-14T06:27:21.319Z"
+    "at": "2026-09-22T17:10:06.227Z"
   }
 }

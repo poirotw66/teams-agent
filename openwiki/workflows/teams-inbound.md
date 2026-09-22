@@ -3,19 +3,21 @@ type: workflow
 title: Teams inbound messaging
 description: How a Teams activity becomes an agent turn and an Adaptive Card, including feedback and signed images.
 tags: [teams, adapter, cards, feedback]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-14T06:27:21.319Z
 sources:
   - id: openwiki-source-d747ee51f5798467b8701824
     resource: repo://src/teams_agent/agent.py
   - id: openwiki-source-1e65abfe9a945ea46cabbf21
     resource: repo://src/teams_agent/cards.py
+  - id: openwiki-source-ba96df40c39a1e882af91430
+    resource: repo://src/teams_agent/contracts.py
   - id: openwiki-source-fd9a608e1b9dc0c947db88a5
     resource: repo://src/teams_agent/server.py
   - id: openwiki-source-7053a919f2ff79ac83709efa
     resource: repo://src/teams_agent/settings.py
 generated: { by: "cursor", at: "2026-09-14T06:27:21.319Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-22T17:10:06.227Z
 ---
 
 # Teams inbound messaging

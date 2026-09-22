@@ -3,19 +3,25 @@ type: testing
 title: Verification
 description: Which test suites prove adapter contracts, workflow behavior, and operations, and which acceptance items are still limited.
 tags: [testing, pytest, acceptance]
-verified:
-  - by: openwiki/0.5.1
-    at: 2026-09-14T06:27:21.319Z
 sources:
   - id: openwiki-source-0b7d65780d34f9b0269721d3
     resource: repo://agent_service/pyproject.toml
+  - id: openwiki-source-445ca88621d1e6be09b3eb57
+    resource: repo://agent_service/tests/test_knowledge_gcs_reload_syncs_first.py
+  - id: openwiki-source-53b671dcf34d3ac8671db299
+    resource: repo://agent_service/tests/test_knowledge_release_sync_acceptance.py
+  - id: openwiki-source-57598f5fb1d60fa9387cad76
+    resource: repo://console_frontend/src/features/knowledge/lib/syncLocalKnowledgeMirror.test.ts
   - id: openwiki-source-16b509124e9048804b230e6e
     resource: repo://docs/poc-acceptance-checklist.md
   - id: openwiki-source-05ccef8d4cf1698187f20464
     resource: repo://pyproject.toml
   - id: openwiki-source-6d1605c4670fb5d84ade6405
     resource: repo://tests/test_agent_gateway.py
-generated: { by: "cursor", at: "2026-09-14T06:27:21.319Z" }
+generated: { by: "cursor", at: "2026-09-22T17:10:06.227Z" }
+verified:
+  - by: openwiki/0.5.1
+    at: 2026-09-22T17:10:06.227Z
 ---
 
 # Verification
@@ -47,8 +53,18 @@ Invariants those tests pin, and that a wiki reader should not regress:
 - Users can query only their own tickets.
 - Every request carries a correlation id that is not regenerated between nodes.
 
+## Knowledge control-plane regression anchors
+
+Focused suites for the Firestore/GCS control plane and local mirror:
+
+| Suite | What it pins |
+| --- | --- |
+| `agent_service/tests/test_knowledge_release_sync_acceptance.py` | FOLLOW_CLOUD three-column alignment, PINNED/LOCAL_SANDBOX non-overwrite, failed sync keeps last verified snapshot, ENOSPC mid-download fail-closed. |
+| `agent_service/tests/test_knowledge_gcs_reload_syncs_first.py` | Admin reload calls sync before resolving a GCS mirror so Console activate does not race a missing local copy. |
+| `console_frontend/src/features/knowledge/lib/syncLocalKnowledgeMirror.test.ts` | Sync Now helper maps Agent status to aligned/behind/unreachable without claiming Playground updated on 503. |
+
 ## What a green unit run does not prove
 
 A passing pytest run does not prove Cloud Run IAM, Secret Manager bindings, or Teams sideload. Those stay in `deploy/README.md` smoke checks: agent `/readyz`, adapter invoker IAM, and a Teams end-to-end message. Local `start.sh` readiness is process liveness plus index load. It is not the acceptance suite.
 
-Related: [Issue resolution workflow](/openwiki/workflows/issue-resolution.md), [Local runtime](/openwiki/operations/local-runtime.md), [Quality and governance operations](/openwiki/workflows/quality-operations.md).
+Related: [Issue resolution workflow](/openwiki/workflows/issue-resolution.md), [Local runtime](/openwiki/operations/local-runtime.md), [Local GCS knowledge sync](/openwiki/workflows/local-gcs-knowledge-sync.md), [Quality and governance operations](/openwiki/workflows/quality-operations.md).

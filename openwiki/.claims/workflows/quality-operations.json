@@ -1,18 +1,26 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:cd5cf9025a66b355797a34cff847833818bf4b159ea255f6e8957a326c9f4788",
+  "pageVersion": "sha256:ed09f6be377bdb20d71e09481b32f465d9b51b5eb36b49073aeb8cb0e93e519e",
   "claims": [
     {
       "id": "claim_8e750834e59b450fb38141dfb18263e3",
       "statement": "Quality case transitions are closed. RESOLVED, WONT_FIX, and DUPLICATE are terminal. Linking an FAQ from IN_PROGRESS or WAITING_REVIEW moves the case to OBSERVING, and observation metrics require OBSERVING.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/service.py#L494-L542",
-          "version": "repo-lines-v1:sha256:1b1be53b8581410f37d2ed42be37ea1ece5d743cb6a1ff462c60a16cd166b8bd:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjM2EyYzE2YTRjYmRmY2E4MTMxN2VhOWEyYTg2MDA5NzRhMjc0NGFmZDEyNmFjNDhiYzliM2YzZTBjMzdmNDgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjgzMjAxODk4MjE0YmE1NDZhMjRiZGIyMGUwNGJiODMxYjYxZmQxMDM1NTliODVkYTJkYjVkMTRkMzljNWY1MzgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjcwZjFjNzExOTg5ZmQ5YTliOTk1Y2FjMzlkZTFmNWU0OTc3NmUxY2NmOWE5MjRjM2QzMmY1ZWE4NGFiOWQ5ZmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjEyNThlMzE1YTlmYmQ4ODMwNTBjYTg4NmE0YjFjODlkODEyMzY1ZjM3NTQ3NjgyNTNiZjE3M2JmMTBmMzZjNzQifQ"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/case_lifecycle_ops.py#L211-L233",
+          "version": "repo-lines-v1:sha256:c2323dd68a823fa88d6dfb7906903af33803366c39f962673aa3c1cd1e87693f:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwNGRlNzllZTU2Y2Q2NWMzYWE4YmY0ZjY5YjNjYWU2ZDE2MGU3MGRhMjg1NTgxYTdmMWQxZmUyZTQyY2JmZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhjYTMzNzAwZGQ3NzU5Y2Y1MzE4Y2M4MTBhNGZkYjk2ZTJmMWRmOWFkODIzZjk3MzgxNWRhYTUwZTA1NWIwMjMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImVkYTI2ZWQ4N2I1YzVmYTIzOGQ1MDM2NzAwYmE4YmViNTgyNTQxZmY1YTg4ZWI0MDYxNWY3NmJmMTk2Y2ZmOGIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVjMGNkNzE5MTQ3NmZkZjQ1NDI4NjczM2EwNzc4ZTI1M2FhYTk2MmUxMzExNzkzY2Y5YTFiODlhMTA5MjkxYmEifQ"
         },
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/service.py#L70-L78",
-          "version": "repo-lines-v1:sha256:374e96261cdba4ca76a4c2732f9b95fe202f39f0244b951975baa3deb9a34347:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiY2VkY2RlOWUxZTI3ZmMxZjY5Y2QyMTk1MzQ4ZGEwODYwZThjYWRmNDkyMGUwNTQwMTQ3ODk4ODZkMzRjNzdjNCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYTgzNTdjOTZkOTU5YWZjMWZkZDJiNGVkMzQwMzViOWIyYzJkNjE0MjgyYzk5M2RiYzFhMDk3OWRmZWQ1M2NmNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNjBhOWJiZjkzODE4MzAxY2QyYmE0YTczYmM2ZWFhOWMwMmU3NjZhOGNjNWQwNjIxMjY5ZTYzNWM2MjgxYjNmMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDk2NWJmNzdjNmIzNzVmN2UxNzAzNjQxZDU1NDNhYzM4MDVjNDBjNDQyM2Y0MGFjMzEzOWFlNjVlYTAwOGUzMSJ9"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/case_lifecycle_ops.py#L274-L275",
+          "version": "repo-lines-v1:sha256:d8dc02cacf40515193c1b86e725791c2efea9d7c947fdd869241242044db2fd1:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZTJiMzdlNDIzOGJiOTE2NTk5OWE0Yzc4ZmRiYjBkM2M3Y2QzZWZmYTI5M2JmZjQ2Y2M3Yjg2OWM5M2YxMDQ0OCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjYxYmQ0ZDU5ODQ5Y2VjOTc4ODdiMDc1ZDBjODQ2N2JiMTM5ZWM4ZWNiMWM0YzBhZDNlODAxOTllOWQxNWU4YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZjcwZTQ1N2JhZTEyZTliNThlMjIyZjliNTcwZDQzM2FkZjBkZmU4OWNlZDk2OGM0ODIyZDc5NjhjZDViYTU2OSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMDc2YTM3ZmExNzQ2YTQ5OTZiNjcxNjIxNjNkNTg1OGNkNGRjZmZjNjhhYjZmODNkYmI4NzAzMmI5OTQ3YTQyZSJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/case_lifecycle_ops.py#L44-L53",
+          "version": "repo-lines-v1:sha256:f1a1f131a31cfa2eab21f15723e4d33d0256f15f3651dee4dc9072693b8ba44f:eyJzZWxlY3RlZExpbmVDb3VudCI6MTAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijc5ODYxNjg1NDFmM2MxMDBmYjI4YTcyMWJlYTljM2E5N2IxNGRlYzMzMGVkMWU5OTc4ODAyNzY5ODFjYTkwOTkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQxMmNhMzQ1Y2NmNzViZjljMDgwNmJjZTY5NWJlOGRlODA4Yjc5OTg0MjUxYTdhNTRkMjAyY2Y2MTAxZGQ0NTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZDE3MWRlNzU0MzFhMDIxYTBkOTRmYTc2ZmFiZjBkNzEzOWM4OThjMWEwYjQ0YjQzY2E2MDkwM2ZhMWI4NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlMWY5ZGY0ODc3NDBkYjhkMzg4ZjE4YmI3YTJkMzg4MThiYWMyNGI1ZWE5MmI0MGI4YzYyMzJmOGNjNWE2MTIifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/quality_domain/case_ops.py#L36-L38",
+          "version": "repo-lines-v1:sha256:4ce1637c5f4d8f1ecb5ad487659ddbe7d8dfcb51eb6f83dc8b7092a61be4ba1b:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGFmMzBjZDQzYmI4YjNiMzdhNGE5ODBjNzliYmRiZDU5MWJlMWY2OGRmNjRjOWMwOGQ3NjE2MTM1NzQ0ZjNlMiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMmU1NzI5NjQwMmNlMGFmYjFiN2VlNzY5YzBjYmRlMDUzZTk1NWE2MWEwZThiOGNjZWYyYjVhODgzZDU3MGE5NyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiZDUyNTY5ZGEzMWIwNWNkMWU5ZTY1MzA4NWVlMWQ2YzcxYTE0NTA4NzBhYzJjN2MyY2RhMjA3YjRkYjk0YzZmZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiN2MxNTUyYzU2MmZmNmRkZTZlYmQzN2VkNTRjN2RmMDIwYTA0Yjg2NjIwODQ1Y2Q0OGZhMWVjZWMyOTE5ZTBlMSJ9"
         }
       ]
     },
@@ -21,8 +29,12 @@
       "statement": "A gate blocks activation when the manifest hash mismatches, the set version is not required, the run has no summary, coverage or pass rate is below the policy, a zero-tolerance policy has a critical failure, or regressions exceed the maximum.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/evaluation_domain/gate_evaluator.py#L23-L71",
-          "version": "repo-lines-v1:sha256:1e22327209e34b5b15391dcff642ed5c919722eab49eb98315f105426d60a30c:eyJzZWxlY3RlZExpbmVDb3VudCI6NDksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImRjNTM2NjQ2ZmI3ZWJlMzVkNjE2M2UxNjExMzZiMjUwZWJkNDQ3NjMyYWY2MzI2MmYxMDFiOGM3YWI5Mzg3MDEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjUxMDM0ODFjNTdkMGYwZGMwZjc2Y2QyY2M4YjM2MDRjNGU4Mjk2ZGE0MTIyYWRkMTllODE3NDVkYzdlMzMxYTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE0MzA2MGI5NDdjYTI2ZGJkMmU0MzU3OWRhY2E0YzA0NzAyNmJiMDg5NmJjYmIzZjJjOWQ0MTJiNDAzZjk3N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRiYmE1M2RhOTY5ODdkNTNmZjY5NGUzZjE0MmY1YTMzYTQ2NTM5ODJhYTdhNDZiZDE3MzMwZmQ4NTNjZDA2YjIifQ"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/evaluation_domain/gate_checks.py#L11-L84",
+          "version": "repo-lines-v1:sha256:701bd5465fa4393724456a6f14080f2d3a5c6c27392e31d27401e4c295285a39:eyJzZWxlY3RlZExpbmVDb3VudCI6NzQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJiNDE4MmM4NTJiN2RmYTVmM2Q4M2VjYWE1MGRmNmQ4OGFkMjYyNWY5MjY3YWJiZDkzMjEzZWQ4YTExYWEwOWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ4OTM5YWNjNWE3YmZlMGM2N2I4YTQ5ODc1Njk2ZmIxMDQ5MzY4YzQ0NzRhMGM5OWY5OGY5OTFlY2JiNTVjNjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImE3ZmUwZTQwZjBkNmViZDJkMmQzYWJlMWJjNmU0ODFiOWJiNzliYWNmZGYwMjVhNmNjYzcxZGIwOWY0NmFlYzIifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/ai_ops_backoffice/evaluation_domain/gate_evaluator.py#L18-L38",
+          "version": "repo-lines-v1:sha256:e46a01b217cd0995910485cc068d293e7a4e854b08a4289d2a17d0d47aefb71d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM5MzNmZDc3YzkyNjk1NWQ4ZTQ0ZGJiN2EwZDk4Yjc0YzI2NzAyNDVmMWJjYTc3YmY0ZGIzMTgwMmNmMTlkZmYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImViNjYxYmEzYWEyZWI5MzNkYzA2YzYwYWNkNWZlOGEzZTRhOWNlYmE3ZGNjZTkwMDA2OWYwODFjMGJlNmUwZTYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRjZGZiYTZmNDMxMjlkZjEwNGY4MTYxNTkxMjBkODNlYTY2MTgzODA5ODQ0ZTE3Yjg4NGZlZDQ1YjlmNjZlMDYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjViNzRkNDAwZjI0OGRlYjVmYzQxODg0NmUwMTcyZDViM2I2ZDdhZDQzNThjOWI1ZmEwZTEwYTg5ODgyN2Q1NGMifQ"
         }
       ]
     },
@@ -31,8 +43,8 @@
       "statement": "A missing release-gate checker allows activation for tests that do not wire the gate. When a checker is injected, ENFORCE mode fails closed.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/release_gate.py#L63-L80",
-          "version": "repo-lines-v1:sha256:1a153fccf986a46c764434ae8f39bd35e95e0aa8e3d3e6dc7c49987eb7cc0a54:eyJzZWxlY3RlZExpbmVDb3VudCI6MTgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjAyNmZkMGM3NmQ2ZTUzOTRlNjlmZTY4N2ZkM2U5OTZmMzZiNGZmMjVlZGMxN2MyOWI0NTE4ODgwYjA1OTViNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjllYzk0OTUwZmIwY2E3NTVhYTdiOWNlZDg2OGZhMzdkZmEyMzNiNzk5OTcyMzM0NjhkNjY0ZjYzZDYxOTA5OWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjA4YTRhNThlZWFkY2QwY2UwZGJiMGRhNTEwNjc3YzE3YTliOTY0MGM1Zjc0NDJmMGJjMTE5NTFjYmYzZDY0OTciLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjJjNTMxYjkzMmFmODQ4ODZhY2Q0YzQyYWVmNjcxMWFmNDk4OGEzZWU4YTJmODc2YmMyMWNiZmU2MWVjNmI2OGIifQ"
+          "resource": "repo://agent_service/src/knowledge_core/release_gate.py#L26-L50",
+          "version": "repo-lines-v1:sha256:2b4fce778ca74b04588383d90ee5ffd1cdc5158e7e8fafac180a4d5652cbee96:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZiNDhmZmRlNGI2YjU2YjllZTQzN2RlMTVmNTljYTU4NDM2YzgzMTZkNDg2OTE2N2JiNGY4ZDg0MWE4MzhkZWUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhiNGFhNDQ3ZmM1NzY5YWU0OThlNWY2M2ZjNTgzYjdkZGVjZjViNzlmMmJiOWVjNzg1ZjdkNTNiZDgyNGY5NGMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZDE3MWRlNzU0MzFhMDIxYTBkOTRmYTc2ZmFiZjBkNzEzOWM4OThjMWEwYjQ0YjQzY2E2MDkwM2ZhMWI4NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjMwYzFmMTg4ZjE0MmVkN2E4MjQ2ODBiMjA3MTcyYzU1MTliYzYxNGE0OGZkYTdjZjE2N2VkYjhkZGY3OTk1NmMifQ"
         }
       ]
     },
@@ -41,14 +53,32 @@
       "statement": "Governance rejects prompt candidates and datasets that contain secret material or injection markers.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/governance_domain/service_helpers.py#L229-L269",
-          "version": "repo-lines-v1:sha256:bc788a480df108e04ec73a75c1ce6dd612b9f7c44980faeb77bf869c11f4fd4a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5ZjFlODI3ODljMDA3ZmFiODViNDYzNWMzYjQ2Y2QzMGFmMjRkZTA3ZTIxYzk1NTgxY2Y3NDBhYjFlMDhlMzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxMTZkOTkzZDQxZDQ0Y2I1ZGY5ODE1MzYyYTc2ZTA3ZjE0NjcxZjZiNzAxYzc5ZTkwYjA3ODQ4ZWI3NDQ5OWEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjJkOGQ2MGYwYjY1MzA0YmZjOGU1MGFhNWQ3OWVlYzEzNTNkYWY5NzdkNWE2NTNjZGIzNGMzZjI1NDZjNzRmYWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjgzZjczOWQ0YjY4NjkyOTQxY2E2MzI3ZDIxOGJlZDk2ODIzNGMzYWNmNWEyOGViOWJhODMxZDhiNGNlM2Q2OGUifQ"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/governance_domain/helpers.py#L42-L47",
+          "version": "repo-lines-v1:sha256:90f092ca6f9feb781c29485ce1d5d2da686049118594eb7d7c9f38cc469dcbe4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNmIxN2JiYTM4ZmEzZWRmY2IyNDQ3ZTgwOWI0YWM0M2EzMjgzOGYxYzAyZTFiMjU0ODc4M2VhZWMzMzdkN2JhOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODQ2NGQxNDQ0YmNiZTU1NjBkYmZlN2I3NzdhYmUyMTZmMDcyMTM4Y2I5Yzg5ZTI1OWMzMmQ3ZmE1ZjU4MzY3YyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjllZTE5MzI4NGU4MmZiNzZhZjRmNGY1ODNlNDNmMDUwN2I1ZjEzMmIxNjRlNmQzNTIzYmFmYjk0YzBjN2IxZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTBlMTA4NmE2M2JhNDQ2MGZkYjIwYzIyNTRmN2IwZTNiMmEyZTViMGRlODhjZjQ0MTk0NDY4N2JmMDZjNjU4MyJ9"
+        }
+      ]
+    },
+    {
+      "id": "claim_f97b3cb11cc84289b1f2f15162f7de15",
+      "statement": "After publish, console-v2 auto Sync Now targets the Console-connected Agent; RELOAD_FAILED retry is a Portal activation gap distinct from Sync Now; workspace banners distinguish LOCAL_SANDBOX from CLOUD_FORMAL.",
+      "evidence": [
+        {
+          "resource": "repo://console_frontend/src/features/knowledge/components/DocumentGovernanceActions.tsx#L167-L175",
+          "version": "repo-lines-v1:sha256:cecef9b2da6c54923d9c971ce10a2cb1dfa50b5f733c8e7467b31a65b4e34c40:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGIxYjIyZmVhY2VmOTM5NDVmZmJhMWI1ODQzNDJjMTQwNjJiZDEzZjllNTMyMzZmMDFjNjQ2NTgxNTAwODg0MSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYmM0MzM3YjI2MDFhODdiZWMwMjNkMDQ5YmMwZjhhNGZlYmM4OTA3MmE4MDBmODJhNzA1YzM5ODYyNzliNzViMiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMjNkYWVjMWFjMDJlODVkZTM4Njc5Y2RjMGU1YTU1ZjQzZWFkNjZlYjJkY2M2YzE2ZjM4YzcwOGJjNjQ5NTAxMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMzY4NTg5MjYyY2NjMjAwN2ViYTNlOGUyNjczNDMzNWRmNjg0ZTdlNTZmM2Y4ZTM0NjVkOGRhNDk3YjlkNGMzYiJ9"
+        },
+        {
+          "resource": "repo://console_frontend/src/features/knowledge/components/KnowledgeWorkspaceBanner.tsx#L26-L42",
+          "version": "repo-lines-v1:sha256:690b0b260f4819a0097f9c60e6ff28c05b07a8af0ae98e05ef7c60c594466a5d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY3Nzc2MjhlYWFmYjhjNTMwOTI3MDg3N2NmY2I2ZmZmMTJkYWY0NjU3NTM5ZjBlMTUxZWYxZGVkMGU2Mjg4YjEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjcxNTNiMWY4NzM4NzM4YzIzYzBjZWQ4YmIxN2M2OWM3NjJmMTYyNWVkMGI0YzYyMTM4Y2RmMTM5YmJlYWViOTgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImEyYzUzNTIzNjFhNTlmMGIzMjRkMDdlZmYzZTA1ZjJiYjM5YjNlOTEyZGJmZmNkYTg4YTkyMWFlNmFjZGM3YmEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjUyZjU5OGEwZWI1ZWZjZDg0ZmE5M2E5YjgwMDA2NWIxOTY1ZGE0NDRjOGM5MDk4MGZiNzE3MTE4YzU5MGNiN2YifQ"
+        },
+        {
+          "resource": "repo://console_frontend/src/features/knowledge/pages/ReleasesPage.tsx#L181-L189",
+          "version": "repo-lines-v1:sha256:40d9a225cfb5f7dc1cec2409ca77e076958eddb59d339776787221ae9967d047:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMThlMzY4MDMwNDZlMmZlMmJlOTdmMjdmZDhhODJlMWUxNThmNDkyYTc5YjU1MTM5M2E5ZTZiYzRhY2U2MjcxMCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOGEzYTIwNTE0NzhmNDBhOTAwMzgyZjRmNTYzMzk1OWEyODNmZDMzMmYxZDVkYTJiMGNkZjcyNmZmNjAwOTY4NiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMWJhMTY0OWQ0MDk2Y2RkZjI1YWI0YjRmNzNjYjVkZGUwNzA4N2E4ZTIyMjcyMjI0NzBmZTczZDE2ZWZiMTgwMyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmU3NTdkZmFiZTZhOGQ2NDRmMzc5YjQ2ZjUwNTZmMWUwODcxMzdmMWU5M2Q2MjM0NTkxOWYxMjZhYzU3NmQ5YSJ9"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-14T06:27:21.319Z"
+    "at": "2026-09-22T17:10:06.227Z"
   }
 }
