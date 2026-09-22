@@ -13,6 +13,7 @@ from knowledge_core.release_artifacts import (
     validate_release_artifacts,
 )
 from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
+from knowledge_portal.incremental_embeddings import index_setting_fingerprint
 from knowledge_portal.ports.release_publish import (
     PublishedReleaseInfo,
     get_release_directory_publisher,
@@ -172,9 +173,10 @@ def assemble_release_record(
             release_id=release_id
         ),
         index_artifact_uri=str(index_path),
-        index_setting_version=(
-            f"chunk={settings.chunk_size};overlap={settings.chunk_overlap};"
-            f"embedding={selected_embedding or 'bm25-only'}"
+        index_setting_version=index_setting_fingerprint(
+            chunk_size=settings.chunk_size,
+            chunk_overlap=settings.chunk_overlap,
+            embedding_model=selected_embedding,
         ),
         created_at=created_at,
         previous_release_id=previous_release_id,

@@ -12,6 +12,7 @@ import { KnowledgeGapsManager } from '../components/KnowledgeGapsManager';
 import { PlaygroundSimulator } from '../components/PlaygroundSimulator';
 import { KnowledgeWorkspaceBanner } from '../components/KnowledgeWorkspaceBanner';
 import { KnowledgeSyncLagBanner } from '../components/KnowledgeSyncLagBanner';
+import { FormalPublishProgressBanner } from '../components/FormalPublishProgressBanner';
 import { QuickFaqDrawer, QuickFaqInitialData } from '../../dashboard/components/QuickFaqDrawer';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
 import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
@@ -111,6 +112,7 @@ export const KnowledgePage: React.FC = () => {
       <WorkbenchLoadErrorBanner domains={['documents', 'faqs', 'overview']} />
       <KnowledgeWorkspaceBanner />
       <KnowledgeSyncLagBanner />
+      <FormalPublishProgressBanner documents={documents} />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           知識庫與手冊中心

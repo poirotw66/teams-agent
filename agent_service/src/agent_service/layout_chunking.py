@@ -12,6 +12,7 @@ from knowledge_core.layout_chunking import (
     chunk_quality_issues,
     detect_profile,
     estimate_tokens,
+    has_blocking_chunk_issues,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "chunk_quality_issues",
     "detect_profile",
     "estimate_tokens",
+    "has_blocking_chunk_issues",
 ]

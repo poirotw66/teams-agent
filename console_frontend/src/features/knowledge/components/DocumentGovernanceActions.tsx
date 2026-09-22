@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Input, Modal, Space, Tooltip, Typography, message } from 'antd';
 import {
   CheckCircleOutlined,
@@ -8,6 +8,11 @@ import {
 } from '@ant-design/icons';
 import { ManualDocumentItem } from '../../../shared/api/types';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import { PublishElapsedLabel } from './PublishElapsedLabel';
+import {
+  clearFormalPublishInFlight,
+  startFormalPublishInFlight,
+} from '../lib/formalPublishSession';
 
 const { Text } = Typography;
 
@@ -48,6 +53,32 @@ const ACTION_CONTENT: Record<
   },
 };
 
+function blockingQualityMessage(document: ManualDocumentItem): string | null {
+  const quality = document.quality;
+  if (!quality) {
+    return '尚無法取得段落品質結果，請稍後再試。';
+  }
+  if (quality.acceptable) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (quality.coverageRatio < 0.995) {
+    parts.push(`原文覆蓋 ${(quality.coverageRatio * 100).toFixed(1)}%`);
+  }
+  if (quality.headingOnlyCount > 0) {
+    parts.push(`純標題 ${quality.headingOnlyCount}`);
+  }
+  if (quality.orphanMediaCount > 0) {
+    parts.push(`孤立媒體 ${quality.orphanMediaCount}`);
+  }
+  if (quality.duplicateChunkCount > 0) {
+    parts.push(`重複 ${quality.duplicateChunkCount}`);
+  }
+  return parts.length > 0
+    ? `仍有阻擋送審的品質問題：${parts.join('、')}。過短段落僅為警告，不阻擋送審。`
+    : '仍有阻擋送審的品質問題，請開啟段落預覽確認。';
+}
+
 export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps> = ({
   document,
   onComplete,
@@ -55,8 +86,10 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
   const [action, setAction] = useState<GovernanceAction | null>(null);
   const [reason, setReason] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isRefreshingQuality, setIsRefreshingQuality] = useState(false);
+  const [publishStartedAtMs, setPublishStartedAtMs] = useState<number | null>(null);
+  const qualityRefreshAttempted = useRef<string | null>(null);
   const content = action ? ACTION_CONTENT[action] : null;
-  const qualityIsReady = document.quality?.acceptable === true;
 
   const availableActions = useMemo<GovernanceAction[]>(() => {
     if (document.status === 'IN_REVIEW') return ['APPROVE', 'REQUEST_CHANGES'];
@@ -71,6 +104,35 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
     return [];
   }, [document.status]);
 
+  useEffect(() => {
+    if (!isSubmitting || action !== 'PUBLISH') {
+      setPublishStartedAtMs(null);
+    }
+  }, [action, isSubmitting]);
+
+  useEffect(() => {
+    const needsSubmit = availableActions.includes('SUBMIT');
+    if (
+      !needsSubmit ||
+      document.quality != null ||
+      isRefreshingQuality ||
+      qualityRefreshAttempted.current === document.id
+    ) {
+      return;
+    }
+    qualityRefreshAttempted.current = document.id;
+    setIsRefreshingQuality(true);
+    void workbenchStore
+      .previewDocument(document, document.chunking_profile || 'AUTO')
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : '伺服器連線異常';
+        message.warning(`無法自動檢查段落品質：${detail}`);
+      })
+      .finally(() => {
+        setIsRefreshingQuality(false);
+      });
+  }, [availableActions, document, isRefreshingQuality]);
+
   const openAction = (nextAction: GovernanceAction) => {
     setAction(nextAction);
     setReason(ACTION_CONTENT[nextAction].defaultReason);
@@ -79,8 +141,22 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
   const completeAction = async () => {
     if (!action || !reason.trim()) return;
     setIsSubmitting(true);
+    if (action === 'PUBLISH') {
+      const startedAt = Date.now();
+      setPublishStartedAtMs(startedAt);
+      startFormalPublishInFlight(document.id, document.title);
+    }
     try {
       if (action === 'SUBMIT') {
+        const reviewed = await workbenchStore.previewDocument(
+          document,
+          document.chunking_profile || 'AUTO',
+        );
+        const blocked = blockingQualityMessage(reviewed);
+        if (blocked) {
+          message.error(blocked);
+          return;
+        }
         await workbenchStore.submitDocumentReview(document.id, reason.trim());
       } else if (action === 'PUBLISH') {
         await workbenchStore.publishDocument(document.id, reason.trim());
@@ -98,7 +174,11 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
       const detail = error instanceof Error ? error.message : '伺服器連線異常';
       message.error(`操作失敗：${detail}`);
     } finally {
+      if (action === 'PUBLISH') {
+        clearFormalPublishInFlight(document.id);
+      }
       setIsSubmitting(false);
+      setPublishStartedAtMs(null);
     }
   };
 
@@ -108,7 +188,6 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
     <>
       <Space size={6}>
         {availableActions.map((item) => {
-          const isSubmitBlocked = item === 'SUBMIT' && !qualityIsReady;
           const icon =
             item === 'SUBMIT' ? (
               <SendOutlined />
@@ -125,15 +204,18 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
               size="small"
               type={item === 'PUBLISH' || item === 'APPROVE' ? 'primary' : 'default'}
               danger={item === 'REQUEST_CHANGES'}
-              disabled={isSubmitBlocked}
+              loading={item === 'SUBMIT' && isRefreshingQuality}
               icon={icon}
               onClick={() => openAction(item)}
             >
               {ACTION_CONTENT[item].label}
             </Button>
           );
-          return isSubmitBlocked ? (
-            <Tooltip key={item} title="請先開啟段落預覽並通過品質檢查">
+          return item === 'SUBMIT' && document.quality && !document.quality.acceptable ? (
+            <Tooltip
+              key={item}
+              title="點擊後會再檢查品質；僅純標題、孤立媒體、重複或覆蓋不足會擋送審。"
+            >
               <span>{button}</span>
             </Tooltip>
           ) : (
@@ -150,10 +232,16 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
         confirmLoading={isSubmitting}
         okButtonProps={{
           danger: action === 'REQUEST_CHANGES',
-          disabled: !reason.trim(),
+          disabled: !reason.trim() || isSubmitting,
         }}
+        cancelButtonProps={{ disabled: isSubmitting && action === 'PUBLISH' }}
+        closable={!(isSubmitting && action === 'PUBLISH')}
+        maskClosable={!(isSubmitting && action === 'PUBLISH')}
         onOk={completeAction}
-        onCancel={() => setAction(null)}
+        onCancel={() => {
+          if (isSubmitting && action === 'PUBLISH') return;
+          setAction(null);
+        }}
         destroyOnHidden
       >
         {action === 'PUBLISH' && (
@@ -166,9 +254,21 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
                 : '發布會建立新的不可變更 release'
             }
             description={
-              isSubmitting
-                ? '系統完成 Hybrid、Gemini File Search 與 Agent reload 後會自動切換正式版本。'
-                : '只有 Hybrid 與 Gemini File Search 都完成同步後，正式版本才會切換。失敗時會保留目前版本。'
+              isSubmitting ? (
+                <Space direction="vertical" size={4}>
+                  <Text>
+                    系統完成 Hybrid、Gemini File Search 與 Agent reload 後會自動切換正式版本。
+                  </Text>
+                  <Text type="secondary">
+                    <PublishElapsedLabel startedAtMs={publishStartedAtMs} />
+                  </Text>
+                  <Text type="secondary">
+                    請保持此視窗開啟；通常需 1–3 分鐘，大型文件可能更久。
+                  </Text>
+                </Space>
+              ) : (
+                '只有 Hybrid 與 Gemini File Search 都完成同步後，正式版本才會切換。失敗時會保留目前版本。'
+              )
             }
             style={{ marginBottom: 16 }}
           />
@@ -181,6 +281,7 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
             rows={4}
             maxLength={2000}
             showCount
+            disabled={isSubmitting}
             placeholder={
               action === 'REQUEST_CHANGES'
                 ? '請具體說明需修改的內容、頁碼或權限設定'

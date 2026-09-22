@@ -30,6 +30,7 @@ class ReleasePublisher:
         bundled_index_path: Path | None = None,
         embedding_model: str | None = None,
         tenant_id: str | None = None,
+        previous_release: ReleaseRecord | None = None,
     ) -> ReleaseRecord:
         self._settings.release_artifact_dir.mkdir(parents=True, exist_ok=True)
         release_dir = self._settings.release_artifact_dir / release_id
@@ -54,6 +55,7 @@ class ReleasePublisher:
             bundled_index_path=bundled_index_path,
             embedding_model=embedding_model,
             settings=self._settings,
+            previous_release=previous_release,
         )
         return finalize_release_artifacts(
             settings=self._settings,

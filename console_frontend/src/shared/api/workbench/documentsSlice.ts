@@ -11,7 +11,7 @@ import {
   submitDocumentReviewRequest,
   uploadDocumentViaPortal,
 } from "./documentsApi";
-import { ChunkingProfile } from "./types";
+import { ChunkingProfile, PortalDocumentList } from "./types";
 import { WorkbenchSliceContext } from "./storeCore";
 
 export class DocumentsSlice {
@@ -22,28 +22,43 @@ export class DocumentsSlice {
   }
 
   public async loadDocuments(): Promise<void> {
-    const [legacyResult, portalResult] = await Promise.allSettled([
-      fetchLegacyDocuments(),
-      fetchPortalDocumentList(),
-    ]);
-    if (
-      legacyResult.status === "rejected" &&
-      portalResult.status === "rejected"
-    ) {
-      console.error("Failed to load documents:", legacyResult.reason);
-      throw legacyResult.reason;
+    // Portal list is the governed source of truth and stays responsive during
+    // formal publish. Legacy workbench join loads full chunks.json and must
+    // not block the Knowledge page table.
+    let portalList: PortalDocumentList | null = null;
+    let portalError: unknown = null;
+    try {
+      portalList = await fetchPortalDocumentList();
+      this.ctx.state.documents = mergeLegacyAndPortalDocuments([], portalList);
+      this.ctx.notify();
+    } catch (error) {
+      portalError = error;
     }
-    const legacyDocuments =
-      legacyResult.status === "fulfilled" && Array.isArray(legacyResult.value)
-        ? legacyResult.value
-        : [];
-    const portalList =
-      portalResult.status === "fulfilled" ? portalResult.value : null;
-    this.ctx.state.documents = mergeLegacyAndPortalDocuments(
-      legacyDocuments,
-      portalList,
-    );
-    this.ctx.notify();
+
+    let legacyDocuments: ManualDocumentItem[] = [];
+    try {
+      legacyDocuments = await Promise.race([
+        fetchLegacyDocuments(),
+        new Promise<ManualDocumentItem[]>((resolve) => {
+          window.setTimeout(() => resolve([]), 2500);
+        }),
+      ]);
+    } catch (error) {
+      console.warn("Legacy document enrich skipped:", error);
+    }
+
+    if (legacyDocuments.length > 0 || portalList) {
+      this.ctx.state.documents = mergeLegacyAndPortalDocuments(
+        legacyDocuments,
+        portalList,
+      );
+      this.ctx.notify();
+      return;
+    }
+    if (portalError) {
+      console.error("Failed to load documents:", portalError);
+      throw portalError;
+    }
   }
 
   public async uploadDocument(params: {
@@ -65,6 +80,14 @@ export class DocumentsSlice {
     profile: ChunkingProfile = "AUTO",
   ): Promise<ManualDocumentItem> {
     const updated = await previewDocumentChunks(document, profile);
+    const index = this.ctx.state.documents.findIndex((item) => item.id === document.id);
+    if (index >= 0) {
+      this.ctx.state.documents[index] = {
+        ...this.ctx.state.documents[index],
+        ...updated,
+        id: document.id,
+      };
+    }
     this.ctx.notify();
     return updated;
   }

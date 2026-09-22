@@ -146,6 +146,8 @@ def test_workbench_documents(client: TestClient, monkeypatch: pytest.MonkeyPatch
     first = docs[0]
     assert "title" in first
     assert "chunks" in first
+    assert first["chunks"] == []
+    assert int(first.get("chunk_count") or 0) >= 1
 
 
 def test_workbench_tickets(client: TestClient) -> None:

@@ -254,14 +254,29 @@ class HybridIndex:
             encoding="utf-8",
         )
 
-    def add_embeddings(self) -> None:
+    def add_embeddings(self, *, only_missing: bool = False) -> None:
         if not self.embedding_client:
             return
-        vectors = self.embedding_client.embed_documents(
-            [effective_retrieval_text(chunk) for chunk in self.chunks]
-        )
-        for chunk, vector in zip(self.chunks, vectors, strict=True):
-            chunk.vector = vector
+        if only_missing:
+            pending = [
+                (index, chunk)
+                for index, chunk in enumerate(self.chunks)
+                if not chunk.vector
+            ]
+            if not pending:
+                self.has_vectors = any(bool(chunk.vector) for chunk in self.chunks)
+                return
+            vectors = self.embedding_client.embed_documents(
+                [effective_retrieval_text(chunk) for _, chunk in pending]
+            )
+            for (index, _), vector in zip(pending, vectors, strict=True):
+                self.chunks[index].vector = vector
+        else:
+            vectors = self.embedding_client.embed_documents(
+                [effective_retrieval_text(chunk) for chunk in self.chunks]
+            )
+            for chunk, vector in zip(self.chunks, vectors, strict=True):
+                chunk.vector = vector
         self.has_vectors = any(bool(chunk.vector) for chunk in self.chunks)
 
     def _bm25_scores(

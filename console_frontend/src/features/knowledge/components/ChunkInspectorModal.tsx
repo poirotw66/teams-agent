@@ -50,8 +50,18 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
   const [isRechunking, setIsRechunking] = useState(false);
   const [currentChunkPage, setCurrentChunkPage] = useState(1);
   const [chunkPageSize, setChunkPageSize] = useState(5);
-  const hasChunkIssues = Boolean(
-    inspectDoc?.chunks?.some((chunk) => chunk.quality_issues?.length),
+  const hasBlockingChunkIssues = Boolean(
+    inspectDoc?.chunks?.some((chunk) =>
+      (chunk.quality_issues || []).some(
+        (issue) => issue === "HEADING_ONLY" || issue === "DUPLICATE",
+      ),
+    ),
+  );
+  const hasShortWarnings = Boolean(
+    (inspectDoc?.quality?.shortChunkCount || 0) > 0 ||
+      inspectDoc?.chunks?.some((chunk) =>
+        (chunk.quality_issues || []).includes("SHORT"),
+      ),
   );
   const filteredChunks = useMemo(() => {
     const normalizedSearch = chunkSearchText.trim().toLowerCase();
@@ -193,10 +203,20 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
           showIcon
           message={
             inspectDoc.quality.acceptable
-              ? "候選段落通過 deterministic 品質檢查"
-              : "候選段落仍有阻擋發布的品質問題"
+              ? hasShortWarnings
+                ? "可送審：過短段落僅為警告"
+                : "候選段落通過 deterministic 品質檢查"
+              : "候選段落仍有阻擋送審的品質問題"
           }
-          description={`原文覆蓋 ${(inspectDoc.quality.coverageRatio * 100).toFixed(1)}% · 過短 ${inspectDoc.quality.shortChunkCount} · 純標題 ${inspectDoc.quality.headingOnlyCount} · 孤立媒體 ${inspectDoc.quality.orphanMediaCount} · 重複 ${inspectDoc.quality.duplicateChunkCount}${inspectDoc.quality.acceptable ? "" : hasChunkIssues ? "。有問題的段落已在下方以橘色框線標示。" : "。此問題屬文件層級，請檢查原文覆蓋率或媒體內容。"}`}
+          description={`原文覆蓋 ${(inspectDoc.quality.coverageRatio * 100).toFixed(1)}% · 過短 ${inspectDoc.quality.shortChunkCount} · 純標題 ${inspectDoc.quality.headingOnlyCount} · 孤立媒體 ${inspectDoc.quality.orphanMediaCount} · 重複 ${inspectDoc.quality.duplicateChunkCount}${
+            inspectDoc.quality.acceptable
+              ? hasShortWarnings
+                ? "。過短段落已自動合併仍不足時僅標示警告，不阻擋送審。"
+                : ""
+              : hasBlockingChunkIssues
+                ? "。有問題的段落已在下方以橘色框線標示。"
+                : "。此問題屬文件層級，請檢查原文覆蓋率或媒體內容。"
+          }`}
           style={{ marginBottom: 16 }}
         />
       )}

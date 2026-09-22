@@ -26,7 +26,9 @@ import { ManualDocumentItem } from '../../../shared/api/types';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
 import { ChunkInspectorModal } from './ChunkInspectorModal';
 import { DocumentGovernanceActions } from './DocumentGovernanceActions';
+import { PublishElapsedLabel } from './PublishElapsedLabel';
 import { UploadDocumentModal } from './UploadDocumentModal';
+import { readFormalPublishInFlight } from '../lib/formalPublishSession';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
@@ -42,7 +44,7 @@ const DOCUMENT_STATUS: Record<
   IN_REVIEW: { label: '審查中', color: 'warning' },
   APPROVED: { label: '已核准待發布', color: 'cyan' },
   CHANGES_REQUESTED: { label: '待修改', color: 'error' },
-  PUBLISHING: { label: '雙後端同步中', color: 'processing' },
+  PUBLISHING: { label: '正式發布同步中', color: 'processing' },
   READY: { label: '待啟用', color: 'cyan' },
   FAILED: { label: '處理失敗', color: 'error' },
   ARCHIVED: { label: '已封存', color: 'default' },
@@ -144,9 +146,21 @@ export const ManualDocsManager: React.FC<ManualDocsManagerProps> = ({
       width: 145,
       render: (_: any, doc: ManualDocumentItem) => {
         const status = DOCUMENT_STATUS[doc.status];
+        const inFlight = readFormalPublishInFlight();
+        const publishStartedAtMs =
+          doc.status === 'PUBLISHING' &&
+          inFlight &&
+          inFlight.documentId === doc.id
+            ? inFlight.startedAtMs
+            : null;
         return (
           <Space direction="vertical" size={2}>
             <Tag color={status.color}>{status.label}</Tag>
+            {doc.status === 'PUBLISHING' && publishStartedAtMs != null && (
+              <Text type="secondary" style={{ fontSize: '11px' }}>
+                <PublishElapsedLabel startedAtMs={publishStartedAtMs} />
+              </Text>
+            )}
             <Text type="secondary" style={{ fontSize: '12px' }}>
               已索引 {doc.chunk_count} 個段落
             </Text>

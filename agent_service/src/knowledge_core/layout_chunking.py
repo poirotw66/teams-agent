@@ -42,6 +42,12 @@ class RetrievalChunkDraft:
 
 @dataclass(frozen=True)
 class ChunkQualityReport:
+    """Quality summary after chunking and auto-heal.
+
+    ``is_acceptable`` is true when no blocking issues remain. SHORT leftovers
+    after auto-heal are warnings only and do not block submit.
+    """
+
     profile: ChunkingProfile
     source_blocks: int
     covered_blocks: int
@@ -60,11 +66,22 @@ class ChunkQualityIssue(StrEnum):
     DUPLICATE = "DUPLICATE"
 
 
+_BLOCKING_ISSUES = frozenset(
+    {
+        ChunkQualityIssue.HEADING_ONLY,
+        ChunkQualityIssue.DUPLICATE,
+    }
+)
+
 _PROFILE_LIMITS = {
     ChunkingProfile.SLIDE_DECK: ChunkingLimits(500, 120, 700, 80),
     ChunkingProfile.MANUAL: ChunkingLimits(600, 120, 900, 100),
     ChunkingProfile.POLICY: ChunkingLimits(650, 140, 900, 100),
 }
+
+_CHUNKER_VERSION = "layout-v2-heal"
+_HEADING_LINE = re.compile(r"(?m)^#{1,6}\s+.*$")
+_MAX_HEAL_PASSES = 4
 
 
 def estimate_tokens(text: str) -> int:
@@ -88,7 +105,7 @@ def chunk_parsed_document(
 ) -> tuple[list[RetrievalChunkDraft], ChunkQualityReport]:
     selected = detect_profile(document) if profile == ChunkingProfile.AUTO else profile
     limits = _PROFILE_LIMITS[selected]
-    parents = _parent_units(document, selected)
+    parents = _absorb_orphan_media_parents(_parent_units(document, selected))
     chunks: list[RetrievalChunkDraft] = []
     covered_blocks = 0
     orphan_media = 0
@@ -103,26 +120,29 @@ def chunk_parsed_document(
         if not any(block.kind != BlockKind.IMAGE for block in blocks):
             orphan_media += sum(block.kind == BlockKind.IMAGE for block in blocks)
         covered_blocks += len(blocks)
-        for child_index, group in enumerate(groups, 1):
+        for group in groups:
             heading_path = _common_heading_path(group)
             content = _render_group(group, heading_path)
-            digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
             chunks.append(
-                RetrievalChunkDraft(
-                    chunk_id=f"chk-{document_id}-{digest[:16]}",
+                _make_chunk(
+                    document_id=document_id,
+                    document_title=document.title,
                     parent_id=parent_id,
-                    neighbor_ids=(),
-                    title=_chunk_title(document.title, heading_path, page_start),
                     content=content,
                     page_start=page_start,
                     page_end=page_end,
                     heading_path=heading_path,
-                    token_count=estimate_tokens(content),
-                    content_hash=digest,
                     parser_version=document.parser_version,
                 )
             )
 
+    chunks = _heal_chunks(
+        chunks,
+        profile=selected,
+        document_id=document_id,
+        document_title=document.title,
+        limits=limits,
+    )
     chunks = _with_neighbors(chunks)
     report = _quality_report(
         selected,
@@ -132,6 +152,238 @@ def chunk_parsed_document(
         orphan_media=orphan_media,
     )
     return chunks, report
+
+
+def _absorb_orphan_media_parents(
+    parents: list[list[ParsedBlock]],
+) -> list[list[ParsedBlock]]:
+    """Attach image-only parent units to the nearest text-bearing parent."""
+    if not parents:
+        return parents
+    absorbed: list[list[ParsedBlock]] = []
+    pending_images: list[ParsedBlock] = []
+    for blocks in parents:
+        if not blocks:
+            continue
+        if all(block.kind == BlockKind.IMAGE for block in blocks):
+            if absorbed:
+                absorbed[-1].extend(blocks)
+            else:
+                pending_images.extend(blocks)
+            continue
+        absorbed.append([*pending_images, *blocks])
+        pending_images = []
+    if pending_images and absorbed:
+        absorbed[-1].extend(pending_images)
+    elif pending_images:
+        absorbed.append(pending_images)
+    return absorbed
+
+
+def _heal_chunks(
+    chunks: list[RetrievalChunkDraft],
+    *,
+    profile: ChunkingProfile,
+    document_id: str,
+    document_title: str,
+    limits: ChunkingLimits,
+) -> list[RetrievalChunkDraft]:
+    """Repair deterministic chunk defects without requiring source edits."""
+    healed = list(chunks)
+    for _ in range(_MAX_HEAL_PASSES):
+        before = tuple(chunk.content_hash for chunk in healed)
+        healed = _dedupe_chunks(healed)
+        healed = _fold_heading_only_chunks(
+            healed,
+            document_id=document_id,
+            document_title=document_title,
+        )
+        healed = _merge_short_chunks(
+            healed,
+            profile=profile,
+            document_id=document_id,
+            document_title=document_title,
+            limits=limits,
+        )
+        after = tuple(chunk.content_hash for chunk in healed)
+        if after == before:
+            break
+    return healed
+
+
+def _make_chunk(
+    *,
+    document_id: str,
+    document_title: str,
+    parent_id: str,
+    content: str,
+    page_start: int,
+    page_end: int,
+    heading_path: tuple[str, ...],
+    parser_version: str,
+) -> RetrievalChunkDraft:
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return RetrievalChunkDraft(
+        chunk_id=f"chk-{document_id}-{digest[:16]}",
+        parent_id=parent_id,
+        neighbor_ids=(),
+        title=_chunk_title(document_title, heading_path, page_start),
+        content=content,
+        page_start=page_start,
+        page_end=page_end,
+        heading_path=heading_path,
+        token_count=estimate_tokens(content),
+        content_hash=digest,
+        parser_version=parser_version,
+        chunker_version=_CHUNKER_VERSION,
+    )
+
+
+def _is_heading_only(content: str) -> bool:
+    return not _HEADING_LINE.sub("", content).strip()
+
+
+def _dedupe_chunks(chunks: list[RetrievalChunkDraft]) -> list[RetrievalChunkDraft]:
+    seen: set[str] = set()
+    output: list[RetrievalChunkDraft] = []
+    for chunk in chunks:
+        if chunk.content_hash in seen:
+            continue
+        seen.add(chunk.content_hash)
+        output.append(chunk)
+    return output
+
+
+def _fold_heading_only_chunks(
+    chunks: list[RetrievalChunkDraft],
+    *,
+    document_id: str,
+    document_title: str,
+) -> list[RetrievalChunkDraft]:
+    if len(chunks) <= 1:
+        return [chunk for chunk in chunks if not _is_heading_only(chunk.content)]
+    output: list[RetrievalChunkDraft] = []
+    index = 0
+    while index < len(chunks):
+        chunk = chunks[index]
+        if not _is_heading_only(chunk.content):
+            output.append(chunk)
+            index += 1
+            continue
+        if index + 1 < len(chunks):
+            neighbor = chunks[index + 1]
+            output.append(
+                _merge_chunk_pair(
+                    chunk,
+                    neighbor,
+                    document_id=document_id,
+                    document_title=document_title,
+                )
+            )
+            index += 2
+            continue
+        if output:
+            output[-1] = _merge_chunk_pair(
+                output[-1],
+                chunk,
+                document_id=document_id,
+                document_title=document_title,
+            )
+            index += 1
+            continue
+        index += 1
+    return output
+
+
+def _merge_short_chunks(
+    chunks: list[RetrievalChunkDraft],
+    *,
+    profile: ChunkingProfile,
+    document_id: str,
+    document_title: str,
+    limits: ChunkingLimits,
+) -> list[RetrievalChunkDraft]:
+    if len(chunks) <= 1:
+        return list(chunks)
+    short_ids = _short_chunk_ids(profile, chunks)
+    if not short_ids:
+        return list(chunks)
+    output: list[RetrievalChunkDraft] = []
+    index = 0
+    while index < len(chunks):
+        chunk = chunks[index]
+        if chunk.chunk_id not in short_ids:
+            output.append(chunk)
+            index += 1
+            continue
+        merged = False
+        if output and _can_merge(output[-1], chunk, limits):
+            if profile != ChunkingProfile.SLIDE_DECK or output[-1].parent_id == chunk.parent_id:
+                output[-1] = _merge_chunk_pair(
+                    output[-1],
+                    chunk,
+                    document_id=document_id,
+                    document_title=document_title,
+                )
+                merged = True
+        if not merged and index + 1 < len(chunks) and _can_merge(chunk, chunks[index + 1], limits):
+            neighbor = chunks[index + 1]
+            if profile != ChunkingProfile.SLIDE_DECK or neighbor.parent_id == chunk.parent_id:
+                output.append(
+                    _merge_chunk_pair(
+                        chunk,
+                        neighbor,
+                        document_id=document_id,
+                        document_title=document_title,
+                    )
+                )
+                index += 2
+                continue
+        if not merged:
+            output.append(chunk)
+        index += 1
+    return output
+
+
+def _can_merge(
+    left: RetrievalChunkDraft,
+    right: RetrievalChunkDraft,
+    limits: ChunkingLimits,
+) -> bool:
+    return left.token_count + right.token_count <= limits.maximum_tokens
+
+
+def _merge_chunk_pair(
+    left: RetrievalChunkDraft,
+    right: RetrievalChunkDraft,
+    *,
+    document_id: str,
+    document_title: str,
+) -> RetrievalChunkDraft:
+    heading_path = _shared_heading_path(left.heading_path, right.heading_path)
+    content = "\n\n".join(part for part in (left.content, right.content) if part).strip()
+    return _make_chunk(
+        document_id=document_id,
+        document_title=document_title,
+        parent_id=left.parent_id,
+        content=content,
+        page_start=min(left.page_start, right.page_start),
+        page_end=max(left.page_end, right.page_end),
+        heading_path=heading_path,
+        parser_version=left.parser_version,
+    )
+
+
+def _shared_heading_path(
+    left: tuple[str, ...],
+    right: tuple[str, ...],
+) -> tuple[str, ...]:
+    shared: list[str] = []
+    for left_value, right_value in zip(left, right, strict=False):
+        if left_value != right_value:
+            break
+        shared.append(left_value)
+    return tuple(shared) if shared else left or right
 
 
 def _parent_units(
@@ -282,12 +534,12 @@ def _quality_report(
     heading_only = _issue_count(issues, ChunkQualityIssue.HEADING_ONLY)
     duplicate_count = _duplicate_count(chunks)
     coverage = min(covered_blocks / source_blocks, 1.0) if source_blocks else 0.0
+    # SHORT is a warning after auto-heal; it must not block submit/review.
     acceptable = (
         coverage >= 0.995
         and heading_only == 0
         and orphan_media == 0
         and duplicate_count == 0
-        and (not chunks or short_count / len(chunks) <= 0.05)
     )
     return ChunkQualityReport(
         profile=profile,
@@ -314,13 +566,24 @@ def chunk_quality_issues(
         chunk_issues: list[ChunkQualityIssue] = []
         if chunk.chunk_id in short_ids:
             chunk_issues.append(ChunkQualityIssue.SHORT)
-        if not re.sub(r"(?m)^#{1,6}\s+.*$", "", chunk.content).strip():
+        if _is_heading_only(chunk.content):
             chunk_issues.append(ChunkQualityIssue.HEADING_ONLY)
         if chunk.content_hash in duplicate_hashes:
             chunk_issues.append(ChunkQualityIssue.DUPLICATE)
         if chunk_issues:
             issues[chunk.chunk_id] = tuple(chunk_issues)
     return issues
+
+
+def has_blocking_chunk_issues(
+    issues: dict[str, tuple[ChunkQualityIssue, ...]],
+) -> bool:
+    """Return True when any remaining issue must block submit/review."""
+    return any(
+        issue in _BLOCKING_ISSUES
+        for chunk_issues in issues.values()
+        for issue in chunk_issues
+    )
 
 
 def _short_chunk_ids(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
@@ -37,14 +38,18 @@ def register_document_routes(app: FastAPI, ctx: WorkbenchRouteContext) -> None:
     async def list_workbench_documents(
         actor: ActorContext = Depends(current_actor),
     ) -> list[dict[str, Any]]:
-        """Return real published documents and chunks from portal_state.json and chunks.json."""
+        """Return published document metadata (chunk bodies loaded on demand)."""
         ctx.require_capability(actor, "ops.knowledge.read")
-        portal_data = ctx.load_portal_state()
+        portal_data, all_chunks = await asyncio.gather(
+            asyncio.to_thread(ctx.load_portal_state),
+            asyncio.to_thread(ctx.get_cached_chunks),
+        )
         if not portal_data or "documents" not in portal_data:
             return []
-        return list_documents(
+        return await asyncio.to_thread(
+            list_documents,
             portal_data=portal_data,
-            all_chunks=ctx.get_cached_chunks(),
+            all_chunks=all_chunks,
         )
 
     @app.post("/api/console/workbench/documents/upload")

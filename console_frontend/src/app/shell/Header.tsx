@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Layout, Menu, Space, Typography, Tag, Button, Segmented, message } from 'antd';
+import { Layout, Menu, Space, Typography, Tag, Button, message } from 'antd';
 import {
   DashboardOutlined,
   CommentOutlined,
@@ -22,7 +22,7 @@ import {
 } from '../routing/routeRegistry';
 import { refreshCachedSession } from '../providers/authProvider';
 import { ApiError } from '../../shared/api/client';
-import { setKnowledgeWorkspaceMode, resetKnowledgeWorkspaceMode } from '../../shared/api/workbench/knowledgeWorkspaceApi';
+import { resetKnowledgeWorkspaceMode } from '../../shared/api/workbench/knowledgeWorkspaceApi';
 import { ServiceHealthBadge } from './ServiceHealthBadge';
 
 const { Header: AntHeader } = Layout;
@@ -62,53 +62,25 @@ export const Header: React.FC = () => {
     action: faqWrite.action,
   });
 
+  // UX: hide CLOUD formal-path switching; label the normal workspace as 知識庫
+  // (server mode remains LOCAL_SANDBOX). Stale CLOUD overrides can still reset.
   const workspaceMode = String(identity?.knowledgeWorkspaceMode || 'LOCAL_SANDBOX').toUpperCase();
   const isCloudWorkspace = workspaceMode === 'CLOUD_FORMAL';
-  const workspaceLabel = isCloudWorkspace ? 'CLOUD' : 'LOCAL';
-  const workspaceTagColor = isCloudWorkspace ? 'geekblue' : 'gold';
+  const workspaceLabel = isCloudWorkspace ? '正式路徑（鎖定）' : '知識庫';
+  const workspaceTagColor = isCloudWorkspace ? 'orange' : 'blue';
   const overrideActive = Boolean(identity?.knowledgeWorkspaceOverrideActive);
   const blockLabels =
     identity?.cloudFormalWriteBlockReasonLabels
     || identity?.cloudFormalWriteBlockReasons
     || [];
   const workspaceHint = isCloudWorkspace
-    ? identity?.cloudFormalWritesAllowed
-      ? '雲端正式工作區（正式寫入已開放）'
-      : `雲端工作區（正式寫入已鎖定${
-          blockLabels.length ? `：${blockLabels.join('；')}` : ''
-        }）`
-    : '本機測試工作區';
-  const canSwitchWorkspace = Boolean(identity?.knowledgeWorkspaceSwitchAllowed);
-
-  const onWorkspaceSwitch = async (next: string) => {
-    const mode = next === 'CLOUD_FORMAL' ? 'CLOUD_FORMAL' : 'LOCAL_SANDBOX';
-    if (mode === workspaceMode) {
-      return;
-    }
-    setWorkspaceSaving(true);
-    try {
-      const payload = await setKnowledgeWorkspaceMode(mode, 'console-v2 header workspace switch');
-      await refreshCachedSession();
-      await refetch?.();
-      if (mode === 'CLOUD_FORMAL' && !payload.cloudFormalWritesAllowed) {
-        message.warning('已切換至 CLOUD；正式寫入仍鎖定，直到 ENTRA 與 formal writes 就緒。');
-      } else if (mode === 'CLOUD_FORMAL') {
-        message.success('已切換至雲端正式工作區。');
-      } else {
-        message.success('已切回本機測試工作區。');
-      }
-    } catch (err) {
-      const detail =
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : '切換工作區失敗';
-      message.error(detail);
-    } finally {
-      setWorkspaceSaving(false);
-    }
-  };
+    ? `正式雲端寫入路徑尚未開放${
+        blockLabels.length ? `：${blockLabels.join('；')}` : ''
+      }。請回到一般知識庫工作區。`
+    : '一般知識管理：草稿、審核與發布（lab／營運預設）';
+  const canResetWorkspace =
+    Boolean(identity?.knowledgeWorkspaceSwitchAllowed)
+    && (isCloudWorkspace || overrideActive);
 
   const onWorkspaceReset = async () => {
     setWorkspaceSaving(true);
@@ -116,7 +88,7 @@ export const Header: React.FC = () => {
       await resetKnowledgeWorkspaceMode();
       await refreshCachedSession();
       await refetch?.();
-      message.success('已重設為環境預設工作區（覆寫已清除）。');
+      message.success('已回到環境預設的知識庫工作區。');
     } catch (err) {
       const detail =
         err instanceof ApiError
@@ -238,27 +210,7 @@ export const Header: React.FC = () => {
             >
               {workspaceLabel}
             </Tag>
-            {overrideActive ? (
-              <Tag color="purple" style={{ marginInlineEnd: 0 }} title="運算子覆寫已持久化，重啟後仍保留">
-                覆寫
-              </Tag>
-            ) : null}
-            {canSwitchWorkspace ? (
-              <Segmented
-                size="small"
-                disabled={workspaceSaving}
-                value={isCloudWorkspace ? 'CLOUD_FORMAL' : 'LOCAL_SANDBOX'}
-                options={[
-                  { label: 'LOCAL', value: 'LOCAL_SANDBOX' },
-                  { label: 'CLOUD', value: 'CLOUD_FORMAL' },
-                ]}
-                onChange={(value) => {
-                  void onWorkspaceSwitch(String(value));
-                }}
-                aria-label="切換知識工作區 LOCAL 或 CLOUD"
-              />
-            ) : null}
-            {canSwitchWorkspace && overrideActive ? (
+            {canResetWorkspace ? (
               <Button
                 size="small"
                 type="text"
@@ -268,7 +220,7 @@ export const Header: React.FC = () => {
                 }}
                 style={{ color: '#a6a6b8' }}
               >
-                重設
+                回到知識庫
               </Button>
             ) : null}
             {identity?.relaxedWorkflow ? (

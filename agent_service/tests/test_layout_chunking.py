@@ -3,7 +3,6 @@
 from agent_service.document_parsing import BlockKind, MarkdownLayoutParser
 from agent_service.layout_chunking import (
     ChunkingProfile,
-    ChunkQualityIssue,
     chunk_parsed_document,
     chunk_quality_issues,
 )
@@ -85,7 +84,7 @@ def test_short_single_child_slide_is_not_rejected_as_fragmented() -> None:
     assert report.is_acceptable is True
 
 
-def test_quality_issues_identify_the_short_chunk() -> None:
+def test_auto_heal_merges_short_manual_section_into_neighbor() -> None:
     parsed = MarkdownLayoutParser().parse(
         "# Short\n\nBrief.\n\n"
         "# Detailed\n\n" + "This operational instruction contains enough detail. " * 30,
@@ -99,8 +98,117 @@ def test_quality_issues_identify_the_short_chunk() -> None:
     )
     issues = chunk_quality_issues(report.profile, chunks)
 
-    assert issues[chunks[0].chunk_id] == (ChunkQualityIssue.SHORT,)
-    assert chunks[1].chunk_id not in issues
+    assert len(chunks) == 1
+    assert "Brief." in chunks[0].content
+    assert issues == {}
+    assert report.short_chunk_count == 0
+    assert report.is_acceptable is True
+
+
+def test_short_leftover_is_warning_not_blocking() -> None:
+    """When a short chunk cannot merge without exceeding max, accept with warning."""
+    long_body = ("Operational detail sentence with enough tokens. " * 120).strip()
+    parsed = MarkdownLayoutParser().parse(
+        f"# Alpha\n\n{long_body}\n\n"
+        "# Tiny\n\nShort note.\n\n"
+        f"# Beta\n\n{long_body}\n",
+        title="Near max neighbors",
+    )
+
+    _chunks, report = chunk_parsed_document(
+        parsed,
+        document_id="doc-near-max",
+        profile=ChunkingProfile.MANUAL,
+    )
+
+    assert report.is_acceptable is True
+    assert report.heading_only_count == 0
+    assert report.orphan_media_count == 0
+    assert report.duplicate_chunk_count == 0
+
+
+def test_auto_heal_dedupes_identical_chunk_payloads() -> None:
+    from knowledge_core.layout_chunking import (
+        ChunkingLimits,
+        _heal_chunks,
+        _make_chunk,
+    )
+
+    content = "# Shared\n\n" + ("Shared recovery steps for account unlock. " * 20)
+    left = _make_chunk(
+        document_id="doc-dup",
+        document_title="Duplicate guide",
+        parent_id="parent-doc-dup-1",
+        content=content,
+        page_start=1,
+        page_end=1,
+        heading_path=("Shared",),
+        parser_version="1",
+    )
+    right = _make_chunk(
+        document_id="doc-dup",
+        document_title="Duplicate guide",
+        parent_id="parent-doc-dup-2",
+        content=content,
+        page_start=1,
+        page_end=1,
+        heading_path=("Shared",),
+        parser_version="1",
+    )
+    healed = _heal_chunks(
+        [left, right],
+        profile=ChunkingProfile.MANUAL,
+        document_id="doc-dup",
+        document_title="Duplicate guide",
+        limits=ChunkingLimits(600, 120, 900, 100),
+    )
+
+    assert len(healed) == 1
+    assert healed[0].content_hash == left.content_hash
+
+def test_faq_style_document_is_acceptable_after_auto_heal() -> None:
+    sections = []
+    for index in range(1, 8):
+        sections.append(
+            f"### FAQ-{index:03d}|｜題目 {index}？\n\n"
+            f"**問題**：帳號相關問題 {index} 要如何處理？\n\n"
+            f"**建議回覆**：請依標準流程處理問題 {index}，並確認系統狀態後回報。\n"
+        )
+    parsed = MarkdownLayoutParser().parse(
+        "# 複委託 AS400 FAQ\n\n## 正文\n\n" + "\n".join(sections),
+        title="AS400 FAQ",
+    )
+
+    chunks, report = chunk_parsed_document(
+        parsed,
+        document_id="doc-as400-faq",
+        profile=ChunkingProfile.MANUAL,
+    )
+
+    assert len(chunks) >= 1
+    assert report.is_acceptable is True
+    assert report.heading_only_count == 0
+    assert report.orphan_media_count == 0
+    assert report.duplicate_chunk_count == 0
+
+
+def test_auto_heal_attaches_orphan_image_parent() -> None:
+    parsed = MarkdownLayoutParser().parse(
+        "# Guide\n\nFollow the diagram below.\n\n"
+        "# Diagram\n\n![Flow](assets/flow.png)\n",
+        title="Media guide",
+    )
+
+    chunks, report = chunk_parsed_document(
+        parsed,
+        document_id="doc-media",
+        profile=ChunkingProfile.MANUAL,
+    )
+
+    assert report.orphan_media_count == 0
+    assert report.is_acceptable is True
+    assert any("assets/flow.png" in chunk.content for chunk in chunks)
+    assert any("Follow the diagram" in chunk.content for chunk in chunks)
 
 
 def test_parser_preserves_heading_ancestry_and_media_block() -> None:

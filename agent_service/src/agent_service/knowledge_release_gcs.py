@@ -49,7 +49,16 @@ def publish_release_directory(
     bucket = storage_client.bucket(bucket_name)
     release_prefix = _release_prefix(object_prefix, tenant_id, release_id)
     manifest_path = release_dir / MANIFEST_FILENAME
-    paths = sorted(path for path in release_dir.rglob("*") if path.is_file())
+    # Skip staged Gemini File Search blobs and original binaries — they are not
+    # QA-sync artifacts and dominate upload time on large corpora.
+    paths: list[Path] = []
+    for path in release_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(release_dir).as_posix()
+        if relative_path == MANIFEST_FILENAME or is_qa_sync_relative_path(relative_path):
+            paths.append(path)
+    paths.sort()
 
     generations: dict[str, int] = {}
     for path in paths:
