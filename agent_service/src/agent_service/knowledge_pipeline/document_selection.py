@@ -64,13 +64,7 @@ _VPN_PASSWORD_HOWTO_MARKERS: tuple[str, ...] = (
     "實體網路線",
 )
 
-# Temporary Compatibility Rule: same-doc discrimination for adjacent products.
-_SAME_DOC_DISCRIMINATION_MARKERS: tuple[str, ...] = (
-    "是不是同一份",
-    "是不是同一篇",
-    "同一份",
-    "同一篇",
-)
+# Temporary Compatibility Rule: adjacent-product pair (樹精靈 / 超音樹).
 _SHU_SONIC_PRODUCT_MARKERS: tuple[str, ...] = ("樹精靈", "超音樹")
 _SHU_SONIC_DOC_MARKERS: tuple[str, ...] = (
     "樹精靈AP無法登入",
@@ -249,7 +243,7 @@ def inject_same_doc_discrimination_evidence(
     groups: set[str],
     environment: str,
 ) -> list[SearchResult]:
-    """Inject both adjacent-product manuals for「是不是同一份」discrimination."""
+    """Inject both adjacent-product manuals when both products are named."""
     from_catalog = _inject_from_relationships(
         query,
         results,
@@ -261,8 +255,7 @@ def inject_same_doc_discrimination_evidence(
     if from_catalog is not None:
         return from_catalog
 
-    if not any(marker in query for marker in _SAME_DOC_DISCRIMINATION_MARKERS):
-        return list(results)
+    # Both product names named together → inject both manuals.
     if not all(marker in query for marker in _SHU_SONIC_PRODUCT_MARKERS):
         return list(results)
 

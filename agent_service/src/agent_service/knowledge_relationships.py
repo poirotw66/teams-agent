@@ -27,6 +27,7 @@ class KnowledgeRelationship:
     aliases: tuple[str, ...]
     intent: str
     require_any_query_markers: tuple[str, ...]
+    require_all_query_markers: tuple[str, ...]
     related_document_markers: tuple[str, ...]
     relationship: str
     owner: str
@@ -34,6 +35,10 @@ class KnowledgeRelationship:
 
     def matches_query(self, query: str) -> bool:
         if not any(alias in query for alias in self.aliases):
+            return False
+        if self.require_all_query_markers and not all(
+            marker in query for marker in self.require_all_query_markers
+        ):
             return False
         if not self.require_any_query_markers:
             return True
@@ -54,11 +59,15 @@ def _parse_relationship(raw: dict[str, Any]) -> KnowledgeRelationship | None:
     require_any = tuple(
         str(item) for item in (raw.get("requireAnyQueryMarkers") or []) if str(item).strip()
     )
+    require_all = tuple(
+        str(item) for item in (raw.get("requireAllQueryMarkers") or []) if str(item).strip()
+    )
     return KnowledgeRelationship(
         relationship_id=relationship_id,
         aliases=aliases,
         intent=str(raw.get("intent") or "").strip(),
         require_any_query_markers=require_any,
+        require_all_query_markers=require_all,
         related_document_markers=markers,
         relationship=str(raw.get("relationship") or "COMPANION").strip() or "COMPANION",
         owner=str(raw.get("owner") or "knowledge-ops").strip() or "knowledge-ops",
@@ -87,9 +96,22 @@ def load_knowledge_relationships(path: Path | None = None) -> tuple[KnowledgeRel
     return tuple(parsed)
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
+def _cached_knowledge_relationships(
+    catalog_path: str,
+    mtime_ns: int,
+) -> tuple[KnowledgeRelationship, ...]:
+    del mtime_ns  # cache key only
+    return load_knowledge_relationships(Path(catalog_path))
+
+
 def default_knowledge_relationships() -> tuple[KnowledgeRelationship, ...]:
-    return load_knowledge_relationships(_DEFAULT_CATALOG_PATH)
+    catalog_path = _DEFAULT_CATALOG_PATH
+    try:
+        mtime_ns = catalog_path.stat().st_mtime_ns
+    except OSError:
+        mtime_ns = 0
+    return _cached_knowledge_relationships(str(catalog_path), mtime_ns)
 
 
 def matching_relationships(

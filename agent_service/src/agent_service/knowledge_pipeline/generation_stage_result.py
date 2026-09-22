@@ -129,6 +129,7 @@ def prefer_query_aligned_citations(
         or ("與" in query)
         or ("及" in query)
         or ("跟" in query)
+        or ("vs" in (query or "").casefold())
         or query_asks_for_comparison(query)
     )
     procedure_query = query_asks_for_procedure(query)

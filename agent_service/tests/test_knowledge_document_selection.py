@@ -463,6 +463,30 @@ def test_inject_same_doc_discrimination_appends_both_named_manuals() -> None:
     assert [item.chunk.chunk_id for item in boosted] == ["tree", "sonic"]
 
 
+def test_inject_same_doc_discrimination_for_playground_vs_phrasing() -> None:
+    """Playground often asks「A vs B」without「是不是同一份」."""
+    tree = _chunk(
+        "tree",
+        title="樹精靈AP無法登入",
+        content="樹精靈無法登入請檢查網路",
+        document_id="tree",
+    )
+    sonic = _chunk(
+        "sonic",
+        title="超音樹-程式閃退問題",
+        content="超音樹閃退需安裝新版簽章元件；國泰期貨用戶注意",
+        document_id="sonic",
+    )
+    boosted = inject_same_doc_discrimination_evidence(
+        "樹精靈無法登入 vs 超音樹閃退",
+        [_result(tree, 0.95)],
+        index_chunks=[tree, sonic],
+        groups={"IT"},
+        environment="prod",
+    )
+    assert {item.chunk.chunk_id for item in boosted} == {"tree", "sonic"}
+
+
 def test_same_doc_comparison_keeps_both_named_manuals_despite_distractors() -> None:
     """「是不是同一份」must pack both adjacent product docs, not distractors only."""
     results = [

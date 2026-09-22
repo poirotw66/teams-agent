@@ -66,13 +66,12 @@
     {
       "id": "adjacent-product-shu-sonic",
       "aliases": [
-        "是不是同一份",
-        "是不是同一篇",
-        "同一份",
-        "同一篇"
+        "樹精靈",
+        "超音樹"
       ],
       "intent": "adjacent_product_discrimination",
-      "requireAnyQueryMarkers": [
+      "requireAnyQueryMarkers": [],
+      "requireAllQueryMarkers": [
         "樹精靈",
         "超音樹"
       ],

@@ -178,6 +178,31 @@ def test_prefer_query_aligned_keeps_both_docs_for_same_doc_discrimination() -> N
     assert kept == ["tree", "sonic"]
 
 
+def test_prefer_query_aligned_keeps_both_docs_for_vs_phrasing() -> None:
+    from agent_service.knowledge_pipeline.selector import query_asks_for_comparison
+
+    assert query_asks_for_comparison("樹精靈無法登入 vs 超音樹閃退")
+    results = [
+        _result(
+            "tree",
+            "樹精靈AP無法登入",
+            "樹精靈無法登入請檢查網路環境與系統連線設定",
+        ),
+        _result(
+            "sonic",
+            "超音樹-程式閃退問題",
+            "超音樹閃退需安裝新版簽章元件；國泰期貨用戶注意",
+        ),
+    ]
+    kept = prefer_query_aligned_citations(
+        query="樹精靈無法登入 vs 超音樹閃退",
+        ordered_cited_doc_keys=["tree", "sonic"],
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["tree", "sonic"]
+
+
 def test_drop_ad_unlock_citations_for_crm_otp_query() -> None:
     from agent_service.knowledge_pipeline.generation_stage_result import (
         drop_ad_unlock_citations_for_product_query,
