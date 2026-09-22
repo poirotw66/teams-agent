@@ -77,8 +77,17 @@ def grounding_chunks(response: object) -> list[GeminiGroundingChunk]:
     return chunks
 
 
+# Known stale URL still present in older File Search store uploads of the AD FAQ.
+_LEGACY_AD_UNLOCK_URL = "https://xxxxx.pages.dev/Sorry.Only.For.TEST"
+_CANONICAL_AD_UNLOCK_URL = (
+    "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+    "/static/demo/ad-unlock/index.html"
+)
+
+
 def canonicalize_legacy_terms(answer: str, chunks: list[GeminiGroundingChunk]) -> str:
-    """Repair a known naming error in the legacy helpdesk-store upload."""
+    """Repair known stale content from older File Search store uploads."""
+    repaired = answer.replace(_LEGACY_AD_UNLOCK_URL, _CANONICAL_AD_UNLOCK_URL)
     if any(chunk.title.startswith("xiaozhou-") for chunk in chunks):
-        return answer.replace("小州", "大州").replace("大洲", "大州")
-    return answer
+        return repaired.replace("小州", "大州").replace("大洲", "大州")
+    return repaired

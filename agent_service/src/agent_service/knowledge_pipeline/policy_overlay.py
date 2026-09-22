@@ -70,6 +70,7 @@ _MARKDOWN_LINK_HREF_RE = re.compile(
     r"\[([^\]]*)\]\s*[（(]\s*`*(https?://[^)\s`（）]+)`*\s*[）)]",
     re.IGNORECASE,
 )
+_CODE_SPAN_URL_RE = re.compile(r"`(https?://[^`\s]+)`")
 
 
 def repair_answer_markdown_links(answer: str) -> str:
@@ -78,10 +79,12 @@ def repair_answer_markdown_links(answer: str) -> str:
     Common generation failures:
     - stray code-span backticks around the URL
     - fullwidth ``（）`` used instead of ASCII ``()`` to close the link
+    - FAQ-style code spans `` `https://...` `` that render as non-clickable text
     """
     if not answer:
         return answer
-    return _MARKDOWN_LINK_HREF_RE.sub(r"[\1](\2)", answer)
+    repaired = _MARKDOWN_LINK_HREF_RE.sub(r"[\1](\2)", answer)
+    return _CODE_SPAN_URL_RE.sub(r"[\1](\1)", repaired)
 
 
 def merge_policy_advisories(*groups: list[PolicyAdvisory]) -> list[PolicyAdvisory]:

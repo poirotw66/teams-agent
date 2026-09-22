@@ -166,6 +166,21 @@ def test_sanitize_repairs_markdown_link_with_stray_code_span_backticks() -> None
     assert "`https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp`" not in repaired
 
 
+def test_sanitize_unwraps_faq_code_span_urls_to_markdown_links() -> None:
+    from agent_service.knowledge_pipeline.policy_overlay import sanitize_answer_security
+
+    unlock = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    sanitized = sanitize_answer_security(
+        f"AD 自助解鎖專區：`{unlock}`",
+        evidence_text=unlock,
+    )
+    assert f"[{unlock}]({unlock})" in sanitized
+    assert f"`{unlock}`" not in sanitized
+
+
 def test_sanitize_repairs_markdown_link_closed_with_fullwidth_paren() -> None:
     """Live 18:09 answer used ） to close the href; Teams cannot parse that."""
     from agent_service.knowledge_pipeline.policy_overlay import sanitize_answer_security

@@ -161,14 +161,27 @@ def format_teams_answer(answer: str) -> str:
 
 
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
-_BARE_URL_RE = re.compile(r"(?<![\(\[\"'<=])(https?://[^\s<>\]）】」』\"']+)")
-_TRAILING_URL_PUNCT_RE = re.compile(r"[.,;:!?，。；：！？、]+$")
+_BROKEN_MARKDOWN_LINK_RE = re.compile(
+    r"\[([^\]]*)\]\s*[（(]\s*`*(https?://[^)\s`（）]+)`*\s*[）)]",
+    re.IGNORECASE,
+)
+_CODE_SPAN_URL_RE = re.compile(r"`(https?://[^`\s]+)`")
+_BARE_URL_RE = re.compile(r"(?<![\(\[\"'<=`])(https?://[^\s<>\]）】」』\"'`]+)")
+_TRAILING_URL_PUNCT_RE = re.compile(r"[.,;:!?，。；：！？、`]+$")
 
 
 def linkify_bare_urls(text: str) -> str:
-    """Wrap bare http(s) URLs as markdown links without re-linking existing ones."""
+    """Wrap bare http(s) URLs as markdown links without re-linking existing ones.
+
+    Also repairs common model/FAQ failures before linkifying:
+    - ``[label](https://x`)`` / fullwidth parentheses around the href
+    - code-span URLs `` `https://...` `` from source markdown
+    """
     if not text or "http" not in text:
         return text
+
+    repaired = _BROKEN_MARKDOWN_LINK_RE.sub(r"[\1](\2)", text)
+    repaired = _CODE_SPAN_URL_RE.sub(r"\1", repaired)
 
     protected: list[str] = []
 
@@ -176,15 +189,15 @@ def linkify_bare_urls(text: str) -> str:
         protected.append(match.group(0))
         return f"\x00MDLINK{len(protected) - 1}\x00"
 
-    staged = _MARKDOWN_LINK_RE.sub(_protect, text)
+    staged = _MARKDOWN_LINK_RE.sub(_protect, repaired)
 
     def _linkify(match: re.Match[str]) -> str:
         raw = match.group(1)
         trailing = ""
-        url = raw
+        url = raw.strip("`")
         punct = _TRAILING_URL_PUNCT_RE.search(url)
         if punct:
-            trailing = punct.group(0)
+            trailing = punct.group(0).rstrip("`")
             url = url[: punct.start()]
         if not url:
             return raw
@@ -200,15 +213,17 @@ def extract_answer_urls(text: str) -> list[str]:
     """Return unique bare or markdown http(s) URLs from answer text (order preserved)."""
     if not text or "http" not in text:
         return []
+    repaired = _BROKEN_MARKDOWN_LINK_RE.sub(r"[\1](\2)", text)
+    repaired = _CODE_SPAN_URL_RE.sub(r"\1", repaired)
     found: list[str] = []
     seen: set[str] = set()
-    for match in _MARKDOWN_LINK_RE.finditer(text):
-        url = match.group(2)
-        if url not in seen:
+    for match in _MARKDOWN_LINK_RE.finditer(repaired):
+        url = match.group(2).rstrip("`")
+        if url and url not in seen:
             seen.add(url)
             found.append(url)
-    for match in _BARE_URL_RE.finditer(_MARKDOWN_LINK_RE.sub("", text)):
-        url = _TRAILING_URL_PUNCT_RE.sub("", match.group(1))
+    for match in _BARE_URL_RE.finditer(_MARKDOWN_LINK_RE.sub("", repaired)):
+        url = _TRAILING_URL_PUNCT_RE.sub("", match.group(1)).rstrip("`")
         if url and url not in seen:
             seen.add(url)
             found.append(url)

@@ -459,3 +459,22 @@ def test_format_teams_answer_linkifies_bare_https_urls() -> None:
     assert format_teams_answer(f"請點 [{unlock_url}]({unlock_url})") == (
         f"請點 [{unlock_url}]({unlock_url})"
     )
+
+
+def test_format_teams_answer_repairs_code_span_and_broken_markdown_urls() -> None:
+    unlock_url = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    from teams_agent.formatting import extract_answer_urls
+
+    formatted = format_teams_answer(
+        f"AD 自助解鎖專區：`{unlock_url}`\n"
+        f"備用：[{unlock_url}]({unlock_url}`)"
+    )
+
+    assert f"[{unlock_url}]({unlock_url})" in formatted
+    assert f"`{unlock_url}`" not in formatted
+    assert f"({unlock_url}`)" not in formatted
+    assert extract_answer_urls(f"`{unlock_url}`") == [unlock_url]
+    assert extract_answer_urls(f"[{unlock_url}]({unlock_url}`)") == [unlock_url]
