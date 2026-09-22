@@ -435,6 +435,88 @@ def test_citation_url_decouples_token_and_blocks_forwarded_links(tmp_path: Path)
     assert "Viewer identity does not match the signed citation subject" in bob_resp.text
 
 
+def test_local_unauthenticated_mode_opens_signed_source_without_login(
+    tmp_path: Path,
+) -> None:
+    """DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS trusts signed URLs in the browser."""
+
+    from teams_agent.source_links import CitationViewerContext, build_source_url
+    from teams_agent.viewer_sessions import InMemoryViewerMembershipStore
+
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "lab.md").write_text("# lab\n\n本機簽章免登入內容\n", encoding="utf-8")
+    settings = make_settings(
+        tmp_path,
+        source_dir=data_dir,
+        allow_unauthenticated_requests=True,
+    )
+    client = TestClient(create_web_app(settings))
+
+    # Mint with an isolated store so the process default has no membership,
+    # simulating a Teams Adapter restart after the chat turn that signed the URL.
+    mint_store = InMemoryViewerMembershipStore()
+    full_url = build_source_url(
+        "sources/lab.md",
+        settings,
+        viewer=CitationViewerContext(subject="user-lab", groups=("it",)),
+        membership_store=mint_store,
+    )
+    assert full_url is not None
+    parsed = urlparse(full_url)
+    citation_params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+
+    response = client.get(
+        parsed.path,
+        params=citation_params,
+        headers={"Accept": "text/html"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    assert "本機簽章免登入內容" in response.text
+    assert "/sources/login" not in (response.headers.get("location") or "")
+
+
+def test_local_unauthenticated_mode_rejects_forged_signature_without_login_redirect(
+    tmp_path: Path,
+) -> None:
+    from teams_agent.source_links import CitationViewerContext, build_source_url
+    from teams_agent.viewer_sessions import InMemoryViewerMembershipStore
+
+    data_dir = tmp_path / "data"
+    sources = data_dir / "sources"
+    sources.mkdir(parents=True)
+    (sources / "lab.md").write_text("# lab\n\n內容\n", encoding="utf-8")
+    settings = make_settings(
+        tmp_path,
+        source_dir=data_dir,
+        allow_unauthenticated_requests=True,
+    )
+    client = TestClient(create_web_app(settings))
+    full_url = build_source_url(
+        "sources/lab.md",
+        settings,
+        viewer=CitationViewerContext(subject="user-lab", groups=("it",)),
+        membership_store=InMemoryViewerMembershipStore(),
+    )
+    assert full_url is not None
+    parsed = urlparse(full_url)
+    citation_params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+    citation_params["signature"] = "0" * len(citation_params["signature"])
+
+    response = client.get(
+        parsed.path,
+        params=citation_params,
+        headers={"Accept": "text/html"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert "/sources/login" not in (response.headers.get("location") or "")
+
+
 def test_unauthenticated_browser_redirects_to_login_and_submits(tmp_path: Path) -> None:
     from teams_agent.source_links import (
         CitationViewerContext,
