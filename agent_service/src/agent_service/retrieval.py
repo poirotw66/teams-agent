@@ -456,6 +456,8 @@ class HybridIndex:
             "searchTotalMs": round((time.perf_counter() - started) * 1000, 1),
             "fastPath": 1.0 if is_fast_path else 0.0,
             "embeddingDegraded": 1.0 if embedding_degraded else 0.0,
+            "aclVisibleChunks": float(len(authorized_indices)),
+            "aclFilteredChunks": float(max(0, len(self.chunks) - len(authorized_indices))),
         }
         return filtered, timings
 

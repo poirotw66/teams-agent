@@ -10,6 +10,8 @@ import { ManualDocsManager } from '../components/ManualDocsManager';
 import { FaqManager } from '../components/FaqManager';
 import { KnowledgeGapsManager } from '../components/KnowledgeGapsManager';
 import { PlaygroundSimulator } from '../components/PlaygroundSimulator';
+import { KnowledgeWorkspaceBanner } from '../components/KnowledgeWorkspaceBanner';
+import { KnowledgeSyncLagBanner } from '../components/KnowledgeSyncLagBanner';
 import { QuickFaqDrawer, QuickFaqInitialData } from '../../dashboard/components/QuickFaqDrawer';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
 import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
@@ -107,6 +109,8 @@ export const KnowledgePage: React.FC = () => {
   return (
     <div>
       <WorkbenchLoadErrorBanner domains={['documents', 'faqs', 'overview']} />
+      <KnowledgeWorkspaceBanner />
+      <KnowledgeSyncLagBanner />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           知識庫與手冊中心

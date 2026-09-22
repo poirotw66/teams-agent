@@ -21,27 +21,53 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
 
 __all__ = [
-    "ServiceScopeHit",
     "EXPECTED_RELEASE_TITLES_FOR_SCOPE",
-    "has_service_scope_evidence",
-    "is_complete_service_scope_query",
-    "find_service_scope_hits",
-    "missing_expected_release_titles",
+    "ServiceScopeHit",
     "catalog_entries_from_manifest_documents",
     "configure_service_scope_from_documents",
     "configure_service_scope_from_manifest",
     "configure_service_scope_from_release",
+    "find_service_scope_hits",
+    "get_service_catalog_audit_meta",
+    "has_service_scope_evidence",
+    "is_complete_service_scope_query",
+    "missing_expected_release_titles",
     "reset_service_scope_catalog",
 ]
 
 logger = logging.getLogger(__name__)
 
 _MANIFEST_FILENAME = "manifest.json"
+
+# Populated when a release catalog/manifest overlay is installed. Used for
+# answer/audit metadata (spec §4); not a substitute for Portal catalog governance.
+_catalog_audit_meta: dict[str, str | int | None] | None = None
+
+
+def get_service_catalog_audit_meta() -> dict[str, str | int | None]:
+    """Return loaded catalog schema/release identity for answer audit fields."""
+    return dict(_catalog_audit_meta or {})
+
+
+def _set_catalog_audit_meta(
+    *,
+    schema_version: int | None,
+    release_id: str | None,
+    source: str,
+    entry_count: int,
+) -> None:
+    global _catalog_audit_meta
+    _catalog_audit_meta = {
+        "schemaVersion": schema_version,
+        "releaseId": release_id,
+        "source": source,
+        "entryCount": entry_count,
+    }
 
 
 @dataclass(frozen=True)
@@ -60,8 +86,9 @@ class _CatalogEntry:
     canonical_title: str
 
 
-# Static catalog: seat relocation / computer contact form (published doc title).
-# Kept as P0 fallback when no active-release overlay is configured.
+# FILE / local-sandbox fallback only: used when no release catalog overlay is
+# loaded. Must NOT compete with ``catalog/service_catalog.json`` — when that
+# release artifact is present it is the sole routing authority (no static merge).
 _SEAT_RELOCATION_ALIASES: tuple[str, ...] = (
     "座位搬遷",
     "座位遷移",
@@ -143,8 +170,8 @@ def catalog_entries_from_manifest_documents(
 
     Only documents with a non-empty ``source_aliases`` list contribute. The
     document title is always included as an alias. Empty-alias documents are
-    ignored so the static fallback remains authoritative until Portal metadata
-    is populated.
+    ignored so the FILE/sandbox static fallback remains available until a
+    release catalog or populated Portal metadata is loaded.
     """
     entries: list[_CatalogEntry] = []
     for document in documents:
@@ -173,10 +200,20 @@ def catalog_entries_from_manifest_documents(
 
 def configure_service_scope_from_documents(
     documents: Sequence[Mapping[str, object]],
+    *,
+    schema_version: int | None = None,
+    release_id: str | None = None,
+    source: str = "manifest_documents",
 ) -> int:
     """Install a governed overlay from document metadata. Returns entry count."""
     global _governed_entries
     _governed_entries = catalog_entries_from_manifest_documents(documents)
+    _set_catalog_audit_meta(
+        schema_version=schema_version,
+        release_id=release_id,
+        source=source,
+        entry_count=len(_governed_entries),
+    )
     logger.info(
         "Configured service-scope catalog from governed metadata: entries=%d",
         len(_governed_entries),
@@ -205,37 +242,114 @@ def configure_service_scope_from_manifest(manifest_path: Path | str) -> int:
     if not isinstance(documents, list):
         reset_service_scope_catalog()
         return 0
-    return configure_service_scope_from_documents(documents)
+    release_id = None
+    schema_version = None
+    if isinstance(payload, dict):
+        raw_release = payload.get("releaseId")
+        if isinstance(raw_release, str) and raw_release.strip():
+            release_id = raw_release.strip()
+        raw_schema = payload.get("schemaVersion")
+        if isinstance(raw_schema, int):
+            schema_version = raw_schema
+    return configure_service_scope_from_documents(
+        documents,
+        schema_version=schema_version,
+        release_id=release_id,
+        source="manifest.json",
+    )
 
 
 def configure_service_scope_from_release(
     release_dir: Path | str,
     release_id: str,
 ) -> int:
-    """Load governed aliases for ``release_id`` under the releases root."""
-    manifest_path = Path(release_dir) / release_id / _MANIFEST_FILENAME
+    """Load governed aliases for ``release_id`` under the releases root.
+
+    Prefers ``catalog/service_catalog.json`` when present (packaged release
+    artifact); falls back to ``manifest.json`` documents.
+    """
+    root = Path(release_dir) / release_id
+    catalog_path = root / "catalog" / "service_catalog.json"
+    if catalog_path.is_file():
+        try:
+            raw_payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+            from knowledge_portal.service_catalog_artifact import (
+                validate_service_catalog_payload,
+            )
+
+            payload = validate_service_catalog_payload(raw_payload)
+        except (OSError, json.JSONDecodeError, ValueError, TypeError) as error:
+            logger.warning(
+                "Failed to load service catalog %s; falling back to manifest: %s",
+                catalog_path,
+                error,
+            )
+        else:
+            rows = payload.get("services") or []
+            if isinstance(rows, list) and rows:
+                documents = [
+                    {
+                        "document_id": (
+                            item.get("documentId")
+                            or item.get("linkedDocumentId")
+                            or item.get("serviceId")
+                        ),
+                        "title": item.get("officialName") or item.get("serviceId"),
+                        "source_aliases": item.get("aliases") or [],
+                        "acl_groups": item.get("aclGroups") or item.get("audienceGroupIds") or [],
+                    }
+                    for item in rows
+                    if isinstance(item, dict)
+                ]
+                schema_version = payload.get("schemaVersion")
+                catalog_release = payload.get("releaseId")
+                return configure_service_scope_from_documents(
+                    documents,
+                    schema_version=schema_version if isinstance(schema_version, int) else None,
+                    release_id=(
+                        str(catalog_release).strip()
+                        if isinstance(catalog_release, str) and catalog_release.strip()
+                        else release_id
+                    ),
+                    source="catalog/service_catalog.json",
+                )
+    manifest_path = root / _MANIFEST_FILENAME
     return configure_service_scope_from_manifest(manifest_path)
 
 
 def reset_service_scope_catalog() -> None:
     """Clear the governed overlay so lookups use the static P0 catalog only."""
-    global _governed_entries
+    global _governed_entries, _catalog_audit_meta
     _governed_entries = None
+    _catalog_audit_meta = None
 
 
 def _catalog_entries() -> tuple[tuple[str, tuple[str, ...], str], ...]:
     """Return (service_id, aliases, canonical_title) rows.
 
-    When a governed overlay is present, aliases for matching titles are merged
-    (governed first, then static fallbacks). Static services with no governed
-    aliases remain available. Extra Portal documents with ``source_aliases``
-    become additional catalog rows.
+    Authority order:
+    * ``catalog/service_catalog.json`` overlay → release catalog only (no
+      hard-coded static merge).
+    * ``manifest.json`` overlay → governed aliases win per title; static
+      FILE/sandbox aliases may fill gaps for unlisted titles only.
+    * No overlay → static FILE/sandbox fallback only.
     """
     static = _static_catalog_entries()
     governed = _governed_entries
     if not governed:
-        return tuple((entry.service_id, entry.aliases, entry.canonical_title) for entry in static)
+        return tuple(
+            (entry.service_id, entry.aliases, entry.canonical_title) for entry in static
+        )
 
+    source = str((_catalog_audit_meta or {}).get("source") or "")
+    if source == "catalog/service_catalog.json":
+        return tuple(
+            (entry.service_id, entry.aliases, entry.canonical_title)
+            for entry in governed
+        )
+
+    # Manifest / document overlay (FILE sandbox transitional path): governed
+    # aliases first; keep static services that the overlay did not cover.
     static_by_title = {_normalize(entry.canonical_title): entry for entry in static}
     merged: list[_CatalogEntry] = []
     seen_titles: set[str] = set()
@@ -247,10 +361,12 @@ def _catalog_entries() -> tuple[tuple[str, tuple[str, ...], str], ...]:
         if static_match is None:
             merged.append(entry)
             continue
+        # Prefer governed aliases; do not re-inject static aliases that the
+        # release may have deliberately dropped — only keep static service_id.
         merged.append(
             _CatalogEntry(
                 service_id=static_match.service_id,
-                aliases=_dedupe_aliases(entry.aliases, static_match.aliases),
+                aliases=entry.aliases,
                 canonical_title=static_match.canonical_title,
             )
         )

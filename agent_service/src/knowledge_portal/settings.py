@@ -71,6 +71,8 @@ class PortalSettings:
     artifact_gcs_bucket: str | None = None
     artifact_storage_path: Path | None = None
     default_tenant_id: str = "default"
+    catalog_drafts_collection: str = "knowledge_catalog_drafts"
+    require_approved_catalog_for_production: bool = False
     source_store_mode: str = "NONE"
     source_store_path: Path | None = None
     release_gcs_bucket: str | None = None
@@ -137,7 +139,9 @@ class PortalSettings:
         return cls(**build_portal_settings_kwargs())
 
     def effective_relaxed_workflow(self) -> bool:
-        """GOVERNED profile always disables relaxed workflow."""
+        """Demo/relaxed gates never apply in production deployments."""
+        if (self.deployment_environment or "").strip().lower() == "prod":
+            return False
         if not self.demo_mode:
             return False
         return self.relaxed_workflow

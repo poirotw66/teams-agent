@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Alert, Card, Space, Table, Typography } from 'antd';
 import { AuditOutlined } from '@ant-design/icons';
 import { apiClient } from '../../../shared/api/client';
+import { KnowledgeWorkspaceBanner } from '../components/KnowledgeWorkspaceBanner';
+import { KnowledgeSyncLagBanner } from '../components/KnowledgeSyncLagBanner';
 
 const { Title, Text } = Typography;
 
@@ -46,6 +48,8 @@ export const ReviewsPage: React.FC = () => {
 
   return (
     <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <KnowledgeWorkspaceBanner />
+      <KnowledgeSyncLagBanner />
       <div>
         <Title level={3} style={{ marginBottom: 4 }}>
           <AuditOutlined style={{ marginRight: 8 }} />

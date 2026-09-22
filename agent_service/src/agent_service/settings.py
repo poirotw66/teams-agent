@@ -168,6 +168,8 @@ class RagSettings:
     knowledge_release_gcs_prefix: str = "knowledge-releases"
     knowledge_release_tenant_id: str = "default"
     knowledge_release_cache_dir: Path | None = None
+    knowledge_release_sync_interval_seconds: int = 300
+    knowledge_release_selection_mode: str | None = None
     knowledge_release_firestore_project: str | None = None
     knowledge_release_firestore_database: str | None = None
     knowledge_release_firestore_config_collection: str = "knowledge_portal_config"

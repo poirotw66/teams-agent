@@ -47,9 +47,61 @@ describe('routeRegistry access mapping', () => {
     expect(resolvePrimaryNavKey('/operations/costs')).toBe('/dashboard');
   });
 
-  it('exports refine resources without parameterized paths', () => {
+  it('maps knowledge-catalog list and write actions to Portal capabilities', () => {
+    expect(
+      evaluateResourceAccess({
+        resource: 'knowledge-catalog',
+        action: 'list',
+        capabilities: ['ops.knowledge.read'],
+      }).can,
+    ).toBe(true);
+
+    expect(
+      evaluateResourceAccess({
+        resource: 'knowledge-catalog',
+        action: 'edit',
+        capabilities: ['knowledge.edit'],
+      }).can,
+    ).toBe(true);
+
+    expect(
+      evaluateResourceAccess({
+        resource: 'knowledge-catalog',
+        action: 'submit',
+        capabilities: ['knowledge.submit'],
+      }).can,
+    ).toBe(true);
+
+    expect(
+      evaluateResourceAccess({
+        resource: 'knowledge-catalog',
+        action: 'publish',
+        capabilities: ['knowledge.publish'],
+      }).can,
+    ).toBe(false);
+
+    expect(
+      evaluateResourceAccess({
+        resource: 'knowledge-catalog',
+        action: 'publish',
+        capabilities: ['knowledge.catalog.approve'],
+      }).can,
+    ).toBe(true);
+
+    expect(
+      evaluateResourceAccess({
+        resource: 'knowledge-catalog',
+        action: 'review',
+        capabilities: ['knowledge.review'],
+      }).can,
+    ).toBe(true);
+  });
+
+  it('exports knowledge-catalog refine resource', () => {
     const resources = toRefineResources();
-    expect(resources.some((item) => item.name === 'dashboard')).toBe(true);
-    expect(resources.every((item) => !item.list.includes(':'))).toBe(true);
+    expect(resources.some((item) => item.name === 'knowledge-catalog')).toBe(true);
+    expect(
+      resources.find((item) => item.name === 'knowledge-catalog')?.list,
+    ).toBe('/knowledge/catalog');
   });
 });

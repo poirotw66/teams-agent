@@ -17,6 +17,11 @@ def build_lifespan(resolved_settings: RagSettings):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await startup_agent_runtime(app, resolved_settings)
-        yield
+        try:
+            yield
+        finally:
+            syncer = getattr(app.state, "knowledge_release_syncer", None)
+            if syncer is not None:
+                syncer.stop_background()
 
     return lifespan

@@ -364,6 +364,12 @@ def _request_fact(
         "results": [r.model_dump(mode="json") for r in results],
         "handoff": state.get("handoff_handled"),
         "release": state.get("knowledge_release_id"),
+        "selectionMode": state.get("knowledge_selection_mode"),
+        "lastSuccessfulSyncAt": state.get("knowledge_last_successful_sync_at"),
+        "isCloudProductionAnswer": bool(state.get("is_cloud_production_answer")),
+        "serviceCatalogVersion": state.get("service_catalog_version"),
+        "aclDecision": state.get("knowledge_acl_decision"),
+        "aclFilteredCount": state.get("knowledge_acl_filtered_count"),
     }
 
 

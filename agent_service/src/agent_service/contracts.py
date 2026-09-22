@@ -224,6 +224,14 @@ class AgentResponse(StrictModel):
     estimatedCostUsd: float | None = None
     estimatedCostTwd: float | None = None
     costComplete: bool | None = None
+    knowledgeReleaseId: str | None = None
+    knowledgeSelectionMode: str | None = None
+    knowledgeLastSuccessfulSyncAt: str | None = None
+    # Fail-closed: LOCAL_SANDBOX / PINNED answers must never claim cloud production.
+    isCloudProductionAnswer: bool = False
+    serviceCatalogVersion: str | None = None
+    knowledgeAclDecision: str | None = None
+    knowledgeAclFilteredCount: int | None = None
 
 
 class IssueRetrievalTrace(StrictModel):

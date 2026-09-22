@@ -17,6 +17,10 @@ from knowledge_portal.ports.release_publish import (
     PublishedReleaseInfo,
     get_release_directory_publisher,
 )
+from knowledge_portal.acl_artifact import write_acl_artifact
+from knowledge_portal.service_catalog_artifact import write_service_catalog_artifact
+from knowledge_portal.service_catalog_draft_store import build_catalog_draft_store
+from knowledge_portal.service_catalog_governance import load_approved_catalog_for_release
 
 from .models import ReleaseManifestEntry, ReleaseRecord, utc_now
 from .settings import PortalSettings
@@ -120,6 +124,28 @@ def validate_production_release_if_needed(
         ) from error
 
 
+def require_approved_catalog_for_production_if_needed(
+    settings: PortalSettings,
+    *,
+    governed_catalog: dict | None,
+) -> None:
+    """Fail PRODUCTION finalize when an APPROVED catalog draft is required."""
+    if settings.release_purpose != "PRODUCTION":
+        return
+    required = bool(settings.require_approved_catalog_for_production)
+    if not required and bool(settings.require_dual_approval):
+        # Enterprise dual-approval mode implies governed catalog for PRODUCTION.
+        required = not settings.effective_relaxed_workflow()
+    if not required:
+        return
+    if governed_catalog is None:
+        raise ReleaseBuildError(
+            "PRODUCTION finalize requires an APPROVED service catalog draft. "
+            "Approve the catalog via /api/catalog/approve, or set "
+            "KNOWLEDGE_PORTAL_REQUIRE_APPROVED_CATALOG=false for local opt-out."
+        )
+
+
 def assemble_release_record(
     *,
     settings: PortalSettings,
@@ -208,6 +234,45 @@ def finalize_release_artifacts(
         index_artifact=index_artifact,
         file_search_store=file_search_store,
     )
+    published_document_ids = {
+        entry.document_id for entry in manifest if entry.document_id
+    }
+    governed_catalog = load_approved_catalog_for_release(
+        settings.data_dir,
+        tenant_id=resolved_tenant_id,
+        release_id=release_id,
+        published_document_ids=published_document_ids,
+        store=build_catalog_draft_store(settings),
+    )
+    require_approved_catalog_for_production_if_needed(
+        settings,
+        governed_catalog=governed_catalog,
+    )
+    write_service_catalog_artifact(
+        release_dir,
+        release_id=release_id,
+        tenant_id=resolved_tenant_id,
+        manifest=manifest,
+        governed_payload=governed_catalog,
+    )
+    write_acl_artifact(
+        release_dir,
+        release_id=release_id,
+        tenant_id=resolved_tenant_id,
+        manifest=manifest,
+    )
+    catalog_path = release_dir / "catalog" / "service_catalog.json"
+    acl_path = release_dir / "acl" / "document_acl.json"
+    if not catalog_path.is_file():
+        raise ReleaseBuildError(
+            f"Release '{release_id}' is missing catalog/service_catalog.json "
+            "before GCS publish."
+        )
+    if not acl_path.is_file():
+        raise ReleaseBuildError(
+            f"Release '{release_id}' is missing acl/document_acl.json "
+            "before GCS publish."
+        )
     validate_production_release_if_needed(
         settings,
         release_id=release_id,
@@ -240,4 +305,5 @@ __all__ = [
     "assemble_release_record",
     "finalize_release_artifacts",
     "publish_release_if_configured",
+    "require_approved_catalog_for_production_if_needed",
 ]

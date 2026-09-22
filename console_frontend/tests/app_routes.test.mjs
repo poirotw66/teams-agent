@@ -14,6 +14,8 @@ test("console App registers v2 work and health routes", () => {
   assert.match(appSource, /path=["']\/operations\/health["']/);
   assert.match(appSource, /path=["']\/improvements\/cases["']/);
   assert.match(appSource, /path=["']\/ai\/evaluations["']/);
+  assert.match(appSource, /path=["']\/knowledge\/catalog["']/);
+  assert.match(appSource, /features\/knowledge\/pages\/CatalogPage/);
 });
 
 test("console App keeps Refine shell wiring", () => {

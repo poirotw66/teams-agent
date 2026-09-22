@@ -323,6 +323,13 @@ def load_knowledge_release_env(data_dir: Path) -> dict[str, Any]:
         )
         .expanduser()
         .resolve(),
+        "knowledge_release_sync_interval_seconds": _int_env(
+            "KNOWLEDGE_RELEASE_SYNC_INTERVAL_SECONDS",
+            300,
+        ),
+        "knowledge_release_selection_mode": (
+            (_str_env("KNOWLEDGE_RELEASE_SELECTION_MODE") or "").upper() or None
+        ),
         "knowledge_release_firestore_project": _str_env(
             "KNOWLEDGE_RELEASE_FIRESTORE_PROJECT"
         ),

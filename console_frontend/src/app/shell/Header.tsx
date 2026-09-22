@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Layout, Menu, Space, Typography, Tag, Button } from 'antd';
+import { Layout, Menu, Space, Typography, Tag, Button, Segmented, message } from 'antd';
 import {
   DashboardOutlined,
   CommentOutlined,
@@ -20,6 +20,9 @@ import {
   listPrimaryNavRoutes,
   resolveSelectedMenuKeys,
 } from '../routing/routeRegistry';
+import { refreshCachedSession } from '../providers/authProvider';
+import { ApiError } from '../../shared/api/client';
+import { setKnowledgeWorkspaceMode, resetKnowledgeWorkspaceMode } from '../../shared/api/workbench/knowledgeWorkspaceApi';
 import { ServiceHealthBadge } from './ServiceHealthBadge';
 
 const { Header: AntHeader } = Layout;
@@ -36,18 +39,96 @@ const PRIMARY_NAV_ICONS: Record<string, React.ReactNode> = {
 export const Header: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { data: identity } = useGetIdentity<{
+  const { data: identity, refetch } = useGetIdentity<{
     id: string;
     name: string;
     role: string;
     ownerUnits: string[];
+    authMode?: string;
+    relaxedWorkflow?: boolean;
+    knowledgeWorkspaceMode?: string;
+    cloudFormalWritesAllowed?: boolean;
+    cloudFormalWriteBlockReasons?: string[];
+    cloudFormalWriteBlockReasonLabels?: string[];
+    knowledgeWorkspaceSwitchAllowed?: boolean;
+    knowledgeWorkspaceOverrideActive?: boolean;
+    knowledgeWorkspaceModeSource?: string;
   }>();
   const [globalFaqOpen, setGlobalFaqOpen] = useState<boolean>(false);
+  const [workspaceSaving, setWorkspaceSaving] = useState(false);
   const faqWrite = CONSOLE_WRITE_ACTIONS.faqWrite;
   const { data: canWriteFaq } = useCan({
     resource: faqWrite.resource,
     action: faqWrite.action,
   });
+
+  const workspaceMode = String(identity?.knowledgeWorkspaceMode || 'LOCAL_SANDBOX').toUpperCase();
+  const isCloudWorkspace = workspaceMode === 'CLOUD_FORMAL';
+  const workspaceLabel = isCloudWorkspace ? 'CLOUD' : 'LOCAL';
+  const workspaceTagColor = isCloudWorkspace ? 'geekblue' : 'gold';
+  const overrideActive = Boolean(identity?.knowledgeWorkspaceOverrideActive);
+  const blockLabels =
+    identity?.cloudFormalWriteBlockReasonLabels
+    || identity?.cloudFormalWriteBlockReasons
+    || [];
+  const workspaceHint = isCloudWorkspace
+    ? identity?.cloudFormalWritesAllowed
+      ? '雲端正式工作區（正式寫入已開放）'
+      : `雲端工作區（正式寫入已鎖定${
+          blockLabels.length ? `：${blockLabels.join('；')}` : ''
+        }）`
+    : '本機測試工作區';
+  const canSwitchWorkspace = Boolean(identity?.knowledgeWorkspaceSwitchAllowed);
+
+  const onWorkspaceSwitch = async (next: string) => {
+    const mode = next === 'CLOUD_FORMAL' ? 'CLOUD_FORMAL' : 'LOCAL_SANDBOX';
+    if (mode === workspaceMode) {
+      return;
+    }
+    setWorkspaceSaving(true);
+    try {
+      const payload = await setKnowledgeWorkspaceMode(mode, 'console-v2 header workspace switch');
+      await refreshCachedSession();
+      await refetch?.();
+      if (mode === 'CLOUD_FORMAL' && !payload.cloudFormalWritesAllowed) {
+        message.warning('已切換至 CLOUD；正式寫入仍鎖定，直到 ENTRA 與 formal writes 就緒。');
+      } else if (mode === 'CLOUD_FORMAL') {
+        message.success('已切換至雲端正式工作區。');
+      } else {
+        message.success('已切回本機測試工作區。');
+      }
+    } catch (err) {
+      const detail =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : '切換工作區失敗';
+      message.error(detail);
+    } finally {
+      setWorkspaceSaving(false);
+    }
+  };
+
+  const onWorkspaceReset = async () => {
+    setWorkspaceSaving(true);
+    try {
+      await resetKnowledgeWorkspaceMode();
+      await refreshCachedSession();
+      await refetch?.();
+      message.success('已重設為環境預設工作區（覆寫已清除）。');
+    } catch (err) {
+      const detail =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : '重設工作區失敗';
+      message.error(detail);
+    } finally {
+      setWorkspaceSaving(false);
+    }
+  };
 
   const menuItems = useMemo(() => {
     const primary = listPrimaryNavRoutes().map((route) => ({
@@ -150,6 +231,51 @@ export const Header: React.FC = () => {
           </button>
 
           <Space size="small" align="center" wrap style={{ justifyContent: 'flex-end' }}>
+            <Tag
+              color={workspaceTagColor}
+              title={workspaceHint}
+              style={{ marginInlineEnd: 0, fontWeight: 700, letterSpacing: 0.4 }}
+            >
+              {workspaceLabel}
+            </Tag>
+            {overrideActive ? (
+              <Tag color="purple" style={{ marginInlineEnd: 0 }} title="運算子覆寫已持久化，重啟後仍保留">
+                覆寫
+              </Tag>
+            ) : null}
+            {canSwitchWorkspace ? (
+              <Segmented
+                size="small"
+                disabled={workspaceSaving}
+                value={isCloudWorkspace ? 'CLOUD_FORMAL' : 'LOCAL_SANDBOX'}
+                options={[
+                  { label: 'LOCAL', value: 'LOCAL_SANDBOX' },
+                  { label: 'CLOUD', value: 'CLOUD_FORMAL' },
+                ]}
+                onChange={(value) => {
+                  void onWorkspaceSwitch(String(value));
+                }}
+                aria-label="切換知識工作區 LOCAL 或 CLOUD"
+              />
+            ) : null}
+            {canSwitchWorkspace && overrideActive ? (
+              <Button
+                size="small"
+                type="text"
+                disabled={workspaceSaving}
+                onClick={() => {
+                  void onWorkspaceReset();
+                }}
+                style={{ color: '#a6a6b8' }}
+              >
+                重設
+              </Button>
+            ) : null}
+            {identity?.relaxedWorkflow ? (
+              <Tag color="orange" style={{ marginInlineEnd: 0 }}>
+                RELAXED
+              </Tag>
+            ) : null}
             <ServiceHealthBadge />
 
             {canWriteFaq?.can ? (

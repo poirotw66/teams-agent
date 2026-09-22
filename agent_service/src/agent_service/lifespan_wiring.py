@@ -17,6 +17,11 @@ from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .knowledge_release import resolve_knowledge_index
 from .knowledge_release_control import build_firestore_release_control
+from .knowledge_release_sync import (
+    KnowledgeReleaseSelectionMode,
+    KnowledgeReleaseSyncer,
+    resolve_selection_mode,
+)
 from .operations.runtime import build_ops_runtime
 from .retrieval import HybridIndex, hybrid_index_fusion_kwargs
 from .service_scope_evidence import (
@@ -188,6 +193,7 @@ def attach_app_state(
         if settings.knowledge_release_store_mode == "GCS"
         else None
     )
+    app.state.knowledge_release_syncer = getattr(app.state, "knowledge_release_syncer", None)
     app.state.agent = agent
     app.state.knowledge_router = knowledge_router
     app.state.workflow = workflow
@@ -239,6 +245,16 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
 
     from .prompt_runtime import GovernanceRuntime
     from .rag_models import build_rag_model_bundle, governance_overrides_from_runtime
+
+    syncer: KnowledgeReleaseSyncer | None = None
+    if settings.knowledge_release_store_mode == "GCS":
+        syncer = KnowledgeReleaseSyncer(settings)
+        app.state.knowledge_release_syncer = syncer
+        selection = resolve_selection_mode(settings)
+        if selection is not KnowledgeReleaseSelectionMode.LOCAL_SANDBOX:
+            # First sync is offline of the Q&A path but required before load when
+            # no verified mirror exists yet.
+            await asyncio.to_thread(syncer.sync_now)
 
     index, resolved_index = await asyncio.to_thread(load_startup_index, settings)
     agent = await asyncio.to_thread(RagAgent, settings, index)
@@ -292,6 +308,21 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
     )
     app.state.rag_models = rag_models
     configure_pricing_and_ops(app, settings)
+    if syncer is not None:
+        from .deps_sync import apply_follow_cloud_mirror_reload
+
+        syncer.set_loaded_release_id(resolved_index.release_id)
+
+        def _on_follow_cloud_ready(release_id: str, release_dir: Any) -> None:
+            apply_follow_cloud_mirror_reload(
+                app,
+                settings,
+                release_id=release_id,
+                release_dir=release_dir,
+            )
+
+        syncer.set_follow_cloud_ready_handler(_on_follow_cloud_ready)
+        syncer.start_background()
     from .observability import configure_tracing
 
     configure_tracing(

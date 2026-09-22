@@ -86,6 +86,14 @@ export const CONSOLE_ROUTES: readonly ConsoleRouteDefinition[] = [
     readCapabilities: ['knowledge.publish', 'ops.knowledge.read'],
   },
   {
+    id: 'knowledge-catalog',
+    path: '/knowledge/catalog',
+    label: '服務目錄',
+    resource: 'knowledge-catalog',
+    navGroup: 'knowledge',
+    readCapabilities: ['knowledge.read', 'ops.knowledge.read'],
+  },
+  {
     id: 'knowledge-sync',
     path: '/knowledge/sync',
     label: '知識 Sync',
@@ -295,6 +303,26 @@ export const CONSOLE_WRITE_ACTIONS: Readonly<
     resource: 'tickets',
     action: 'create',
     capabilities: ['ops.quality.write'],
+  },
+  catalogEdit: {
+    resource: 'knowledge-catalog',
+    action: 'edit',
+    capabilities: ['knowledge.edit', 'knowledge.create'],
+  },
+  catalogSubmit: {
+    resource: 'knowledge-catalog',
+    action: 'submit',
+    capabilities: ['knowledge.submit', 'knowledge.edit'],
+  },
+  catalogReview: {
+    resource: 'knowledge-catalog',
+    action: 'review',
+    capabilities: ['knowledge.review'],
+  },
+  catalogPublish: {
+    resource: 'knowledge-catalog',
+    action: 'publish',
+    capabilities: ['knowledge.catalog.approve'],
   },
 };
 

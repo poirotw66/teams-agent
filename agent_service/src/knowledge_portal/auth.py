@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hmac
 import logging
+import os
 from typing import Any
 from urllib.parse import unquote
 
@@ -113,6 +114,15 @@ def resolve_portal_actor(
             raise PortalAuthError("Entra auth requires Authorization: Bearer <token>.")
         return _validate_entra_token(token, settings)
 
+    # Spec §2: production must not accept browser-forged X-Portal-* identity
+    # for formal cloud writes. Local HEADER mode remains for isolated lab use.
+    if not portal_header_auth_allowed(settings):
+        raise PortalAuthError(
+            "Production Knowledge Portal rejects X-Portal-* header identity. "
+            "Use Entra bearer tokens or signed BFF delegation "
+            "(X-Knowledge-Delegation)."
+        )
+
     if not header_user_id or not header_user_name:
         raise PortalAuthError(
             "Missing portal identity headers. Use Entra auth, BFF delegation, "
@@ -129,6 +139,23 @@ def resolve_portal_actor(
         role=header_role or "CONTRIBUTOR",
         owner_units=owner_units,
     )
+
+
+def portal_header_auth_allowed(settings: PortalSettings) -> bool:
+    """Return True when browser-supplied X-Portal-* identity is permitted.
+
+    Fail-closed in production unless ``KNOWLEDGE_PORTAL_ALLOW_HEADER_AUTH`` is
+    explicitly enabled (lab/break-glass only).
+    """
+    environment = (settings.deployment_environment or "dev").strip().lower()
+    if environment in {"dev", "test", "poc"}:
+        return True
+    return os.environ.get("KNOWLEDGE_PORTAL_ALLOW_HEADER_AUTH", "").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def _actor_from_delegation(

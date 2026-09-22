@@ -45,6 +45,7 @@ def register_ops_read_routes(
         app,
         resolved_settings=resolved_settings,
         current_actor=current_actor,
+        query_service=query_service,
     )
     register_conversations_routes(
         app,

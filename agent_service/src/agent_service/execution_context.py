@@ -50,6 +50,12 @@ class ExecutionContext:
     usage_collector: UsageEventCollector
     llm_calls: LlmCallCounter = field(default_factory=LlmCallCounter)
     selected_knowledge_backend: str | None = None
+    # Pin the concrete KnowledgeService for this request so FOLLOW_CLOUD
+    # hot-reload cannot swap the loaded release under an in-flight turn.
+    pinned_knowledge_service: object | None = None
+    # Release id observed when the service was pinned; audit/logs must keep
+    # this sticky value even if app.state.knowledge_release_id advances mid-turn.
+    pinned_knowledge_release_id: str | None = None
     default_model: str | None = None
     deadline: datetime | None = None
     # Eval-harness only. Production request builders must leave this empty.

@@ -16,7 +16,24 @@ export interface UserSession {
   displayName: string;
   role: string;
   capabilities: string[];
+  /** Portal knowledge RBAC caps from `/api/capabilities` (merged into getPermissions). */
+  knowledgeCapabilities?: string[];
   ownerUnitIds: string[];
+  authMode?: string;
+  relaxedWorkflow?: boolean;
+  knowledgeWorkspaceMode?: string;
+  cloudFormalWritesAllowed?: boolean;
+  cloudFormalWriteBlockReasons?: string[];
+  cloudFormalWriteBlockReasonLabels?: string[];
+  knowledgeWorkspaceSwitchAllowed?: boolean;
+  knowledgeWorkspaceOverrideActive?: boolean;
+  knowledgeWorkspaceModeSource?: string;
+}
+
+function mergedSessionCapabilities(session: UserSession): string[] {
+  const ops = session.capabilities || [];
+  const knowledge = session.knowledgeCapabilities || [];
+  return Array.from(new Set([...ops, ...knowledge]));
 }
 
 let cachedSession: UserSession | null = null;
@@ -162,6 +179,15 @@ export const authProvider: AuthProvider = {
       name: cachedSession.displayName || cachedSession.userName,
       role: cachedSession.role,
       ownerUnits: cachedSession.ownerUnitIds,
+      authMode: cachedSession.authMode,
+      relaxedWorkflow: cachedSession.relaxedWorkflow,
+      knowledgeWorkspaceMode: cachedSession.knowledgeWorkspaceMode,
+      cloudFormalWritesAllowed: cachedSession.cloudFormalWritesAllowed,
+      cloudFormalWriteBlockReasons: cachedSession.cloudFormalWriteBlockReasons,
+      cloudFormalWriteBlockReasonLabels: cachedSession.cloudFormalWriteBlockReasonLabels,
+      knowledgeWorkspaceSwitchAllowed: cachedSession.knowledgeWorkspaceSwitchAllowed,
+      knowledgeWorkspaceOverrideActive: cachedSession.knowledgeWorkspaceOverrideActive,
+      knowledgeWorkspaceModeSource: cachedSession.knowledgeWorkspaceModeSource,
     };
   },
 
@@ -173,6 +199,12 @@ export const authProvider: AuthProvider = {
         return [];
       }
     }
-    return cachedSession.capabilities || [];
+    return mergedSessionCapabilities(cachedSession);
   },
 };
+
+/** Reload `/api/capabilities` into the session cache (e.g. after workspace switch). */
+export async function refreshCachedSession(): Promise<UserSession> {
+  cachedSession = await apiClient<UserSession>('/api/capabilities');
+  return cachedSession;
+}

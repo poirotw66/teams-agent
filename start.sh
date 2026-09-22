@@ -414,6 +414,15 @@ if [[ "${START_MOCK_TICKET}" == "true" ]]; then
 fi
 
 log "啟動 LangGraph Agent Service：http://127.0.0.1:${RAG_PORT}"
+# Optional local-only GCS mirror override (gitignored). Non-secret lab wiring.
+GCS_KNOWLEDGE_OVERRIDE="${AGENT_SERVICE_DIR}/.env.knowledge-gcs.local"
+if [[ -f "${GCS_KNOWLEDGE_OVERRIDE}" ]]; then
+  log "套用本機知識 GCS 同步覆寫：agent_service/.env.knowledge-gcs.local"
+  set -a
+  # shellcheck disable=SC1090
+  source "${GCS_KNOWLEDGE_OVERRIDE}"
+  set +a
+fi
 agent_env=(
   "PORT=${RAG_PORT}"
   "RAG_DATA_DIR=${PROJECT_DIR}/data"
@@ -426,6 +435,25 @@ agent_env=(
   "AGENT_MODEL=${AGENT_MODEL_VALUE}"
   "GOLDEN_EVALUATION_TOKEN=${GOLDEN_EVALUATION_TOKEN:-golden-eval-secret-token}"
 )
+# Propagate knowledge GCS override keys when set (already exported above).
+for _k in \
+  KNOWLEDGE_RELEASE_STORE_MODE \
+  KNOWLEDGE_RELEASE_GCS_BUCKET \
+  KNOWLEDGE_RELEASE_GCS_PREFIX \
+  KNOWLEDGE_RELEASE_TENANT_ID \
+  KNOWLEDGE_RELEASE_CACHE_DIR \
+  KNOWLEDGE_RELEASE_SYNC_INTERVAL_SECONDS \
+  KNOWLEDGE_RELEASE_SELECTION_MODE \
+  KNOWLEDGE_RELEASE_FIRESTORE_PROJECT \
+  KNOWLEDGE_RELEASE_FIRESTORE_DATABASE \
+  KNOWLEDGE_RELEASE_FIRESTORE_CONFIG_COLLECTION \
+  KNOWLEDGE_RELEASE_FIRESTORE_RELEASES_COLLECTION \
+  KNOWLEDGE_ACTIVE_RELEASE_ID
+do
+  if [[ -n "${!_k:-}" ]]; then
+    agent_env+=("${_k}=${!_k}")
+  fi
+done
 if [[ "${START_MOCK_TICKET}" == "true" ]]; then
   agent_env+=(
     "TICKET_SERVICE_MODE=HTTP"

@@ -35,6 +35,12 @@ def create_app(
     portal_app_factory: Callable[..., FastAPI] | None = None,
 ) -> FastAPI:
     resolved_settings = settings or BackofficeSettings.from_env()
+    # Persisted LOCAL↔CLOUD override wins over env bootstrap when present.
+    from ai_ops_backoffice.knowledge_bridge.knowledge_workspace_store import (
+        apply_persisted_workspace_override,
+    )
+
+    apply_persisted_workspace_override(resolved_settings)
     prod_issues = resolved_settings.validate_for_production()
     if prod_issues:
         raise ValueError(f"Invalid production configuration: {'; '.join(prod_issues)}")

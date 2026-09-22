@@ -100,6 +100,14 @@ class BackofficeSettings:
     source_delegation_secret: str = ""
     knowledge_bridge_enabled: bool = True
     knowledge_in_process: bool = True
+    # LOCAL_SANDBOX (default local) | CLOUD_FORMAL (remote Portal; formal writes gated).
+    knowledge_workspace_mode: str | None = None
+    # Env snapshot used when clearing a durable operator override.
+    knowledge_workspace_mode_default: str | None = None
+    # True when mode was loaded from or written to the durable override store.
+    knowledge_workspace_override_active: bool = False
+    # Explicit opt-in for cloud formal publish/rollback when workspace is CLOUD_FORMAL.
+    knowledge_cloud_formal_writes_enabled: bool = False
     deployment_tenant_id: str = "local-development"
     relaxed_workflow: bool = False
     min_test_cases_for_review: int = 3

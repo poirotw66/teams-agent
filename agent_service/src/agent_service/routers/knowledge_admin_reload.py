@@ -173,9 +173,13 @@ async def perform_knowledge_reload(
         embedding_model_for_load(request.app, resolved_settings),
         **hybrid_index_fusion_kwargs(resolved_settings),
     )
+    hydrate_root = release_dir
+    if resolved_settings.knowledge_release_store_mode == "GCS":
+        # Mirror layout: index lives under <releases_root>/<releaseId>/index/...
+        hydrate_root = target_index_path.parents[1].parent
     hydrate_index_sources(
         new_index.chunks,
-        release_dir=release_dir,
+        release_dir=hydrate_root,
         release_id=target_release_id,
     )
     new_agent = RagAgent(resolved_settings, new_index)
@@ -195,9 +199,13 @@ async def perform_knowledge_reload(
     request.app.state.agent = new_agent
 
     if target_release_id:
-        configure_service_scope_from_release(release_dir, target_release_id)
+        configure_service_scope_from_release(hydrate_root, target_release_id)
     else:
         reset_service_scope_catalog()
+
+    syncer = getattr(request.app.state, "knowledge_release_syncer", None)
+    if syncer is not None:
+        syncer.set_loaded_release_id(target_release_id)
 
     logger.info(
         "Knowledge index reloaded: release_id=%s path=%s chunks=%d source=%s",

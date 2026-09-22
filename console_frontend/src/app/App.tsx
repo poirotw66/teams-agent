@@ -26,6 +26,9 @@ const KnowledgePage = React.lazy(() =>
 const ReleasesPage = React.lazy(() =>
   import('../features/knowledge/pages/ReleasesPage').then((m) => ({ default: m.ReleasesPage })),
 );
+const CatalogPage = React.lazy(() =>
+  import('../features/knowledge/pages/CatalogPage').then((m) => ({ default: m.CatalogPage })),
+);
 const ReviewsPage = React.lazy(() =>
   import('../features/knowledge/pages/ReviewsPage').then((m) => ({ default: m.ReviewsPage })),
 );
@@ -213,6 +216,7 @@ export const App: React.FC = () => {
                   <Route path="/knowledge" element={<KnowledgePage />} />
                   <Route path="/knowledge/reviews" element={<ReviewsPage />} />
                   <Route path="/knowledge/releases" element={<ReleasesPage />} />
+                  <Route path="/knowledge/catalog" element={<CatalogPage />} />
                   <Route path="/knowledge/sync" element={<SyncJobsPage />} />
                   <Route path="/tickets" element={<TicketsPage />} />
                   <Route path="/operations/health" element={<HealthPage />} />

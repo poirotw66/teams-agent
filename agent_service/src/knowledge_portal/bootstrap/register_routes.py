@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from knowledge_portal.models import PortalActor
 from knowledge_portal.routers import (
     register_admin_routes,
+    register_catalog_routes,
     register_documents_assets_routes,
     register_documents_import_routes,
     register_documents_routes,
@@ -48,6 +49,7 @@ def register_portal_routes(
     register_documents_import_routes(app, **kwargs)
     register_documents_assets_routes(app, **kwargs)
     register_documents_routes(app, **kwargs)
+    register_catalog_routes(app, **kwargs)
     register_reviews_routes(app, **kwargs)
     register_releases_routes(app, **kwargs)
     register_tests_routes(app, **kwargs)

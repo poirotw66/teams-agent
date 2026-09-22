@@ -16,6 +16,9 @@ from ai_ops_backoffice.routers import (
     register_tool_fixture_routes,
     register_workbench_routes,
 )
+from ai_ops_backoffice.routers.agent_knowledge_sync_routes import (
+    register_agent_knowledge_sync_routes,
+)
 
 
 def register_eval_governance_routes(app: FastAPI, container: BackofficeContainer) -> None:
@@ -75,11 +78,18 @@ def register_eval_governance_routes(app: FastAPI, container: BackofficeContainer
         current_actor=deps.current_actor,
         require_capability=deps.require_capability,
     )
+    register_agent_knowledge_sync_routes(
+        app,
+        resolved_settings=container.settings,
+        current_actor=deps.current_actor,
+        require_capability=deps.require_capability,
+    )
     app.include_router(
         build_knowledge_router(
             client=container.knowledge_client,
             current_actor=deps.current_actor,
             enabled=container.settings.knowledge_bridge_enabled,
+            settings=container.settings,
         ),
         prefix="/api/knowledge",
     )

@@ -150,6 +150,8 @@ graph TD
 | 環境變數名稱 | 適用服務 | 說明與預設值 |
 | :--- | :--- | :--- |
 | `AI_OPS_KNOWLEDGE_BRIDGE_ENABLED` | Backoffice | 必須設為 `true`，啟用 BFF 代理功能 |
+| `AI_OPS_KNOWLEDGE_WORKSPACE_MODE` | Backoffice | `LOCAL_SANDBOX`（本機測試，預設）或 `CLOUD_FORMAL`（雲端正式；需正式身分） |
+| `AI_OPS_KNOWLEDGE_CLOUD_FORMAL_WRITES` | Backoffice | 預設 `false`。設為 `true` 且 ENTRA＋關閉 relaxed 後才開放雲端正式發布／回滾 |
 | `AI_OPS_KNOWLEDGE_DELEGATION_SECRET` | Backoffice | 與知識庫共用之 HMAC 委派密鑰（存於 Secret Manager） |
 | `KNOWLEDGE_PORTAL_DELEGATION_SECRET` | Portal | 知識庫驗簽 HMAC 密鑰，須與 Backoffice 密鑰一致 |
 | `AGENT_RELOAD_TOKEN` / `SERVICE_TOKEN` | Agent / Portal | Agent 熱重載端點授權 Token（用於 `/admin/reload-knowledge`，若未設定 `AGENT_RELOAD_TOKEN` 則自動回退至 `SERVICE_TOKEN`） |

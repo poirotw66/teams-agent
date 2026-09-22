@@ -113,8 +113,8 @@ def test_manifest_aliases_are_used_when_configured(tmp_path: Path) -> None:
     assert len(hits) == 1
     assert hits[0].service_id == "seat_relocation"
     assert hits[0].canonical_title == "座位搬遷需求"
-    # Static fallback aliases remain after merge.
-    assert has_service_scope_evidence("電腦聯絡單") is True
+    # Manifest overlay wins for that title: static-only aliases are not re-injected.
+    assert has_service_scope_evidence("電腦聯絡單") is False
     # True OOS must not match.
     assert has_service_scope_evidence("今天天氣如何") is False
 
@@ -288,6 +288,51 @@ def test_true_oos_weather_and_breakfast_remain_not_it() -> None:
         assert coerced.route == "NOT_IT"
 
 
+def test_spec_55_seat_catalog_veto_and_no_fabricate_invariants(
+    tmp_path: Path,
+) -> None:
+    """Spec §5.5: seat aliases veto NON_IT; true OOS stays out; miss does not fabricate."""
+    from agent_service.contracts import Issue, IssueResult
+    from agent_service.response_builder import build_response as build_user_text
+    from agent_service.settings import RagSettings
+
+    for utterance in ("座位搬遷", "換座位怎麼申請", "座位遷移準則"):
+        assert has_service_scope_evidence(utterance) is True
+        coerced = coerce_issue(
+            _issue(description=utterance, isIT=False, readiness="NOT_IT", route="NOT_IT"),
+            new_id=1,
+            allowed_faq_keys=set(),
+            max_missing_info=2,
+            raw_utterance=utterance,
+        )
+        assert coerced.route == "KNOWLEDGE"
+        assert ALL_NON_IT_MESSAGE not in (coerced.description or "")
+
+    assert has_service_scope_evidence("今天天氣如何") is False
+
+    issue = Issue(
+        id=1,
+        description="不存在的系統問題",
+        isIT=True,
+        readiness="READY",
+        route="KNOWLEDGE",
+        missingInfo=[],
+    )
+    built = build_user_text(
+        issues=[issue],
+        results=[IssueResult(issueId=1, resultType="NO_KNOWLEDGE")],
+        settings=RagSettings(
+            data_dir=tmp_path,
+            index_path=tmp_path / "chunks.json",
+        ),
+        offer_ticket_on_no_knowledge=False,
+    )
+    assert "查無相關資訊" in built.text
+    # Must not invent document citations or claim a grounded answer.
+    assert "根據文件" not in built.text
+    assert "來源：" not in built.text
+
+
 def test_turn_planner_planned_issues_normalize_seat_not_it() -> None:
     issues = planned_issues_to_issues(
         [
@@ -306,6 +351,119 @@ def test_turn_planner_planned_issues_normalize_seat_not_it() -> None:
     assert issues[0].isIT is True
     assert issues[0].readiness == "READY"
     assert issues[0].route == "KNOWLEDGE"
+
+
+def test_spec_55_turn_planner_policy_on_off_and_hybrid_ticket_oos() -> None:
+    """§5.5 breadth: TurnPlanner policy gate, seat hybrid ticket, true OOS."""
+    from agent_service.turn_planner_policy import should_invoke_turn_planner
+
+    seat_variants = (
+        "座位搬遷怎麼申請",
+        "座位遷移需求",
+        "換座位",
+        "電腦聯繫單格式",
+        "規劃座位搬遷時應在什麼時間提出申請？",
+    )
+    for seat_message in seat_variants:
+        assert has_service_scope_evidence(seat_message) is True
+        assert should_invoke_turn_planner(
+            mode="ALL",
+            message=seat_message,
+            pending_clarification=False,
+            recent_turns=[],
+            has_pending_ticket_offer=False,
+        )
+        assert not should_invoke_turn_planner(
+            mode="OFF",
+            message=seat_message,
+            pending_clarification=False,
+            recent_turns=[],
+            has_pending_ticket_offer=False,
+        )
+        # With prior context, ALL still allows planner; OFF stays closed.
+        assert should_invoke_turn_planner(
+            mode="ALL",
+            message=seat_message,
+            pending_clarification=False,
+            recent_turns=["你好", "請問需要什麼協助？"],
+            has_pending_ticket_offer=False,
+        )
+        assert not should_invoke_turn_planner(
+            mode="OFF",
+            message=seat_message,
+            pending_clarification=False,
+            recent_turns=["你好"],
+            has_pending_ticket_offer=False,
+        )
+        # CONTEXTUAL requires prior turns or clarification; empty history stays off.
+        assert not should_invoke_turn_planner(
+            mode="CONTEXTUAL",
+            message=seat_message,
+            pending_clarification=False,
+            recent_turns=[],
+            has_pending_ticket_offer=False,
+        )
+        assert should_invoke_turn_planner(
+            mode="CONTEXTUAL",
+            message=seat_message,
+            pending_clarification=True,
+            recent_turns=[],
+            has_pending_ticket_offer=False,
+        )
+        assert should_invoke_turn_planner(
+            mode="CONTEXTUAL",
+            message="那座位呢",
+            pending_clarification=False,
+            recent_turns=["你好", "請問需要什麼協助？"],
+            has_pending_ticket_offer=False,
+        )
+
+    # Ticket-hybrid: seat wording + ticket QUERY stays on ticket path.
+    message = "查詢座位搬遷工單"
+    assert classify_ticket_intent(message) is TicketIntent.QUERY
+    mixin = ClarificationWorkflowMixin()
+    mixin.settings = SimpleNamespace(supervisor_terminal_confidence=0.85)
+    mixin.supervisor = SimpleNamespace(
+        supports_terminal_intent=lambda _message, _intent: True
+    )
+    conversation = SimpleNamespace(pendingIssues=[], messages=[])
+    decision = ConversationSupervisorDecision(intent="NON_IT", confidence=0.99)
+    routing = mixin._apply_supervisor_routing(conversation, _request(message), decision)
+    assert routing.get("ticket_intent") is TicketIntent.QUERY
+    assert routing.get("skip_issue_pipeline") is not True
+
+    # True OOS still terminals as NON_IT when planner/supervisor would skip.
+    for oos_text in ("今天天氣如何", "今晚球賽幾點開始"):
+        oos = mixin._apply_supervisor_routing(
+            conversation,
+            _request(oos_text),
+            ConversationSupervisorDecision(intent="NON_IT", confidence=0.99),
+        )
+        assert oos.get("skip_issue_pipeline") is True
+        assert oos["issues"][0].route == "NOT_IT"
+        assert has_service_scope_evidence(oos_text) is False
+
+    # Seat aliases with TurnPlanner PlannedIssue path normalize to KNOWLEDGE.
+    for utterance in (
+        "換座位怎麼申請",
+        "規劃座位搬遷時應在什麼時間提出申請？",
+        "座位遷移準則",
+    ):
+        planned = planned_issues_to_issues(
+            [
+                PlannedIssue(
+                    description=utterance,
+                    isIT=False,
+                    readiness="NOT_IT",
+                    route="NOT_IT",
+                )
+            ],
+            raw_utterance=utterance,
+            allowed_faq_keys=set(),
+            max_missing_info=2,
+        )
+        assert planned[0].route == "KNOWLEDGE"
+        assert has_service_scope_evidence(utterance) is True
 
 
 def test_missing_expected_release_titles_helper() -> None:

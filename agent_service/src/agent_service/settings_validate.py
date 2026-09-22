@@ -59,6 +59,8 @@ class _AgentSettingsView(Protocol):
     knowledge_release_mode: str
     knowledge_release_store_mode: str
     knowledge_release_gcs_bucket: str | None
+    knowledge_release_sync_interval_seconds: int
+    knowledge_release_selection_mode: str | None
     deployment_environment: str
     usd_twd_exchange_rate: float
 
@@ -223,6 +225,19 @@ def validate_persistence_and_release_modes(settings: _AgentSettingsView) -> None
     if settings.knowledge_release_store_mode == "GCS" and not settings.knowledge_release_gcs_bucket:
         raise ValueError(
             "KNOWLEDGE_RELEASE_GCS_BUCKET is required when KNOWLEDGE_RELEASE_STORE_MODE=GCS."
+        )
+    if settings.knowledge_release_sync_interval_seconds < 1:
+        raise ValueError(
+            "KNOWLEDGE_RELEASE_SYNC_INTERVAL_SECONDS must be a positive integer."
+        )
+    selection_mode = (settings.knowledge_release_selection_mode or "").strip().upper()
+    if selection_mode and selection_mode not in {
+        "FOLLOW_CLOUD",
+        "PINNED",
+        "LOCAL_SANDBOX",
+    }:
+        raise ValueError(
+            "KNOWLEDGE_RELEASE_SELECTION_MODE must be FOLLOW_CLOUD, PINNED, or LOCAL_SANDBOX."
         )
     if settings.deployment_environment not in {"dev", "test", "poc", "prod"}:
         raise ValueError("AGENT_DEPLOYMENT_ENV must be one of dev, test, poc, or prod.")

@@ -71,9 +71,10 @@ def build_backend_state_store(settings: RagSettings) -> KnowledgeBackendStateSto
 class KnowledgeBackendRouter:
     """Route each knowledge lookup to one of the pre-built backends.
 
-    The service map is immutable after startup. Switching only replaces the
-    active backend name, while an in-flight lookup keeps the service snapshot
-    it started with.
+    Switching replaces the active backend name and/or service instance in the
+    router map. An in-flight request with an ``ExecutionContext`` keeps both the
+    backend name and the concrete service instance it first selected, so
+    FOLLOW_CLOUD hot-reload cannot change the loaded release mid-turn.
     """
 
     def __init__(
@@ -176,8 +177,7 @@ class KnowledgeBackendRouter:
         request: AgentRequest | None = None,
         answer_model: object | None = None,
     ) -> KnowledgeResult:
-        backend = await self._backend_for_search(request, execution_context)
-        service = self._services[backend]
+        service = await self._service_for_search(request, execution_context)
         parameters = inspect.signature(service.search).parameters
         kwargs: dict[str, object] = {"correlation_id": correlation_id}
         if "call_counter" in parameters:
@@ -189,3 +189,22 @@ class KnowledgeBackendRouter:
         if answer_model is not None and "answer_model" in parameters:
             kwargs["answer_model"] = answer_model
         return await service.search(query, user_context, **kwargs)
+
+    async def _service_for_search(
+        self,
+        request: AgentRequest | None,
+        execution_context: ExecutionContext | None,
+    ) -> KnowledgeService:
+        if execution_context is not None:
+            pinned = execution_context.pinned_knowledge_service
+            if pinned is not None:
+                return pinned  # type: ignore[return-value]
+
+        backend = await self._backend_for_search(request, execution_context)
+        service = self._services[backend]
+        if execution_context is not None:
+            execution_context.pinned_knowledge_service = service
+            release_id = getattr(service, "release_id", None)
+            if isinstance(release_id, str) and release_id.strip():
+                execution_context.pinned_knowledge_release_id = release_id.strip()
+        return service

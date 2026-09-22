@@ -114,6 +114,41 @@ async def test_router_keeps_request_backend_after_active_backend_switch(
 
 
 @pytest.mark.asyncio
+async def test_router_keeps_pinned_service_after_hybrid_hot_reload(
+    tmp_path: Path,
+) -> None:
+    """In-flight requests must keep the original Hybrid service instance."""
+    original = FakeBackend("HYBRID-old")
+    replacement = FakeBackend("HYBRID-new")
+    router = KnowledgeBackendRouter({"HYBRID": original}, "HYBRID")
+    context = ExecutionContext.from_request(
+        settings=RagSettings(
+            data_dir=tmp_path,
+            index_path=tmp_path / "index.json",
+        ),
+        correlation_id="correlation-pin",
+        request_id="request-pin",
+        tenant_id="tenant-1",
+    )
+
+    first = await router.search(
+        "before-reload",
+        UserContext(),
+        execution_context=context,
+    )
+    router.update_service("HYBRID", replacement)
+    second = await router.search(
+        "after-reload",
+        UserContext(),
+        execution_context=context,
+    )
+
+    assert first.backend == "HYBRID-old"
+    assert second.backend == "HYBRID-old"
+    assert context.pinned_knowledge_service is original
+
+
+@pytest.mark.asyncio
 async def test_router_forwards_evaluation_request_to_selected_backend() -> None:
     backend = RequestAwareBackend()
     router = KnowledgeBackendRouter({"HYBRID": backend}, "HYBRID")

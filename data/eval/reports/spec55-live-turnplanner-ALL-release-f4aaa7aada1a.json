@@ -1,0 +1,70 @@
+{
+  "suite": "spec-5.5-turnplanner-ALL-side-agent",
+  "port": 8010,
+  "turnPlannerMode": "ALL",
+  "loadedReleaseId": "release-f4aaa7aada1a",
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "results": [
+    {
+      "caseId": "tp-all-seat-01",
+      "passed": true,
+      "observedRoute": "KNOWLEDGE",
+      "resultTypes": [
+        "KNOWLEDGE_ANSWERED"
+      ],
+      "latencyMs": 5630.5,
+      "failures": [],
+      "answerPreview": "若有座位搬遷需求，請於一週前填寫 **電腦聯繫單** 以利工作分派與進度追蹤 [S1]。  填寫格式如下：  **電腦聯繫單主旨：** 年／月／日　座位搬遷需求  **電腦聯繫單內容：** 1. **異動日期：** 年／月／日 2. **異動內容：** 座位搬遷，需進行電腦及相關系統之安裝與設定。 3. **異動人數：** OO 人 4. **附件：** 變更後之座位表或相關截圖（供線路配置使用）",
+      "knowledgeReleaseId": "release-f4aaa7aada1a"
+    },
+    {
+      "caseId": "tp-all-seat-02",
+      "passed": true,
+      "observedRoute": "KNOWLEDGE",
+      "resultTypes": [
+        "KNOWLEDGE_ANSWERED"
+      ],
+      "latencyMs": 4082.5,
+      "failures": [],
+      "answerPreview": "若有座位搬遷需求，請於一週前填寫 **電腦聯繫單** 提出申請 [S1]。填寫格式如下：  **電腦聯繫單主旨：** 年／月／日　座位搬遷需求  **電腦聯繫單內容：** 1. **異動日期：** 年／月／日 2. **異動內容：** 座位搬遷，需進行電腦及相關系統之安裝與設定。 3. **異動人數：** OO 人 4. **附件：** 變更後之座位表或相關截圖（供線路配置使用） 5. **需求窗",
+      "knowledgeReleaseId": "release-f4aaa7aada1a"
+    },
+    {
+      "caseId": "tp-all-oos",
+      "passed": true,
+      "observedRoute": "NOT_IT",
+      "resultTypes": [],
+      "latencyMs": 2346.9,
+      "failures": [],
+      "answerPreview": "「今天午餐吃什麼」不屬於公司 IT 支援範圍，因此我不會查詢企業知識庫。 我可以協助處理公司系統、設備、帳號、權限或錯誤訊息等 IT 問題。",
+      "knowledgeReleaseId": "release-f4aaa7aada1a"
+    },
+    {
+      "caseId": "tp-all-noe",
+      "passed": true,
+      "observedRoute": "NO_KNOWLEDGE",
+      "resultTypes": [
+        "NO_KNOWLEDGE"
+      ],
+      "latencyMs": 4256.7,
+      "failures": [],
+      "answerPreview": "問題：ZorpFlux ZX-999 故障排除與異常處理  目前企業知識庫中查無相關資訊，我無法提供答案。  是否需要協助建立派工單？請回覆<是>以建立派工單。",
+      "knowledgeReleaseId": "release-f4aaa7aada1a"
+    },
+    {
+      "caseId": "tp-all-ctx-seat",
+      "passed": true,
+      "observedRoute": "KNOWLEDGE",
+      "resultTypes": [
+        "KNOWLEDGE_ANSWERED"
+      ],
+      "latencyMs": 4588.5,
+      "failures": [],
+      "answerPreview": "若有座位搬遷及電腦設備遷移需求，請於一週前填寫「電腦聯繫單」提出申請 [S1]。填寫格式如下：  **電腦聯繫單主旨：** 年／月／日　座位搬遷需求  **電腦聯繫單內容：** 1. **異動日期：** 年／月／日 2. **異動內容：** 座位搬遷，需進行電腦及相關系統之安裝與設定。 3. **異動人數：** OO 人 4. **附件：** 變更後之座位表或相關截圖（供線路配置使用） 5. **"
+    }
+  ]
+}

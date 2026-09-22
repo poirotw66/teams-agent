@@ -144,3 +144,24 @@ def test_is_chunk_visible_to_groups_matches_hybrid_acl() -> None:
     assert is_chunk_visible_to_groups(restricted, set()) is False
     assert is_chunk_visible_to_groups(restricted, {"HR"}) is False
     assert is_chunk_visible_to_groups(restricted, {"IT"}) is True
+
+
+def test_search_with_timings_reports_acl_filtered_chunk_count() -> None:
+    public = DocumentChunk(
+        chunk_id="public",
+        title="公開",
+        source_path="sources/public.md",
+        content="VPN 密碼重設",
+        allowed_groups=[],
+    )
+    restricted = DocumentChunk(
+        chunk_id="restricted",
+        title="限制",
+        source_path="sources/restricted.md",
+        content="VPN 內部流程",
+        allowed_groups=["IT"],
+    )
+    index = HybridIndex([public, restricted])
+    _results, timings = index.search_with_timings("VPN", limit=5, groups={"HR"})
+    assert timings["aclVisibleChunks"] == 1.0
+    assert timings["aclFilteredChunks"] == 1.0

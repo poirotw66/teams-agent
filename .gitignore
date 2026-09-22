@@ -23,6 +23,8 @@ outputs/
 #   data/portal_drafts/  draft image bundles uploaded via Knowledge Portal
 #   data/portal_state/   Portal FILE-mode repository state
 #   data/releases/       published release artifacts built by the Portal
+#   data/knowledge_cache/ GCS → local QA release mirrors (sync runtime)
+#   data/knowledge_cache_dryrun_lab/ lab dry-run sync mirrors
 #   data/portal_originals/ private original-asset store (local/GCS boundary)
 #   data/ops/events/     operational event FILE-mode store
 #   data/ops/exports/    async export job artifacts
@@ -30,7 +32,8 @@ outputs/
 #   data/ops/sources/    source-catalog records written by local portal runs
 #   data/ops/aggregates/ daily aggregate store (regenerated)
 #   data/ops/audit/      append-only audit log
-#   data/ops/tickets.json / phase2/budgets.json — local mutable working sets
+#   data/ops/tickets.json / phase2/budgets.json / knowledge_workspace.json
+#                       — local mutable working sets / operator overrides
 #
 # Tracked (small, hand-curated configuration/fixtures the service's
 # behavior depends on — spec §7.2 FAQ config, §18.7 A/B/eval fixtures):
@@ -43,6 +46,8 @@ data/conversations/
 data/portal_drafts/
 data/portal_state/
 data/releases/
+data/knowledge_cache/
+data/knowledge_cache_dryrun_lab/
 data/portal_originals/
 data/ops/events/
 data/ops/exports/
@@ -52,6 +57,7 @@ data/ops/aggregates/
 data/ops/audit/
 data/ops/tickets.json
 data/ops/workbench_state.json
+data/ops/knowledge_workspace.json
 data/ops/phase2/budgets.json
 data/ops/evaluations/fixtures/
 data/ops/evaluations/gates/
@@ -77,3 +83,6 @@ skills-lock.json
 
 # Local checkout of poirotw66/pdf-to-markdown-converter (Gemini Vision)
 services/pdf_converter/upstream/
+
+# Local GCS knowledge sync override (no secrets required; still not committed)
+agent_service/.env.knowledge-gcs.local
