@@ -133,8 +133,12 @@ locals {
     AI_OPS_KNOWLEDGE_INTERNAL_URL              = local.deploy_cloud_run ? google_cloud_run_v2_service.portal[0].uri : (var.knowledge_portal_internal_url != "" ? var.knowledge_portal_internal_url : var.knowledge_portal_public_url)
     KNOWLEDGE_PORTAL_UPSTREAM_AUTH_MODE        = "GOOGLE_ID_TOKEN"
     AI_OPS_KNOWLEDGE_BRIDGE_ENABLED            = tostring(var.knowledge_bridge_enabled)
+    # Cloud Run must talk to the remote Portal; in-process is local-dev only.
+    AI_OPS_KNOWLEDGE_IN_PROCESS                = "false"
     AI_OPS_DEPLOYMENT_TENANT_ID                = var.bot_tenant_id
     KNOWLEDGE_PORTAL_AGENT_API_URL             = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
+    AGENT_API_URL                              = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
+    KNOWLEDGE_PORTAL_AGENT_API_AUTH_MODE       = "GOOGLE_ID_TOKEN"
     TEAMS_ADAPTER_URL                          = local.deploy_cloud_run ? google_cloud_run_v2_service.adapter[0].uri : ""
     RAG_DATA_DIR                               = "/app/data"
   }

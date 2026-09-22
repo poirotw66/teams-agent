@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 from collections.abc import Callable
 from typing import Any
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
+
+logger = logging.getLogger(__name__)
 
 
 def register_agent_knowledge_sync_routes(
@@ -62,16 +66,38 @@ async def _call_agent(
             status_code=503,
             detail="Agent API URL is not configured (AGENT_API_URL).",
         )
-    token = (
-        os.environ.get("AGENT_SERVICE_TOKEN")
-        or os.environ.get("AGENT_RELOAD_TOKEN")
-        or getattr(settings, "service_token", "")
-        or ""
-    )
+    base_url = str(agent_api_url).rstrip("/")
     headers: dict[str, str] = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    url = f"{str(agent_api_url).rstrip('/')}{path}"
+    # Prefer Google ID token for private Cloud Run Agent (same as Portal reload).
+    auth_mode = str(
+        getattr(settings, "agent_api_auth_mode", None)
+        or os.environ.get("KNOWLEDGE_PORTAL_AGENT_API_AUTH_MODE")
+        or os.environ.get("AGENT_API_AUTH_MODE")
+        or ""
+    ).strip().upper()
+    if auth_mode in {"", "GOOGLE_ID_TOKEN", "GOOGLE-ID-TOKEN"}:
+        try:
+            from ..knowledge_bridge.client import _fetch_google_id_token
+
+            identity_token = await asyncio.to_thread(_fetch_google_id_token, base_url)
+            headers["Authorization"] = f"Bearer {identity_token}"
+        except Exception as error:
+            # Fall back to shared service token for local / non-GCP Agent targets.
+            logger.warning(
+                "Google ID token for Agent unavailable (%s); trying service token.",
+                error,
+            )
+            auth_mode = "BEARER"
+    if auth_mode == "BEARER" or "Authorization" not in headers:
+        token = (
+            os.environ.get("AGENT_SERVICE_TOKEN")
+            or os.environ.get("AGENT_RELOAD_TOKEN")
+            or getattr(settings, "service_token", "")
+            or ""
+        )
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    url = f"{base_url}{path}"
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.request(method, url, headers=headers)
