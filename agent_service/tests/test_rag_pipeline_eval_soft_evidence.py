@@ -42,6 +42,20 @@ def test_soft_match_accepts_overseas_vpn_as_foreign_connection() -> None:
     assert eval_mod._soft_evidence_token_in_answer("海外VPN", answer)
 
 
+def test_soft_match_accepts_change_password_paraphrase() -> None:
+    eval_mod = _load_eval_module()
+    answer = (
+        "若 VPN 密碼到期，請直接變更密碼，請勿前往金控入口網同步開機密碼（AD）。"
+        "請插上實體網路線，並使用 Ctrl + Alt + Delete 變更公司電腦開機密碼。"
+    )
+    assert eval_mod._soft_evidence_token_in_answer("改密碼", answer)
+    assert eval_mod._answer_covers_evidence_fact(
+        answer=answer,
+        must_contain=["密碼到期", "改密碼"],
+        cited_titles=["VPN常見Q&A問答", "登入 FortiClient 出現錯訊"],
+    )
+
+
 def test_soft_match_accepts_short_cjk_token_covered_by_cited_title() -> None:
     eval_mod = _load_eval_module()
     answer = "若要進行直接轉接，請在通話中按下 Transfer 鍵後輸入分機號碼 [S1]。"

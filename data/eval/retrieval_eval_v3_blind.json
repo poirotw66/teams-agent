@@ -238,7 +238,8 @@
       "query": "VPN 密碼到期了要怎麼處理？",
       "expectedFound": true,
       "expectedDocuments": [
-        "VPN常見Q&A問答"
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊"
       ],
       "expectedEvidence": [
         {
@@ -252,13 +253,14 @@
       "relevanceGrades": {},
       "groups": [],
       "forbiddenSourceTitles": [],
-      "notes": "Corpus VPN password expired",
+      "notes": "Corpus VPN password expired; how-to steps live in FortiClient companion",
       "split": "test",
       "labelStatus": "frozen_v4",
       "expectedSourceTitles": [
-        "VPN常見Q&A問答"
+        "VPN常見Q&A問答",
+        "登入 FortiClient 出現錯訊"
       ],
-      "reviewFixNote": "v4: factual mustContain aligned to corpus wording"
+      "reviewFixNote": "v4: factual mustContain aligned to corpus wording; accept FortiClient how-to companion cite"
     },
     {
       "id": "v3-blind-ans-08",

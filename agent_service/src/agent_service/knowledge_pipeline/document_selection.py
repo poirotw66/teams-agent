@@ -9,6 +9,8 @@ from agent_service.retrieval import SearchResult
 from agent_service.retrieval_acl import is_chunk_visible_to_groups
 
 from .candidate_policy import filter_cross_scenario_chunks
+from .candidate_policy_filters import apply_platform_isolation
+from .candidate_policy_intents import detect_query_intent_flags
 from .document_selection_select import (
     protect_raw_top1,
     rank_documents_for_query,
@@ -45,6 +47,34 @@ _EMPLOYEE_PORTAL_PASSWORD_ACTION_MARKERS: tuple[str, ...] = (
 _EMPLOYEE_PORTAL_COMPANION_MARKERS: tuple[str, ...] = (
     "金控入口網密碼變更方式",
     "設定我的連結",
+)
+
+# Temporary Compatibility Rule: VPN password-expiry how-to lives in FortiClient
+# 錯訊 (Ctrl+Alt+Delete / 實體網路線), while VPN Q&A only says「直接改密碼」.
+_VPN_PASSWORD_EXPIRY_QUERY_MARKERS: tuple[str, ...] = (
+    "密碼到期",
+    "怎麼處理",
+    "如何處理",
+    "要怎麼",
+)
+_VPN_PASSWORD_HOWTO_MARKERS: tuple[str, ...] = (
+    "登入 FortiClient 出現錯訊",
+    "Ctrl + Alt + Delete",
+    "Ctrl+Alt+Delete",
+    "實體網路線",
+)
+
+# Temporary Compatibility Rule: same-doc discrimination for adjacent products.
+_SAME_DOC_DISCRIMINATION_MARKERS: tuple[str, ...] = (
+    "是不是同一份",
+    "是不是同一篇",
+    "同一份",
+    "同一篇",
+)
+_SHU_SONIC_PRODUCT_MARKERS: tuple[str, ...] = ("樹精靈", "超音樹")
+_SHU_SONIC_DOC_MARKERS: tuple[str, ...] = (
+    "樹精靈AP無法登入",
+    "超音樹-程式閃退問題",
 )
 
 
@@ -172,6 +202,83 @@ def inject_employee_portal_password_evidence(
     )
 
 
+def inject_vpn_password_expiry_howto(
+    query: str,
+    results: Sequence[SearchResult],
+    *,
+    index_chunks: Sequence[DocumentChunk],
+    groups: set[str],
+    environment: str,
+) -> list[SearchResult]:
+    """Inject FortiClient 錯訊 how-to for VPN password-expiry questions."""
+    from_catalog = _inject_from_relationships(
+        query,
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        relationship_ids=frozenset({"vpn-password-expiry-howto"}),
+    )
+    if from_catalog is not None:
+        return from_catalog
+
+    query_l = (query or "").casefold()
+    if "vpn" not in query_l:
+        return list(results)
+    if not any(marker in query for marker in _VPN_PASSWORD_EXPIRY_QUERY_MARKERS):
+        return list(results)
+
+    def _is_howto_chunk(chunk: DocumentChunk) -> bool:
+        blob = f"{chunk.title}\n{chunk.content}"
+        return any(marker in blob for marker in _VPN_PASSWORD_HOWTO_MARKERS)
+
+    return _inject_matching_chunks(
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        is_match=_is_howto_chunk,
+    )
+
+
+def inject_same_doc_discrimination_evidence(
+    query: str,
+    results: Sequence[SearchResult],
+    *,
+    index_chunks: Sequence[DocumentChunk],
+    groups: set[str],
+    environment: str,
+) -> list[SearchResult]:
+    """Inject both adjacent-product manuals for「是不是同一份」discrimination."""
+    from_catalog = _inject_from_relationships(
+        query,
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        relationship_ids=frozenset({"adjacent-product-shu-sonic"}),
+    )
+    if from_catalog is not None:
+        return from_catalog
+
+    if not any(marker in query for marker in _SAME_DOC_DISCRIMINATION_MARKERS):
+        return list(results)
+    if not all(marker in query for marker in _SHU_SONIC_PRODUCT_MARKERS):
+        return list(results)
+
+    def _is_named_manual(chunk: DocumentChunk) -> bool:
+        blob = f"{chunk.title}\n{chunk.content}"
+        return any(marker in blob for marker in _SHU_SONIC_DOC_MARKERS)
+
+    return _inject_matching_chunks(
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        is_match=_is_named_manual,
+    )
+
+
 def _inject_matching_chunks(
     results: Sequence[SearchResult],
     *,
@@ -261,6 +368,13 @@ def select_document_chunks(
         raw_top1,
         filter_cross_scenario_chunks(query, list(results)),
     )
+    # protect_raw_top1 may reinsert a high-score wrong-platform handbook when the
+    # query mentions that platform only as a rejected contrast (e.g. Android in an
+    # iPhone question). Re-apply platform isolation so the intentional drop sticks.
+    filtered_results = apply_platform_isolation(
+        filtered_results,
+        detect_query_intent_flags(query),
+    )
     ranked_documents = rank_documents_for_query(
         query,
         filtered_results,
@@ -286,5 +400,7 @@ __all__ = [
     "canonical_version_results",
     "inject_employee_portal_password_evidence",
     "inject_enterprise_app_evidence",
+    "inject_same_doc_discrimination_evidence",
+    "inject_vpn_password_expiry_howto",
     "select_document_chunks",
 ]

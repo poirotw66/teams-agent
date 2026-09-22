@@ -30,6 +30,13 @@ _PROCEDURE_QUERY_MARKERS: tuple[str, ...] = (
     "OTP綁定",
     "通報格式",
     "必填",
+    # VPN / password-expiry how-to (ans-07 class).
+    "怎麼處理",
+    "如何處理",
+    "要怎麼",
+    "密碼到期",
+    "怎麼改",
+    "如何改",
 )
 # Distinctive executable steps that summarization often drops.
 _PROCEDURE_STEP_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -53,6 +60,26 @@ _PROCEDURE_STEP_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "report_required_fields",
         ("提問所需資訊", "客戶帳號", "客戶姓名", "發生時間", "資料夾路徑"),
+    ),
+    # VPN password-expiry how-to: keep variants specific enough to avoid portal FAQ false hits.
+    (
+        "ctrl_alt_delete",
+        (
+            "ctrl + alt + delete",
+            "ctrl+alt+delete",
+            "ctrl + alt + del",
+            "ctrl+alt+del",
+        ),
+    ),
+    ("physical_ethernet", ("實體網路線",)),
+    (
+        "no_jinkong_ad_sync",
+        (
+            "不要去金控入口網",
+            "請勿前往金控入口網",
+            "勿前往金控入口網",
+            "同步開機密碼",
+        ),
     ),
 )
 _VISUAL_EVIDENCE_PLATE_RE = re.compile(r"\bp0(\d{2})\b", re.IGNORECASE)

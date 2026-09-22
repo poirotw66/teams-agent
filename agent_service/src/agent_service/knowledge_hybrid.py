@@ -46,6 +46,8 @@ from .knowledge_pipeline.document_selection import (
     canonical_version_results,
     inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
+    inject_same_doc_discrimination_evidence,
+    inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
 from .knowledge_pipeline.generation_host import _HybridGenerationHost
@@ -236,7 +238,21 @@ class HybridKnowledgeService:
             groups=groups,
             environment=environment,
         )
-        return inject_employee_portal_password_evidence(
+        boosted = inject_employee_portal_password_evidence(
+            query,
+            boosted,
+            index_chunks=self.index.chunks,
+            groups=groups,
+            environment=environment,
+        )
+        boosted = inject_vpn_password_expiry_howto(
+            query,
+            boosted,
+            index_chunks=self.index.chunks,
+            groups=groups,
+            environment=environment,
+        )
+        return inject_same_doc_discrimination_evidence(
             query,
             boosted,
             index_chunks=self.index.chunks,

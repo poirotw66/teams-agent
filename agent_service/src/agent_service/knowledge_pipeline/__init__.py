@@ -22,6 +22,8 @@ from .document_selection import (
     canonical_version_results,
     inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
+    inject_same_doc_discrimination_evidence,
+    inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
 from .generator import (
@@ -144,6 +146,8 @@ __all__ = [
     "infer_markers_from_claims",
     "inject_employee_portal_password_evidence",
     "inject_enterprise_app_evidence",
+    "inject_same_doc_discrimination_evidence",
+    "inject_vpn_password_expiry_howto",
     "is_non_production_knowledge_chunk",
     "is_numbered_section",
     "is_unsupported_miss_answer",

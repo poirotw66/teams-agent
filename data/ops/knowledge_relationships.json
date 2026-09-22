@@ -40,6 +40,49 @@
       "relationship": "COMPANION",
       "owner": "knowledge-ops",
       "temporaryCompatibility": true
+    },
+    {
+      "id": "vpn-password-expiry-howto",
+      "aliases": [
+        "VPN",
+        "vpn"
+      ],
+      "intent": "vpn_password_expiry_howto",
+      "requireAnyQueryMarkers": [
+        "密碼到期",
+        "怎麼處理",
+        "如何處理",
+        "要怎麼"
+      ],
+      "relatedDocumentMarkers": [
+        "登入 FortiClient 出現錯訊",
+        "Ctrl + Alt + Delete",
+        "實體網路線"
+      ],
+      "relationship": "COMPANION",
+      "owner": "knowledge-ops",
+      "temporaryCompatibility": true
+    },
+    {
+      "id": "adjacent-product-shu-sonic",
+      "aliases": [
+        "是不是同一份",
+        "是不是同一篇",
+        "同一份",
+        "同一篇"
+      ],
+      "intent": "adjacent_product_discrimination",
+      "requireAnyQueryMarkers": [
+        "樹精靈",
+        "超音樹"
+      ],
+      "relatedDocumentMarkers": [
+        "樹精靈AP無法登入",
+        "超音樹-程式閃退問題"
+      ],
+      "relationship": "COMPANION",
+      "owner": "knowledge-ops",
+      "temporaryCompatibility": true
     }
   ]
 }

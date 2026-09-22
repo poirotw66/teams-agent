@@ -44,6 +44,12 @@ _COMPARISON_QUERY_MARKERS: tuple[str, ...] = (
     "不同之處",
     "差異",
     "比較",
+    # Same-document discrimination (“are these the same doc?”).
+    "是不是同一份",
+    "是不是同一篇",
+    "是不是同一個",
+    "同一份",
+    "同一篇",
 )
 _NUMBERED_SECTION_RE = re.compile(r"^(?:[#\s]*\d+[\.\-\s]|目錄)")
 

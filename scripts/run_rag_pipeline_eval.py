@@ -296,6 +296,10 @@ def _soft_evidence_token_in_answer(token: str, answer: str) -> bool:
     if collapsed_token in {"海外VPN", "海外vpn", "海外Vpn"}:
         if re.search(r"(海外\s*VPN|國外連線|國外.{0,12}VPN)", answer, flags=re.IGNORECASE):
             return True
+    # Password-change paraphrase: 改密碼 ≈ 變更密碼 / 變更…密碼.
+    if collapsed_token in {"改密碼", "更改密碼"}:
+        if re.search(r"(變更密碼|更改密碼|變更.{0,8}密碼|更改.{0,8}密碼)", answer):
+            return True
     # Drop optional qualifier chars then retry (發生異常的時間 ≈ 發生時間).
     compact = re.sub(r"[的之與和]", "", "".join(token.split()))
     if compact and compact != "".join(token.split()) and evidence_token_in_text(compact, answer):

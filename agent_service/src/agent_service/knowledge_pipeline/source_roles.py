@@ -44,10 +44,100 @@ class SourceRole(str, Enum):
     INCIDENTAL = "INCIDENTAL"
 
 
+# 「是不是同一份 / 同一個」are same-doc confirmations, not topic negation.
+_SAME_DOC_CONFIRMATION = re.compile(
+    r"是不是\s*同一(?:份|篇|個|文件|手冊|來源)",
+)
+
+
 def _query_is_contrastive(query: str) -> bool:
+    # Same-doc confirmations embed「不是」inside「是不是」; do not treat as negation.
+    if _SAME_DOC_CONFIRMATION.search(query or ""):
+        return False
     normalized = (query or "").casefold()
     markers = ("不是", "而非", "為何不能", "不要", "並非", "排除", "hard-negative")
     return any(marker in normalized for marker in markers)
+
+
+_VPN_PASSWORD_EXPIRY_PACK_MARKERS: tuple[str, ...] = (
+    "密碼到期",
+    "怎麼處理",
+    "如何處理",
+    "要怎麼",
+)
+_VPN_HOWTO_CONTENT_MARKERS: tuple[str, ...] = (
+    "ctrl + alt + delete",
+    "ctrl+alt+delete",
+    "實體網路線",
+)
+
+
+def _is_vpn_password_expiry_query(query: str) -> bool:
+    query_l = (query or "").casefold()
+    if "vpn" not in query_l:
+        return False
+    return any(marker in (query or "") for marker in _VPN_PASSWORD_EXPIRY_PACK_MARKERS)
+
+
+def _chunk_has_vpn_password_howto(result: SearchResult) -> bool:
+    blob = f"{result.chunk.title}\n{result.chunk.content}".casefold()
+    return any(marker in blob for marker in _VPN_HOWTO_CONTENT_MARKERS)
+
+
+def _promote_title_aligned_comparison_docs(
+    *,
+    query: str,
+    results: Sequence[SearchResult],
+    roles: dict[str, SourceRole],
+    document_key: Callable[[SearchResult], str],
+) -> dict[str, SourceRole]:
+    """Keep both named manuals packable for same-doc discrimination queries."""
+    from .relevance import primary_distinctive_tokens
+    from .selector import query_asks_for_comparison
+
+    if not query_asks_for_comparison(query):
+        return roles
+    tokens = primary_distinctive_tokens(query)
+    if not tokens:
+        return roles
+    promoted = dict(roles)
+    for result in results:
+        key = document_key(result)
+        if not key or promoted.get(key) != SourceRole.INCIDENTAL:
+            continue
+        title = (result.chunk.title or "").casefold()
+        if any(token.casefold() in title for token in tokens):
+            promoted[key] = SourceRole.SUPPORTING
+    return promoted
+
+
+def _promote_vpn_password_howto_docs(
+    *,
+    query: str,
+    results: Sequence[SearchResult],
+    roles: dict[str, SourceRole],
+    document_key: Callable[[SearchResult], str],
+) -> dict[str, SourceRole]:
+    """Keep FortiClient how-to packable even when VPN Q&A dominates overlap."""
+    if not _is_vpn_password_expiry_query(query):
+        return roles
+    promoted = dict(roles)
+    for result in results:
+        if not _chunk_has_vpn_password_howto(result):
+            continue
+        key = document_key(result)
+        if not key:
+            continue
+        if promoted.get(key) in (None, SourceRole.INCIDENTAL, SourceRole.CONTRASTIVE):
+            promoted[key] = SourceRole.SUPPORTING
+    return promoted
+
+
+def _vpn_howto_pack_rank(query: str, result: SearchResult) -> int:
+    """Prefer executable FortiClient how-to ahead of the long VPN Q&A summary."""
+    if not _is_vpn_password_expiry_query(query):
+        return 1
+    return 0 if _chunk_has_vpn_password_howto(result) else 1
 
 
 def _latin_query_tokens(query: str) -> set[str]:
@@ -59,6 +149,9 @@ def _latin_query_tokens(query: str) -> set[str]:
 
 _NEGATION_SPLIT_MARKERS: tuple[str, ...] = (
     "不要給我",
+    "為何不能",
+    "不能直接套用",
+    "不能套用",
     "不是",
     "而非",
     "不要",
@@ -69,6 +162,9 @@ _NEGATION_SPLIT_MARKERS: tuple[str, ...] = (
 def _negated_topic(query: str) -> str | None:
     """Extract the topic the user explicitly rejects (e.g. 不是功能無法點選那篇)."""
     text = query or ""
+    # Same-doc discrimination must not treat「同一份」as a rejected topic.
+    if _SAME_DOC_CONFIRMATION.search(text):
+        return None
     # Confirmation questions「是不是 AD」must not treat the embedded「不是」alone.
     confirm = re.search(
         r"是不是\s*([A-Za-z][A-Za-z0-9_./:-]{0,15}|[^\s，,。.!！?？]{1,16})",
@@ -79,6 +175,8 @@ def _negated_topic(query: str) -> str | None:
         if len(topic) >= 1:
             return topic
     patterns = (
+        r"為何不能(?:直接)?(?:套用|使用|依|照)\s*([A-Za-z][A-Za-z0-9_./:-]{1,24}|[^\s，,。.!！?？]{2,24})",
+        r"不能直接(?:套用|使用)\s*([A-Za-z][A-Za-z0-9_./:-]{1,24}|[^\s，,。.!！?？]{2,24})",
         r"(?:不是|而非)\s*([^\s，,。.!！?？]{2,24}?)(?:那篇|那份|文件|流程|說明)?\s*$",
         r"(?<![是])(?:不是|而非)\s*([^\s，,。.!！?？]{2,16})",
         r"不要給我\s*(.+?)(?:\s*$|[。.!！?？])",
@@ -90,6 +188,7 @@ def _negated_topic(query: str) -> str | None:
         if not match:
             continue
         topic = match.group(1).strip("，,。 /／")
+        topic = re.sub(r"(?:步驟|手冊)$", "", topic).strip()
         if len(topic) >= 2:
             return topic
     return None
@@ -98,6 +197,10 @@ def _negated_topic(query: str) -> str | None:
 def _positive_topic_prefix(query: str) -> str | None:
     """Topic stated before an explicit negation clause."""
     text = query or ""
+    if _SAME_DOC_CONFIRMATION.search(text):
+        prefix = _SAME_DOC_CONFIRMATION.split(text)[0]
+        prefix = re.sub(r"[，,。.\s]+$", "", prefix).strip()
+        return prefix or None
     if "是不是" in text:
         prefix = text.split("是不是", 1)[0]
         prefix = re.sub(r"[，,。.\s]+$", "", prefix).strip()
@@ -135,6 +238,16 @@ def _short_latin_token(text: str) -> str | None:
     stripped = (text or "").strip()
     if _SHORT_LATIN_NEGATED.fullmatch(stripped):
         return stripped.lower()
+    return None
+
+
+def _platform_label(text: str) -> str | None:
+    """Map free text to ios/android when a platform cue is present."""
+    text_l = (text or "").casefold()
+    if any(token in text_l for token in ("android", "安卓")):
+        return "android"
+    if any(token in text_l for token in ("ios", "iphone", "蘋果")):
+        return "ios"
     return None
 
 
@@ -338,6 +451,16 @@ def _doc_overlap(
         positive_hit = bool(positive) and _positive_topic_hits(
             title=title, blob=blob, positive=positive
         )
+        negated_platform = _platform_label(negated)
+        title_platform = _platform_label(title)
+        # Platform handbooks share generic tokens (Outlook); demote the rejected
+        # platform even when the positive clause also mentions the product name.
+        if (
+            negated_platform
+            and title_platform == negated_platform
+            and _platform_label(positive or "") != negated_platform
+        ):
+            return min(score - _NEGATED_TOPIC_PENALTY, 0)
         if negated_hit and not positive_hit:
             # Force INCIDENTAL even when retrieval score / Latin boost is high.
             return min(score - _NEGATED_TOPIC_PENALTY, 0)
@@ -458,6 +581,18 @@ def filter_results_for_generation(
         roles=roles,
         document_key=document_key,
     )
+    roles = _promote_title_aligned_comparison_docs(
+        query=query,
+        results=results,
+        roles=roles,
+        document_key=document_key,
+    )
+    roles = _promote_vpn_password_howto_docs(
+        query=query,
+        results=results,
+        roles=roles,
+        document_key=document_key,
+    )
     keep_roles = {
         SourceRole.PRIMARY,
         SourceRole.SUPPORTING,
@@ -488,6 +623,7 @@ def filter_results_for_generation(
     return sorted(
         filtered,
         key=lambda result: (
+            _vpn_howto_pack_rank(query, result),
             role_rank.get(
                 roles.get(document_key(result), SourceRole.PRIMARY),
                 9,

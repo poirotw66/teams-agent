@@ -87,28 +87,94 @@ def apply_product_isolation(
     return results
 
 
+def _mentions_ios_platform(normalized: str) -> bool:
+    return any(token in normalized for token in ("ios", "iphone", "蘋果"))
+
+
+def _mentions_android_platform(normalized: str) -> bool:
+    return any(token in normalized for token in ("android", "安卓"))
+
+
+def _rejects_android_platform(normalized: str) -> bool:
+    """True when Android is framed as the wrong/non-applicable handbook."""
+    return any(
+        marker in normalized
+        for marker in (
+            "為何不能",
+            "不能直接套用",
+            "不能套用",
+            "不要套用",
+            "不要用 android",
+            "不要用安卓",
+            "而非 android",
+            "不是 android",
+            "而非安卓",
+            "不是安卓",
+        )
+    )
+
+
+def _rejects_ios_platform(normalized: str) -> bool:
+    return any(
+        marker in normalized
+        for marker in (
+            "不能直接套用 ios",
+            "不能套用 ios",
+            "不要套用 ios",
+            "不要用 ios",
+            "不要用 iphone",
+            "不要用蘋果",
+            "而非 ios",
+            "不是 ios",
+            "而非 iphone",
+            "不是 iphone",
+        )
+    )
+
+
+def _is_ios_handbook(result: SearchResult) -> bool:
+    text = f"{result.chunk.title} {result.chunk.section or ''}".lower()
+    return any(token in text for token in ("ios", "iphone", "蘋果"))
+
+
+def _is_android_handbook(result: SearchResult) -> bool:
+    text = f"{result.chunk.title} {result.chunk.section or ''}".lower()
+    return any(token in text for token in ("android", "安卓"))
+
+
 def apply_platform_isolation(
     results: list[SearchResult],
     intent: QueryIntentFlags,
 ) -> list[SearchResult]:
+    """Prefer the query's platform handbook; drop the rejected sibling when cued.
+
+    ``iPhone`` must count as iOS so contrast queries like「為何不能套用 Android」
+    do not isolate to the Android manual and drop the matching iOS handbook.
+    True side-by-side comparisons (both platforms, no rejection) keep both.
+    """
     normalized = intent.normalized_query
-    if "ios" in normalized and "android" not in normalized:
-        ios_results = [
-            r
-            for r in results
-            if "ios" in r.chunk.title.lower() or "ios" in (r.chunk.section or "").lower()
-        ]
+    mentions_ios = _mentions_ios_platform(normalized)
+    mentions_android = _mentions_android_platform(normalized)
+
+    if mentions_ios and not mentions_android:
+        ios_results = [result for result in results if _is_ios_handbook(result)]
         if ios_results:
-            return [r for r in results if "android" not in r.chunk.title.lower()]
-    elif "android" in normalized and "ios" not in normalized:
-        android_results = [
-            r
-            for r in results
-            if "android" in r.chunk.title.lower()
-            or "android" in (r.chunk.section or "").lower()
-        ]
+            return [result for result in results if not _is_android_handbook(result)]
+    elif mentions_android and not mentions_ios:
+        android_results = [result for result in results if _is_android_handbook(result)]
         if android_results:
-            return [r for r in results if "ios" not in r.chunk.title.lower()]
+            return [result for result in results if not _is_ios_handbook(result)]
+    elif mentions_ios and mentions_android:
+        rejects_android = _rejects_android_platform(normalized)
+        rejects_ios = _rejects_ios_platform(normalized)
+        if rejects_android and not rejects_ios:
+            ios_results = [result for result in results if _is_ios_handbook(result)]
+            if ios_results:
+                return [result for result in results if not _is_android_handbook(result)]
+        if rejects_ios and not rejects_android:
+            android_results = [result for result in results if _is_android_handbook(result)]
+            if android_results:
+                return [result for result in results if not _is_ios_handbook(result)]
     return results
 
 

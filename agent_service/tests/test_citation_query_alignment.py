@@ -133,6 +133,51 @@ def test_prefer_query_aligned_citations_keeps_multi_topic_pair() -> None:
     assert kept == ["ad", "portal"]
 
 
+def test_prefer_query_aligned_keeps_forticlient_howto_for_vpn_password_expiry() -> None:
+    """Procedure how-to companion must survive title asymmetry vs VPN Q&A."""
+    results = [
+        _result(
+            "vpn",
+            "VPN常見Q&A問答",
+            "三個月密碼到期，請直接改密碼，不要去金控入口網同步開機密碼(AD)",
+        ),
+        _result(
+            "forti",
+            "登入 FortiClient 出現錯訊",
+            "請插上實體網路線，使用 Ctrl + Alt + Delete 變更公司電腦開機密碼。",
+        ),
+    ]
+    kept = prefer_query_aligned_citations(
+        query="VPN 密碼到期了要怎麼處理？",
+        ordered_cited_doc_keys=["vpn", "forti"],
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["vpn", "forti"]
+
+
+def test_prefer_query_aligned_keeps_both_docs_for_same_doc_discrimination() -> None:
+    results = [
+        _result(
+            "tree",
+            "樹精靈AP無法登入",
+            "樹精靈無法登入請檢查網路環境與系統連線設定",
+        ),
+        _result(
+            "sonic",
+            "超音樹-程式閃退問題",
+            "超音樹閃退需安裝新版簽章元件；國泰期貨用戶注意",
+        ),
+    ]
+    kept = prefer_query_aligned_citations(
+        query="樹精靈無法登入跟超音樹閃退是不是同一份？",
+        ordered_cited_doc_keys=["tree", "sonic"],
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert kept == ["tree", "sonic"]
+
+
 def test_drop_ad_unlock_citations_for_crm_otp_query() -> None:
     from agent_service.knowledge_pipeline.generation_stage_result import (
         drop_ad_unlock_citations_for_product_query,

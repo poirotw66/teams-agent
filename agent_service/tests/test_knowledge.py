@@ -337,6 +337,26 @@ def test_procedure_step_coverage_detects_omitted_executable_steps() -> None:
     omit_qr = "下載 Google Authenticator 後輸入設定金鑰完成綁定。"
     assert "qr_code_scan" in missing_procedure_steps(omit_qr, otp_steps)
 
+    # VPN password-expiry how-to (ans-07): coverage must require executable steps.
+    assert query_asks_for_procedure("VPN 密碼到期了要怎麼處理？")
+    vpn_context = (
+        "三個月密碼到期：請插上實體網路線，使用 Ctrl + Alt + Delete 變更公司電腦開機密碼。"
+        "內網型筆電請直接改密碼，不要去金控入口網同步開機密碼(AD)。"
+    )
+    vpn_steps = procedure_steps_in_text(vpn_context)
+    assert "ctrl_alt_delete" in vpn_steps
+    assert "physical_ethernet" in vpn_steps
+    assert "no_jinkong_ad_sync" in vpn_steps
+    short_vpn_answer = "請直接變更密碼，請勿前往金控入口網同步開機密碼"
+    assert not answer_covers_procedure_steps(short_vpn_answer, vpn_steps)
+    assert "ctrl_alt_delete" in missing_procedure_steps(short_vpn_answer, vpn_steps)
+    assert "physical_ethernet" in missing_procedure_steps(short_vpn_answer, vpn_steps)
+    full_vpn_answer = (
+        "請插上實體網路線，使用 Ctrl+Alt+Delete 變更開機密碼，"
+        "不要去金控入口網同步開機密碼。"
+    )
+    assert answer_covers_procedure_steps(full_vpn_answer, vpn_steps)
+
 
 def test_visual_evidence_plate_coverage_requires_source_plates() -> None:
     from agent_service.knowledge import (

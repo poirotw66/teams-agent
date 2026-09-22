@@ -228,3 +228,109 @@ def test_external_crm_connect_not_otp_keeps_connect_doc() -> None:
     keys = [result.chunk.document_id for result in filtered]
     assert keys[0] == "crm"
     assert "otp" not in keys
+
+
+def test_same_doc_confirmation_keeps_both_adjacent_product_manuals() -> None:
+    """「是不是同一份」must not treat 同一份 as negated and drop a sibling."""
+    results = [
+        _result(
+            "tree",
+            "樹精靈AP無法登入",
+            "樹精靈無法登入請檢查網路環境與系統連線設定",
+        ),
+        _result(
+            "sonic",
+            "超音樹-程式閃退問題",
+            "超音樹閃退需安裝新版簽章元件；國泰期貨用戶注意",
+        ),
+    ]
+    filtered = filter_results_for_generation(
+        query="樹精靈無法登入跟超音樹閃退是不是同一份？",
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    keys = {result.chunk.document_id for result in filtered}
+    assert keys == {"tree", "sonic"}
+
+
+def test_vpn_password_expiry_packs_forticlient_howto_before_vpn_qa() -> None:
+    """Executable Ctrl+Alt+Delete how-to must lead the pack for password-expiry."""
+    vpn = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="vpn",
+            title="VPN常見Q&A問答",
+            content="三個月密碼到期，請直接改密碼，不要去金控入口網同步開機密碼(AD)",
+            document_id="vpn",
+            source_path="sources/vpn.md",
+        ),
+        score=0.99,
+        sparse_score=0.99,
+        dense_score=0.0,
+    )
+    forti = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="forti",
+            title="登入 FortiClient 出現錯訊",
+            content="請插上實體網路線，使用 Ctrl + Alt + Delete 變更開機密碼。",
+            document_id="forti",
+            source_path="sources/forti.md",
+        ),
+        score=0.70,
+        sparse_score=0.70,
+        dense_score=0.0,
+    )
+    filtered = filter_results_for_generation(
+        query="VPN 密碼到期了要怎麼處理？",
+        results=[vpn, forti],
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    assert [result.chunk.document_id for result in filtered[:2]] == ["forti", "vpn"]
+
+
+def test_iphone_rejects_android_handbook_keeps_ios_primary() -> None:
+    """Platform contrast: iPhone query must pack iOS handbook over Android."""
+    results = [
+        _result(
+            "android",
+            "行動裝置 Outlook 安裝手冊（Android）",
+            "Android Outlook 含 Intune 公司入口網站安裝與登入步驟",
+        ),
+        _result(
+            "ios",
+            "行動裝置 Outlook 安裝手冊（iOS）",
+            "iOS Outlook 需安裝 Microsoft Authenticator 驗證",
+        ),
+    ]
+    filtered = filter_results_for_generation(
+        query="iPhone 收公司信應依哪份 Outlook 手冊，為何不能直接套用 Android 步驟？",
+        results=results,
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    keys = [result.chunk.document_id for result in filtered]
+    assert keys[0] == "ios"
+    assert "android" not in keys
+
+
+def test_filter_cross_scenario_iphone_keeps_ios_drops_android() -> None:
+    from agent_service.knowledge_pipeline.candidate_policy import (
+        filter_cross_scenario_chunks,
+    )
+
+    results = [
+        _result(
+            "android",
+            "行動裝置 Outlook 安裝手冊（Android）",
+            "Android Outlook 含 Intune",
+        ),
+        _result(
+            "ios",
+            "行動裝置 Outlook 安裝手冊（iOS）",
+            "iOS Outlook Microsoft Authenticator",
+        ),
+    ]
+    filtered = filter_cross_scenario_chunks(
+        "iPhone 收公司信應依哪份 Outlook 手冊，為何不能直接套用 Android 步驟？",
+        results,
+    )
+    keys = [result.chunk.document_id for result in filtered]
+    assert keys == ["ios"]

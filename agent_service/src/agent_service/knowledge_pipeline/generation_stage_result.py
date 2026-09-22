@@ -119,13 +119,26 @@ def prefer_query_aligned_citations(
     if best <= 0:
         return list(keys[:1])
 
+    from .grounding import query_asks_for_procedure
+    from .selector import query_asks_for_comparison
+
     positive = [(key, score) for key, score in scored if score > 0]
-    multi_topic = ("、" in query) or ("與" in query) or ("及" in query)
+    # Comparison / coordinated product asks need both named manuals retained.
+    multi_topic = (
+        ("、" in query)
+        or ("與" in query)
+        or ("及" in query)
+        or ("跟" in query)
+        or query_asks_for_comparison(query)
+    )
+    procedure_query = query_asks_for_procedure(query)
     second = max((score for _, score in positive if score < best), default=0)
     # Require a clear relative gap before dropping a positive secondary source.
     # Absolute gaps of 2 are common with CJK bigram anchors on near-equal docs.
     clear_gap = second > 0 and second < (best * 0.5) and (best - second) >= 2
-    if not multi_topic and best >= 2 and clear_gap:
+    # Procedure how-to companions (e.g. FortiClient Ctrl+Alt+Delete) often score
+    # below the FAQ title match; keep every positive cite for procedure asks.
+    if not multi_topic and not procedure_query and best >= 2 and clear_gap:
         keep = {key for key, score in positive if score == best}
     else:
         keep = {key for key, _score in positive}
@@ -133,7 +146,9 @@ def prefer_query_aligned_citations(
     # Single-topic sibling prune: title alignment breaks near-ties when one
     # title clearly owns distinctive query wording the other lacks.
     # Skip when content overlap is near-equal (multi-doc supporting answers).
-    if not multi_topic and len(keep) > 1:
+    # Also skip for procedure how-to: VPN Q&A titles beat FortiClient even when
+    # the executable Ctrl+Alt+Delete steps live only in the companion.
+    if not multi_topic and len(keep) > 1 and not procedure_query:
         near_equal_content = second > 0 and second >= (best * 0.75)
         if not near_equal_content:
             title_scored = [(key, _title_overlap(key)) for key in keys if key in keep]

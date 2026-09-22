@@ -82,6 +82,8 @@ def _has_close_top_gap(results: list[SearchResult]) -> bool:
 
 
 def _is_multi_aspect_query(state: RetrievalState) -> bool:
+    from .selector import query_asks_for_comparison
+
     query = state.resolved_issue_query
     if len(state.facet_queries) >= 2:
         return True
@@ -89,6 +91,7 @@ def _is_multi_aspect_query(state: RetrievalState) -> bool:
         query_asks_for_procedure(query)
         or query_asks_for_error_branching(query)
         or query_asks_for_visual_evidence(query)
+        or query_asks_for_comparison(query)
     )
 
 
