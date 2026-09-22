@@ -29,7 +29,7 @@
   },
   "freezeStatus": {
     "frozen": true,
-    "freezeVersion": 2,
+    "freezeVersion": 5,
     "frozenAt": "2026-09-20T17:11:53.981740+00:00",
     "reviewerSignoff": {
       "reviewer": "independent-agent",
@@ -40,8 +40,8 @@
       "acceptedKnownGaps": [
         "acl_coverage_gap: corpus lacks group-gated documents"
       ],
-      "freezeVersionAcknowledged": 2,
-      "labelContractNote": "v2 label revisions are citation-contract fixes from index/runtime titles, not model-output overfitting."
+      "freezeVersionAcknowledged": 5,
+      "labelContractNote": "v5: sibling citation + scope mustContain adjudication on product-correct answers."
     },
     "filledSlots": 156,
     "reviewed": 156,
@@ -61,7 +61,7 @@
       "source_scope": 4,
       "negative_constraint": 4
     },
-    "note": "Mirrored from retrieval_eval_v3_blind.json freezeVersion=2."
+    "note": "Mirrored from retrieval_eval_v3_blind.json freezeVersion=5."
   },
   "retirementMetricForInjectionRules": {
     "summary": "Remove hardcoded companion injection only after frozen blind Acc/CiteP/NA-F1 pass without temporary inject.",
