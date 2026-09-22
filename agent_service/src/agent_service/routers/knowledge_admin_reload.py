@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import replace
 from pathlib import Path
@@ -28,6 +29,28 @@ from ..source_refs import hydrate_index_sources
 from ..workflow import build_knowledge_service
 
 logger = logging.getLogger(__name__)
+
+
+def _sync_gcs_mirror_before_reload(request: Request) -> None:
+    """Pull the cloud-active QA snapshot before resolving a GCS mirror load.
+
+    Portal activation notifies ``/admin/reload-knowledge`` immediately after
+    advancing the Firestore active pointer. Without a sync first, FOLLOW_CLOUD
+    Agents reject the new release with HTTP 409 (mirror missing) and Portal
+    compensates back to the previous active release — leaving newly published
+    documents invisible to Playground while Console still reports IN_SYNC with
+    the older cloud-active id.
+    """
+    syncer = getattr(request.app.state, "knowledge_release_syncer", None)
+    if syncer is None:
+        return
+    status = syncer.sync_now()
+    logger.info(
+        "GCS mirror sync before reload: cloud=%s mirrored=%s state=%s",
+        status.cloud_active_release_id,
+        status.mirrored_release_id,
+        status.sync_state.value if hasattr(status.sync_state, "value") else status.sync_state,
+    )
 
 
 def _resolve_reload_target(
@@ -148,6 +171,9 @@ async def perform_knowledge_reload(
     )
     active_release_id = read_active_release_id(release_dir)
     requested_release_id = payload.target_release_id if payload else None
+
+    if resolved_settings.knowledge_release_store_mode == "GCS":
+        await asyncio.to_thread(_sync_gcs_mirror_before_reload, request)
 
     (
         target_release_id,

@@ -84,6 +84,7 @@ def preview_payload(source: ResolvedSource) -> dict[str, Any]:
         {
             "mappingStatus": source.mapping_status,
             "locator": locator_dict,
+            "content": content[:excerpt_limit] if content else None,
             "evidence": {
                 "excerpt": content[:excerpt_limit],
                 "truncated": len(content) > excerpt_limit,

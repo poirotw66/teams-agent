@@ -58,11 +58,16 @@ class SourceTraceResolver:
         source_repository: SourceRecordRepository | None = None,
         cache: BoundedSourceCache | None = None,
         artifact_storage: ArtifactStorage | None = None,
+        *,
+        gcp_project_id: str | None = None,
+        firestore_database: str | None = "(default)",
     ) -> None:
         self.releases_dir = releases_dir.expanduser().resolve()
         self.source_repository = source_repository or InMemorySourceRecordRepository()
         self.cache = cache or BoundedSourceCache(max_size=500, ttl_seconds=300.0)
         self.artifact_storage = artifact_storage
+        self.gcp_project_id = gcp_project_id
+        self.firestore_database = firestore_database
         self._release_cache: dict[str, tuple[int, int, ReleaseLoad]] = {}
 
     def active_release_id(self) -> str | None:
@@ -152,6 +157,8 @@ class SourceTraceResolver:
             cache=self.cache,
             source_ref_id=source_ref_id,
             tenant_id=tenant_id,
+            gcp_project_id=self.gcp_project_id,
+            firestore_database=self.firestore_database,
         )
 
     async def resolve_source_ref_async(

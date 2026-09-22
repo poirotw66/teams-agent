@@ -24,19 +24,70 @@ from .source_record_build import catalog_entry_from_chunk, catalog_entry_from_ma
 logger = logging.getLogger(__name__)
 
 
-def _load_chunks(index_artifact_uri: str | None) -> list[dict[str, Any]]:
-    if not index_artifact_uri:
-        return []
-    path = Path(index_artifact_uri)
-    if not path.is_file():
-        return []
+def _parse_gcs_uri(uri: str) -> tuple[str, str] | None:
+    """Return ``(bucket, object_name)`` for ``gs://bucket/object`` URIs."""
+    if not uri.startswith("gs://"):
+        return None
+    remainder = uri[5:]
+    bucket, sep, object_name = remainder.partition("/")
+    if not sep or not bucket or not object_name:
+        return None
+    return bucket, object_name
+
+
+def _load_chunks_payload(raw: bytes | str) -> list[dict[str, Any]]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        payload = json.loads(raw)
+    except (TypeError, ValueError):
         return []
     chunks = payload.get("chunks") if isinstance(payload, dict) else None
     if isinstance(chunks, list):
         return [item for item in chunks if isinstance(item, dict)]
+    return []
+
+
+def _load_chunks_from_gcs(index_artifact_uri: str) -> list[dict[str, Any]]:
+    """Read ``index/chunks.json`` from GCS when Portal stored a ``gs://`` URI.
+
+    Inventory republish and cloud finalize often set ``index_artifact_uri`` to a
+    GCS object rather than a container-local path. Without this branch,
+    ``build_source_records_for_release`` skips chunk-level identities, so Agent
+    citations (hashed with chunk_id) cannot be resolved by Backoffice preview.
+    """
+    parsed = _parse_gcs_uri(index_artifact_uri)
+    if parsed is None:
+        return []
+    bucket_name, object_name = parsed
+    try:
+        from google.cloud import storage
+    except ImportError:
+        logger.warning(
+            "google-cloud-storage unavailable; cannot load SourceRecord chunks from %s",
+            index_artifact_uri,
+        )
+        return []
+    try:
+        blob = storage.Client().bucket(bucket_name).blob(object_name)
+        return _load_chunks_payload(blob.download_as_bytes())
+    except Exception:  # noqa: BLE001 - boundary: GCS download failures
+        logger.exception(
+            "Failed loading SourceRecord chunks from GCS uri %s",
+            index_artifact_uri,
+        )
+        return []
+
+
+def _load_chunks(index_artifact_uri: str | None) -> list[dict[str, Any]]:
+    if not index_artifact_uri:
+        return []
+    path = Path(index_artifact_uri)
+    if path.is_file():
+        try:
+            return _load_chunks_payload(path.read_text(encoding="utf-8"))
+        except OSError:
+            return []
+    if index_artifact_uri.startswith("gs://"):
+        return _load_chunks_from_gcs(index_artifact_uri)
     return []
 
 

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 from knowledge_portal.models import ReleaseManifestEntry, ReleaseRecord
 from knowledge_portal.source_record_publish import build_source_records_for_release
@@ -138,6 +141,85 @@ def test_build_source_records_missing_acl_fails_closed(tmp_path: Path) -> None:
     doc_record = records[0]
     # Missing ACL must fail closed to grp_restricted, NOT grp_public
     assert list(doc_record.acl_groups) == ["grp_restricted"]
+
+
+def test_build_source_records_loads_chunks_from_gs_uri(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cloud inventory republish stores gs:// index URIs; chunk identities must load."""
+    from knowledge_portal import source_record_publish as publish_mod
+
+    class _Blob:
+        def download_as_bytes(self) -> bytes:
+            return json.dumps(
+                {
+                    "chunks": [
+                        {
+                            "chunk_id": "chk-gcs-1",
+                            "document_id": "doc-gcs-1",
+                            "version_id": "ver-1",
+                            "source_path": "sources/doc-gcs-1.md",
+                            "title": "GCS Doc",
+                            "content": "from gcs",
+                        }
+                    ]
+                }
+            ).encode("utf-8")
+
+    class _Bucket:
+        def blob(self, _name: str) -> _Blob:
+            return _Blob()
+
+    class _Client:
+        def bucket(self, _name: str) -> _Bucket:
+            return _Bucket()
+
+    fake_storage = SimpleNamespace(Client=_Client)
+    monkeypatch.setitem(__import__("sys").modules, "google.cloud.storage", fake_storage)
+    monkeypatch.setattr(
+        publish_mod,
+        "_load_chunks_from_gcs",
+        lambda uri: publish_mod._load_chunks_payload(
+            json.dumps(
+                {
+                    "chunks": [
+                        {
+                            "chunk_id": "chk-gcs-1",
+                            "document_id": "doc-gcs-1",
+                            "version_id": "ver-1",
+                            "source_path": "sources/doc-gcs-1.md",
+                            "title": "GCS Doc",
+                            "content": "from gcs",
+                        }
+                    ]
+                }
+            )
+        ),
+    )
+
+    release = ReleaseRecord(
+        release_id="release-gcs-index",
+        status="ACTIVE",
+        manifest=[
+            ReleaseManifestEntry(
+                document_id="doc-gcs-1",
+                version_id="ver-1",
+                title="GCS Doc",
+                content_hash="hash",
+                source_path="sources/doc-gcs-1.md",
+                source_type="MARKDOWN_PASTE",
+            )
+        ],
+        corpus_hash="corp",
+        index_artifact_uri=(
+            "gs://itr-aimasteryhub-lab-knowledge-releases/"
+            "knowledge-releases/tenants/default/releases/release-gcs-index/index/chunks.json"
+        ),
+        index_setting_version="test",
+        created_at="2026-09-15T00:00:00+00:00",
+        created_by="tester",
+    )
+    records = build_source_records_for_release(release, tenant_id="default")
+    assert any(rec.chunk_id == "chk-gcs-1" for rec in records)
+    assert any(rec.excerpt == "from gcs" for rec in records)
 
 
 def test_publish_aborts_and_marks_failed_if_source_records_fail(tmp_path: Path) -> None:

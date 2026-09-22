@@ -13,6 +13,11 @@ import {
   clearFormalPublishInFlight,
   startFormalPublishInFlight,
 } from '../lib/formalPublishSession';
+import {
+  PUBLISH_SUCCESS_CLOUD_RELOAD_MESSAGE,
+  syncLocalKnowledgeMirror,
+  syncOutcomeToastLevel,
+} from '../lib/syncLocalKnowledgeMirror';
 
 const { Text } = Typography;
 
@@ -49,7 +54,8 @@ const ACTION_CONTENT: Record<
     title: '發布至正式知識庫',
     label: '正式發布',
     defaultReason: '核准版本發布至 Hybrid 與 Gemini File Search。',
-    success: '文件已發布並同步至雙後端。',
+    // Cloud Agent reload is Portal-owned; Console Sync Now is separate.
+    success: PUBLISH_SUCCESS_CLOUD_RELOAD_MESSAGE,
   },
 };
 
@@ -160,6 +166,21 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
         await workbenchStore.submitDocumentReview(document.id, reason.trim());
       } else if (action === 'PUBLISH') {
         await workbenchStore.publishDocument(document.id, reason.trim());
+        message.success(ACTION_CONTENT.PUBLISH.success);
+        setAction(null);
+        onComplete();
+        // Auto Sync Now for the Console-connected Agent (local Playground when
+        // BFF points locally). Cloud Run formal chat already reloaded via Portal.
+        const syncOutcome = await syncLocalKnowledgeMirror();
+        const level = syncOutcomeToastLevel(syncOutcome);
+        if (level === 'success') {
+          message.success(syncOutcome.message);
+        } else if (level === 'warning') {
+          message.warning(syncOutcome.message);
+        } else {
+          message.error(syncOutcome.message);
+        }
+        return;
       } else {
         await workbenchStore.decideDocumentReview(
           document.id,
@@ -250,14 +271,16 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
             showIcon
             message={
               isSubmitting
-                ? '正在建立 release 並同步雙後端'
+                ? '正在建立 release 並啟用雲端正式知識'
                 : '發布會建立新的不可變更 release'
             }
             description={
               isSubmitting ? (
                 <Space direction="vertical" size={4}>
                   <Text>
-                    系統完成 Hybrid、Gemini File Search 與 Agent reload 後會自動切換正式版本。
+                    Portal 會完成 Hybrid／Gemini File Search，並對雲端 Agent 執行
+                    reload-knowledge（正式對話換版）。地端 Playground 另需 Console
+                    所連 Agent 的「立即同步」，成功後會自動跑一次。
                   </Text>
                   <Text type="secondary">
                     <PublishElapsedLabel startedAtMs={publishStartedAtMs} />
@@ -267,7 +290,7 @@ export const DocumentGovernanceActions: React.FC<DocumentGovernanceActionsProps>
                   </Text>
                 </Space>
               ) : (
-                '只有 Hybrid 與 Gemini File Search 都完成同步後，正式版本才會切換。失敗時會保留目前版本。'
+                '只有 Hybrid 與 Gemini File Search 都完成且雲端 Agent reload 成功後，正式版本才會切換。失敗時會保留目前版本（RELOAD_FAILED 請用「重試啟用」）。'
               )
             }
             style={{ marginBottom: 16 }}

@@ -47,7 +47,7 @@ export const PublishElapsedLabel: React.FC<PublishElapsedLabelProps> = ({
     elapsedSeconds >= 120
       ? '（整庫重嵌＋File Search 同步，大型庫可能需 3–8 分鐘）'
       : elapsedSeconds >= 30
-        ? '（索引與雙後端同步進行中）'
+        ? '（索引／File Search 與雲端 Agent reload 進行中）'
         : '';
 
   return (
