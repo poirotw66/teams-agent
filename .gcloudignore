@@ -26,6 +26,9 @@ data/ops/freshness/**
 data/ops/sources/records/**
 data/ops/**/*.jsonl
 data/ops/**/*.lock
+data/ops/knowledge_workspace.json
+data/ops/workbench_state.json
+data/ops/tickets.json
 **/openwiki/**
 .cursor/**
 .tmp/**
