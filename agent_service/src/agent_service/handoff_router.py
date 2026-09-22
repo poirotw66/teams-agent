@@ -47,11 +47,15 @@ SUMMARY_REVIEW — user is reviewing an unresolved IT case summary:
 - CONTACT_HUMAN when the user wants live human support / 真人客服 / 線上客服.
 - REQUEST_SUPPLEMENT when the user asks to add or edit details but has not supplied them.
 - CANCEL when the user withdraws this handoff.
-- NEW_ISSUE only when the user clearly asks a separate IT question unrelated to the case.
+- NEW_ISSUE when the user asks for troubleshooting steps, how-to help, or a knowledge
+  answer (seeking AI help) rather than managing this offer — including when the topic
+  overlaps the active case (abandon offer and resume AI). Also use NEW_ISSUE for a
+  clearly separate IT question unrelated to the case.
 - REVISE_ISSUE when the user reframes or corrects the same case (e.g. symptom change:
   無法解鎖 → 無法點選). This overrides supplement mode when meaning clearly changed.
 - Do not use SUPPLEMENT in SUMMARY_REVIEW — the user has not entered supplement mode yet.
-- UNKNOWN when intent is unclear — do not treat as NEW_ISSUE or REVISE_ISSUE.
+- UNKNOWN only when intent is truly unclear or non-actionable — not for clear how-to /
+  knowledge questions (those are NEW_ISSUE).
 
 AWAITING_SUPPLEMENT — user is adding facts to the active case summary:
 - SUPPLEMENT when the user provides additive facts (error codes, environment, attempts)
@@ -60,8 +64,9 @@ AWAITING_SUPPLEMENT — user is adding facts to the active case summary:
   supplementing (e.g. 其實不是解鎖，是不能點).
 - REQUEST_SUPPLEMENT when the user asks to continue supplementing without new facts.
 - CREATE_TICKET, CONTACT_HUMAN, CANCEL follow the same rules as SUMMARY_REVIEW.
-- NEW_ISSUE only for a clearly unrelated IT question.
-- UNKNOWN when intent is unclear.
+- NEW_ISSUE when the user asks for troubleshooting / how-to / knowledge help (including
+  same-topic), or a clearly separate IT question — not when they are only adding facts.
+- UNKNOWN only when intent is truly unclear or non-actionable.
 
 DEMO_ACTIVE — user is in demo human-support mode:
 - HUMAN_MESSAGE for ordinary follow-up content saved for a human agent.

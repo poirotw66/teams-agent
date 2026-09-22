@@ -939,7 +939,9 @@ async def test_ticket_mention_without_explicit_request_continues_to_rag(
 
 @pytest.mark.asyncio
 async def test_unknown_handoff_action_keeps_summary_review_case(tmp_path: Path) -> None:
+    """Ambiguous non-IT turns stay in review when the router returns UNKNOWN."""
     sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    unclear = "意圖不明的文字"
     repository = InMemoryHandoffRepository()
     workflow, extractor_model, knowledge, *_ = build_workflow(
         tmp_path,
@@ -951,19 +953,119 @@ async def test_unknown_handoff_action_keeps_summary_review_case(tmp_path: Path) 
         ),
         handoff_repository=repository,
         handoff_router=FakeHandoffRouter([HandoffAction.UNKNOWN]),
+        supervisor_by_message={
+            unclear: ConversationSupervisorDecision(intent="NON_IT", confidence=0.9),
+        },
     )
 
     offered = await workflow.respond(make_request(sap_issue.description))
     active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
     assert active is not None
 
-    retried = await workflow.respond(make_request("意圖不明的文字"))
+    retried = await workflow.respond(make_request(unclear))
     stored = await repository.get_case(active.caseId)
 
     assert retried.answer == offered.answer
     assert stored is not None and stored.status == HandoffStatus.SUMMARY_REVIEW
     assert extractor_model.calls == 1
     assert knowledge.calls == [sap_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_unknown_handoff_with_it_support_supersedes_and_answers(
+    tmp_path: Path,
+) -> None:
+    """UNKNOWN + IT_SUPPORT escapes stuck review and resumes RAG."""
+    sap_issue = issue(description="SAP Crystal Reports 授權到期無法開啟")
+    vpn_issue = issue(description="VPN 密碼鎖住怎麼辦")
+    repository = InMemoryHandoffRepository()
+    knowledge = FakeKnowledgeService(
+        responses={
+            sap_issue.description: KnowledgeResult(found=False, answer="", backend="HYBRID"),
+            vpn_issue.description: KnowledgeResult(
+                found=True,
+                answer="請依 VPN 密碼解鎖流程處理。",
+                backend="HYBRID",
+            ),
+        }
+    )
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[sap_issue], [vpn_issue]],
+        knowledge=knowledge,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.UNKNOWN]),
+        supervisor_by_message={
+            vpn_issue.description: ConversationSupervisorDecision(
+                intent="IT_SUPPORT",
+                confidence=0.95,
+            ),
+        },
+    )
+
+    await workflow.respond(make_request(sap_issue.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    answered = await workflow.respond(make_request(vpn_issue.description))
+    stored = await repository.get_case(active.caseId)
+
+    assert "請依 VPN 密碼解鎖流程處理" in answered.answer
+    assert stored is not None and stored.status == HandoffStatus.CANCELLED
+    assert knowledge.calls == [sap_issue.description, vpn_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_same_topic_how_to_after_offer_supersedes_via_new_issue(
+    tmp_path: Path,
+) -> None:
+    """Same-topic how-to after a ticket offer abandons handoff and retries RAG."""
+    dazhou = issue(description="大洲無法點選")
+    repository = InMemoryHandoffRepository()
+    call_count = {"n": 0}
+
+    class SequentialKnowledge(FakeKnowledgeService):
+        async def search(
+            self,
+            query,
+            user_context,
+            *,
+            correlation_id=None,
+            call_counter=None,
+            execution_context=None,
+        ):
+            call_count["n"] += 1
+            self.calls.append(query)
+            self.received_correlation_ids.append(correlation_id)
+            if call_counter is not None:
+                call_counter.increment()
+            if call_count["n"] == 1:
+                return KnowledgeResult(found=False, answer="", backend="HYBRID")
+            return KnowledgeResult(
+                found=True,
+                answer="請確認大洲選單權限後重新整理。",
+                backend="HYBRID",
+            )
+
+    sequential = SequentialKnowledge()
+    workflow, *_ = build_workflow(
+        tmp_path,
+        issues_sequence=[[dazhou], [dazhou]],
+        knowledge=sequential,
+        handoff_repository=repository,
+        handoff_router=FakeHandoffRouter([HandoffAction.NEW_ISSUE]),
+    )
+
+    await workflow.respond(make_request(dazhou.description))
+    active = await repository.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    answered = await workflow.respond(make_request(dazhou.description))
+    stored = await repository.get_case(active.caseId)
+
+    assert "請確認大洲選單權限後重新整理" in answered.answer
+    assert stored is not None and stored.status == HandoffStatus.CANCELLED
+    assert sequential.calls == [dazhou.description, dazhou.description]
 
 
 @pytest.mark.parametrize("text", ["有哪些派工單", "有哪些工單"])

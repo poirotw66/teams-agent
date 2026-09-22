@@ -150,6 +150,7 @@
 |--------|------|
 | `VPN 無法登入，另外 Outlook 也有問題` | 拆成多個 issue 或合併處理 |
 | 先問 SAP（handoff 中）再問：`VPN 密碼鎖住怎麼辦` | 新 IT 問題應**取代** pending handoff，VPN 正常 RAG |
+| 先問大洲（handoff 中）再問同主題：`大洲無法點選怎麼辦` | 同主題 how-to 也應**取代** pending handoff，走 RAG（非再貼摘要確認） |
 
 ---
 

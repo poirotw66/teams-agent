@@ -201,8 +201,15 @@ class HandoffRouteOps(HandoffCaseOps, HandoffTicketOps):
         ticket_intent: TicketIntent,
     ) -> dict:
         if action is HandoffAction.UNKNOWN:
-            # A missing, failed, or illegal semantic action must not cancel an
-            # unresolved case or reinterpret the current turn as a new issue.
+            if self._unknown_should_resume_as_new_issue(state, ticket_intent):
+                return await self._supersede_handoff_for_resume(
+                    state,
+                    case,
+                    requester_id=requester_id,
+                    ticket_intent=ticket_intent,
+                    resume_reason="NEW_ISSUE",
+                )
+            # Ambiguous / non-IT turns stay in review and re-offer the summary.
             return {
                 "handoff_handled": True,
                 "handoff_case": case,
@@ -250,6 +257,19 @@ class HandoffRouteOps(HandoffCaseOps, HandoffTicketOps):
                 state, case, requester_id=requester_id
             )
         return {"handoff_handled": False, "handoff_case": case}
+
+    def _unknown_should_resume_as_new_issue(
+        self,
+        state: AgentState,
+        ticket_intent: TicketIntent,
+    ) -> bool:
+        """Escape stuck review when IT support is clear but the router is unsure."""
+        if ticket_intent is TicketIntent.CREATE:
+            return False
+        if self._is_standalone_human_escalation(state):
+            return False
+        decision = state.get("supervisor_decision")
+        return decision is not None and decision.intent == "IT_SUPPORT"
 
     async def _cancel_review_handoff(
         self, case: HandoffCase, requester_id: str

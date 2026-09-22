@@ -17,6 +17,7 @@ from agent_service.extractor import HUMAN_ESCALATION_ISSUE_DESCRIPTION
 from agent_service.faq import FaqRepository, FaqService
 from agent_service.handoff import HandoffStatus, InMemoryHandoffRepository
 from agent_service.handoff_flow import HandoffAction, HandoffRouteDecision
+from agent_service.supervisor import ConversationSupervisorDecision
 from agent_service.ticket_dedupe import InMemoryTicketRequestDedupeRepository
 
 SAP_ISSUE = "SAP Crystal Reports 授權到期無法開啟"
@@ -499,6 +500,49 @@ async def test_new_issue_after_sap_handoff_clears_case_and_answers_vpn(
     assert stored is not None and stored.status == HandoffStatus.CANCELLED
     assert SAP_ISSUE not in vpn.answer
     assert vpn.issueResults[0].resultType == "NEED_MORE_INFO"
+    assert knowledge.calls == [SAP_ISSUE, vpn_issue.description]
+
+
+@pytest.mark.asyncio
+async def test_unknown_it_support_during_handoff_supersedes_and_answers_vpn(
+    tmp_path: Path,
+) -> None:
+    """Router UNKNOWN + supervisor IT_SUPPORT must not trap knowledge Q&A."""
+    vpn_issue = tw.issue(description="VPN 密碼鎖住怎麼辦")
+    knowledge = tw.FakeKnowledgeService(
+        default=KnowledgeResult(found=False, answer="", backend="HYBRID"),
+        responses={
+            vpn_issue.description: KnowledgeResult(
+                found=True,
+                answer="等待 30 分鐘後自動解鎖。",
+                backend="HYBRID",
+            ),
+        },
+    )
+    handoff_repo = InMemoryHandoffRepository(clock=lambda: datetime.now(timezone.utc))
+    workflow, *_ = tw.build_workflow(
+        tmp_path,
+        issues_sequence=[[tw.issue(description=SAP_ISSUE)], [vpn_issue]],
+        knowledge=knowledge,
+        handoff_repository=handoff_repo,
+        handoff_router=tw.FakeHandoffRouter([HandoffAction.UNKNOWN]),
+        supervisor_by_message={
+            vpn_issue.description: ConversationSupervisorDecision(
+                intent="IT_SUPPORT",
+                confidence=0.95,
+            ),
+        },
+    )
+
+    await workflow.respond(tw.make_request(SAP_ISSUE))
+    active = await handoff_repo.get_active_case("tenant-1", "conv-1", "user-1")
+    assert active is not None
+
+    vpn = await workflow.respond(tw.make_request(vpn_issue.description))
+    stored = await handoff_repo.get_case(active.caseId)
+
+    assert stored is not None and stored.status == HandoffStatus.CANCELLED
+    assert "等待 30 分鐘後自動解鎖" in vpn.answer
     assert knowledge.calls == [SAP_ISSUE, vpn_issue.description]
 
 
