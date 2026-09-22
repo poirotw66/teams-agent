@@ -196,10 +196,11 @@ def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
     # Citations travel separately in BuiltResponse and are rendered by the
     # Teams adapter. Keeping them out of the answer body prevents duplicate
     # source sections in both plain text and Adaptive Cards.
+    from .answer_presentation import format_knowledge_answer_display
+
     answer = strip_policy_overlay_for_display(result.answer)
-    # The chat already shows the user's question; multi-issue replies get a
-    # separate heading from _render_multi_issue_block.
-    return answer
+    # Deterministic layout only (lists / paragraph breaks) — no wording rewrite.
+    return format_knowledge_answer_display(answer)
 
 
 def _render_need_more_info(issue: Issue, result: IssueResult) -> str:

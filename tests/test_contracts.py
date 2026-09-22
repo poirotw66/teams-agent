@@ -378,6 +378,19 @@ def test_format_teams_answer_separates_follow_up_action() -> None:
     )
 
 
+def test_format_teams_answer_expands_dense_vpn_howto() -> None:
+    raw = (
+        "若遇到三個月密碼到期，請插上實體網路線，使用 Ctrl + Alt + Delete "
+        "變更公司電腦開機密碼 [S1]。若您使用的是內網型筆電，請直接更改密碼，"
+        "不要前往金控入口網同步開機密碼 (AD) [S2]。"
+    )
+    formatted = format_teams_answer(raw)
+    assert "1. 請插上實體網路線" in formatted
+    assert "2. 使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]" in formatted
+    assert "不要前往金控入口網同步開機密碼 (AD) [S2]" in formatted
+    assert "\n\n" in formatted
+
+
 def test_format_teams_answer_auto_numbers_and_dedupes_citations() -> None:
     raw = (
         "問題：IT 權限申請 如何申請\n\n"

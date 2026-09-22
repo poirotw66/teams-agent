@@ -101,6 +101,45 @@ def _format_steps_and_citations(text: str) -> str:
 
 
 
+def _expand_conditional_howto_paragraph(paragraph: str) -> str:
+    """Expand『若…，請A，使用B…[S1]』into a short lead-in plus numbered steps."""
+    stripped = (paragraph or "").strip()
+    if not stripped or "\n" in stripped:
+        return paragraph
+
+    cite = ""
+    body = stripped
+    cite_match = re.search(r"(\s*\[S\d+\][。.]?)\s*$", stripped)
+    if cite_match:
+        cite = cite_match.group(1).strip()
+        body = stripped[: cite_match.start()].rstrip("。．. ")
+
+    match = re.match(r"^(若|如果)(.+?)，(請.+)$", body)
+    if not match:
+        return paragraph
+
+    lead = f"{match.group(1)}{match.group(2)}".strip()
+    rest = match.group(3).strip()
+    parts = [
+        part.strip()
+        for part in re.split(r"，(?=(?:請|使用|不要|勿|並請))", rest)
+        if part.strip()
+    ]
+    if len(parts) < 2:
+        return paragraph
+
+    lines = [f"{lead}，請依下列步驟處理：", ""]
+    for index, part in enumerate(parts, start=1):
+        step = part.rstrip("。．. ")
+        if index == len(parts) and cite:
+            marker = re.search(r"\[S\d+\]", cite)
+            suffix = f" {marker.group(0)}" if marker else ""
+            lines.append(f"{index}. {step}{suffix}")
+        else:
+            lines.append(f"{index}. {step}")
+    return "\n".join(lines)
+
+
 def format_teams_answer(answer: str) -> str:
     """Format raw agent answer for optimal Microsoft Teams Markdown rendering.
 
@@ -121,9 +160,18 @@ def format_teams_answer(answer: str) -> str:
     # Keep it as a separate paragraph in both Teams and Playground cards.
     text = re.sub(r"(?<!\n)([。.!?！？]|\[S\d+\])\s*(>\s*💡)", r"\1\n\n\2", text)
 
-    # Keep a follow-up action distinct from the direct answer when an older
-    # model response has combined them into one paragraph.
-    text = re.sub(r"(?<=。)[ \t]*(?=(?:若需|如需|如果要|如果需要))", "\n\n", text)
+    # Keep a follow-up action / new condition distinct from the prior sentence.
+    text = re.sub(r"(?<=[。！？])[ \t]*(?=若|如果)", "\n\n", text)
+
+    # Expand dense『若…，請A，使用B』how-to paragraphs into numbered steps.
+    blocks = re.split(r"\n{2,}", text)
+    text = "\n\n".join(_expand_conditional_howto_paragraph(block) for block in blocks)
+    text = re.sub(
+        r"(?<!\*)(Ctrl\s*\+\s*Alt\s*\+\s*Delete)(?!\*)",
+        r"**\1**",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     # 1. Bold "問題：" header
     text = re.sub(r"(?m)^(?<!\*\*)問題：\s*([^\n]+)", r"**問題：** \1", text)
