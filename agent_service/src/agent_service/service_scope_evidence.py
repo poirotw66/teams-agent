@@ -273,7 +273,7 @@ def configure_service_scope_from_release(
     if catalog_path.is_file():
         try:
             raw_payload = json.loads(catalog_path.read_text(encoding="utf-8"))
-            from knowledge_portal.service_catalog_artifact import (
+            from knowledge_core.service_catalog import (
                 validate_service_catalog_payload,
             )
 

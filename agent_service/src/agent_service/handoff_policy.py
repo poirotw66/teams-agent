@@ -70,6 +70,41 @@ class RoutingTarget(str, Enum):
 
 TERMINAL_STATUSES = frozenset({"CLOSED", "CANCELLED", "FAILED", "EXPIRED", "ROUTED_TO_TICKET"})
 
+# Fail-closed legal state × action transitions. Router outputs outside this
+# table become UNKNOWN and must not mutate the case (re-offer / stay put).
+_LEGAL_HANDOFF_ACTIONS: dict[str, frozenset[HandoffAction]] = {
+    "SUMMARY_REVIEW": frozenset(
+        {
+            HandoffAction.CREATE_TICKET,
+            HandoffAction.CONTACT_HUMAN,
+            HandoffAction.REQUEST_SUPPLEMENT,
+            HandoffAction.CANCEL,
+            HandoffAction.CLOSE,
+            HandoffAction.NEW_ISSUE,
+            HandoffAction.REVISE_ISSUE,
+        }
+    ),
+    "AWAITING_SUPPLEMENT": frozenset(
+        {
+            HandoffAction.SUPPLEMENT,
+            HandoffAction.REQUEST_SUPPLEMENT,
+            HandoffAction.CREATE_TICKET,
+            HandoffAction.CONTACT_HUMAN,
+            HandoffAction.CANCEL,
+            HandoffAction.CLOSE,
+            HandoffAction.NEW_ISSUE,
+            HandoffAction.REVISE_ISSUE,
+        }
+    ),
+    "DEMO_ACTIVE": frozenset(
+        {
+            HandoffAction.HUMAN_MESSAGE,
+            HandoffAction.CREATE_TICKET,
+            HandoffAction.CLOSE,
+        }
+    ),
+}
+
 
 def available_handoff_actions(case_status: str) -> tuple[str, ...]:
     if case_status == "DEMO_ACTIVE":
@@ -79,15 +114,19 @@ def available_handoff_actions(case_status: str) -> tuple[str, ...]:
     return ()
 
 
+def is_legal_handoff_transition(case_status: str, action: HandoffAction) -> bool:
+    """Return True when ``action`` is allowed for ``case_status`` (fail-closed)."""
+    if action is HandoffAction.UNKNOWN:
+        return True
+    allowed = _LEGAL_HANDOFF_ACTIONS.get(case_status)
+    if allowed is None:
+        return False
+    return action in allowed
+
+
 def validate_handoff_action(case_status: str, action: HandoffAction) -> HandoffAction:
     """Reject illegal model outputs; semantics come from the model, legality from workflow."""
-
-    if action is HandoffAction.SUPPLEMENT and case_status != "AWAITING_SUPPLEMENT":
-        return HandoffAction.UNKNOWN
-    if action is HandoffAction.REQUEST_SUPPLEMENT and case_status not in {
-        "SUMMARY_REVIEW",
-        "AWAITING_SUPPLEMENT",
-    }:
+    if not is_legal_handoff_transition(case_status, action):
         return HandoffAction.UNKNOWN
     return action
 

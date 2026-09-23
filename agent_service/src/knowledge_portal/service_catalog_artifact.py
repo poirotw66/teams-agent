@@ -22,12 +22,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+from knowledge_core.service_catalog import (
+    SERVICE_CATALOG_SCHEMA_VERSION,
+    validate_service_catalog_payload,
+)
 from knowledge_portal.models import ReleaseManifestEntry
 
 SERVICE_CATALOG_RELATIVE_PATH = "catalog/service_catalog.json"
 # Reserved for Portal catalog draft workflow; not written by publish finalize yet.
 SERVICE_CATALOG_DRAFT_RELATIVE_PATH = "catalog/service_catalog.draft.json"
-SERVICE_CATALOG_SCHEMA_VERSION = 1
 
 __all__ = [
     "SERVICE_CATALOG_DRAFT_RELATIVE_PATH",
@@ -38,31 +41,6 @@ __all__ = [
     "write_service_catalog_artifact",
     "write_service_catalog_draft",
 ]
-
-
-def validate_service_catalog_payload(payload: object) -> dict[str, Any]:
-    """Validate a service-catalog JSON object; raise on invalid shape or fields."""
-    if not isinstance(payload, dict):
-        raise TypeError("Service catalog payload must be an object.")
-    schema_version = payload.get("schemaVersion")
-    if not isinstance(schema_version, int) or schema_version < 1:
-        raise ValueError("Service catalog schemaVersion must be a positive integer.")
-    release_id = payload.get("releaseId")
-    if not isinstance(release_id, str) or not release_id.strip():
-        raise ValueError("Service catalog releaseId is required.")
-    tenant_id = payload.get("tenantId")
-    if not isinstance(tenant_id, str) or not tenant_id.strip():
-        raise ValueError("Service catalog tenantId is required.")
-    services = payload.get("services")
-    if not isinstance(services, list):
-        raise TypeError("Service catalog services must be a list.")
-    for index, item in enumerate(services):
-        if not isinstance(item, dict):
-            raise TypeError(f"Service catalog services[{index}] must be an object.")
-        service_id = item.get("serviceId")
-        if not isinstance(service_id, str) or not service_id.strip():
-            raise ValueError(f"Service catalog services[{index}].serviceId is required.")
-    return payload
 
 
 def build_service_catalog_payload(

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 from pdf_test_helpers import build_text_pdf_bytes
 
@@ -316,7 +317,41 @@ def test_pdf_job_is_visible_only_to_its_uploader(tmp_path: Path) -> None:
     assert result.status_code == 404
 
 
-def test_production_import_requires_converter(tmp_path: Path) -> None:
+def test_production_header_auth_rejected_before_converter_check(tmp_path: Path) -> None:
+    """Prod rejects forged X-Portal-* identity with 401 (auth before converter)."""
+    settings = PortalSettings.from_env()
+    object.__setattr__(settings, "service_token", "")
+    object.__setattr__(settings, "repository_mode", "MEMORY")
+    object.__setattr__(settings, "deployment_environment", "prod")
+    object.__setattr__(settings, "pdf_converter_url", None)
+    object.__setattr__(settings, "data_dir", tmp_path)
+    client = TestClient(create_app(settings, release_gate_checker=object()))
+
+    response = client.post(
+        "/api/documents/import-pdf?async_mode=sync",
+        files={
+            "file": (
+                "guide.pdf",
+                build_text_pdf_bytes("must not use legacy"),
+                "application/pdf",
+            )
+        },
+        headers={
+            "X-Portal-User-Id": "actor-1",
+            "X-Portal-User-Name": "Actor",
+            "X-Portal-Role": "CONTRIBUTOR",
+            "X-Portal-Owner-Units": "IT Service Desk",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_production_import_requires_converter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With prod break-glass header auth, missing converter still returns 502."""
+    monkeypatch.setenv("KNOWLEDGE_PORTAL_ALLOW_HEADER_AUTH", "true")
     settings = PortalSettings.from_env()
     object.__setattr__(settings, "service_token", "")
     object.__setattr__(settings, "repository_mode", "MEMORY")

@@ -68,15 +68,18 @@ export const SYNC_AGENT_UNREACHABLE_MESSAGE =
 export const SYNC_COMPLETED_MESSAGE = '此 Console 所連 Agent 同步完成。';
 
 /**
- * POST `/api/agent/knowledge-sync` against the Agent pointed to by BFF
+ * POST `/api/console/agent-knowledge/sync` against the Agent pointed to by BFF
  * ``AGENT_API_URL`` (local Playground when Console is local; Cloud Run when
  * Console BFF points there). Does not replace Portal cloud reload.
  */
 export async function syncLocalKnowledgeMirror(): Promise<SyncLocalKnowledgeMirrorOutcome> {
   try {
-    const sync = await apiClient<KnowledgeSyncStatus>('/api/agent/knowledge-sync', {
-      method: 'POST',
-    });
+    const sync = await apiClient<KnowledgeSyncStatus>(
+      '/api/console/agent-knowledge/sync',
+      {
+        method: 'POST',
+      },
+    );
     if (sync.alignedWithCloud || sync.matchesCloudProduction) {
       return { kind: 'aligned', sync, message: SYNC_ALIGNED_MESSAGE };
     }

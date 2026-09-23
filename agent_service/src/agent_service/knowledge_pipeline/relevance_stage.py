@@ -1,4 +1,11 @@
-"""Relevance grading and query-rewrite stages for HybridKnowledgeService."""
+"""Relevance grading and query-rewrite stages for HybridKnowledgeService.
+
+Product strategy for LLM vs deterministic relevance (see ``_grade_relevance_with_llm``):
+when an LLM grader is invoked and returns ``relevant=False``, trust that rejection.
+Deterministic lexical checks still short-circuit *before* the LLM (no model,
+high-confidence skip, trivial tier) and remain available for offline observability
+comparison, but they must not override an explicit grader rejection.
+"""
 
 from __future__ import annotations
 
@@ -138,15 +145,8 @@ async def _grade_relevance_with_llm(
         deterministic_relevant=deterministic_relevant,
         llm_relevant=llm_relevant,
     )
-    # Lexical/deterministic already matched selected evidence; do not let an LLM
-    # false-negative flip a contrastive or multi-doc pool into NO_RELEVANT_EVIDENCE.
-    if deterministic_relevant and not llm_relevant:
-        annotate_relevance_attempts(
-            state.trace_attempts,
-            decision="DETERMINISTIC_RELEVANCE_GUARD",
-            is_relevant=True,
-        )
-        return True
+    # Trust the grader once it has run. Overriding ``relevant=False`` with a
+    # lexical match caused wrong answers and blocked rewrite/budget paths.
     annotate_relevance_attempts(
         state.trace_attempts,
         decision="LLM_RELEVANCE",

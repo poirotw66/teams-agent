@@ -1,5 +1,5 @@
 {
-  "schemaCount": 115,
+  "schemaCount": 116,
   "schemas": [
     {
       "name": "ActivatePolicyVersionPayload",
@@ -898,6 +898,17 @@
         "frequency",
         "id",
         "sample_conversations"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "KnowledgeWorkspaceUpdateRequest",
+      "properties": [
+        "knowledgeWorkspaceMode",
+        "reason"
+      ],
+      "required": [
+        "knowledgeWorkspaceMode"
       ],
       "type": "object"
     },

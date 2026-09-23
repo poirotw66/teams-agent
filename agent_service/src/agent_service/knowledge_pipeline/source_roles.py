@@ -255,10 +255,7 @@ def _title_about_short_latin(*, title: str, token: str) -> bool:
     """True when a short Latin product token is a title subject, not a body aside."""
     title_l = (title or "").casefold()
     needle = token.casefold()
-    if not title_l or needle not in title_l:
-        return False
-    # Titles like「AD 帳號與系統解鎖」or「國金 CRM OTP 綁訂」are about the token.
-    return True
+    return bool(title_l) and needle in title_l
 
 
 def _matches_negated_topic(
@@ -555,6 +552,43 @@ def _rescue_top_score_from_incidental(
     ]
     best_score = float(best.score or 0.0)
     if kept_scores and best_score <= max(kept_scores):
+        return roles
+    # High retrieval score alone must not resurrect an off-topic incidental
+    # (e.g. 「大州系統設定」 for an SAP password query). Rescue only when the
+    # incidental still aligns with the query at least as well as kept evidence,
+    # or when its title clearly matches (Latin-boost demotion of the seed doc).
+    anchors = query_anchor_tokens(query)
+    overlap = _doc_overlap(
+        doc_key=best_key,
+        results=results,
+        document_key=document_key,
+        anchors=anchors,
+        query=query,
+    )
+    title, _blob = _doc_blob(
+        doc_key=best_key, results=results, document_key=document_key
+    )
+    title_bonus = _title_span_bonus(title=title, query=query)
+    latin_title_hit = any(
+        token in title.lower() for token in _latin_query_tokens(query)
+    )
+    kept_overlaps = [
+        _doc_overlap(
+            doc_key=document_key(result),
+            results=results,
+            document_key=document_key,
+            anchors=anchors,
+            query=query,
+        )
+        for result in results
+        if roles.get(document_key(result), SourceRole.PRIMARY) != SourceRole.INCIDENTAL
+    ]
+    if (
+        kept_overlaps
+        and overlap < max(kept_overlaps)
+        and title_bonus <= 0
+        and not latin_title_hit
+    ):
         return roles
     rescued = dict(roles)
     rescued[best_key] = SourceRole.PRIMARY

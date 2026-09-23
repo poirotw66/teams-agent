@@ -35,7 +35,9 @@ export const KnowledgeSyncLagBanner: React.FC = () => {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const data = await apiClient<KnowledgeStatusResponse>('/api/agent/knowledge-status');
+      const data = await apiClient<KnowledgeStatusResponse>(
+        '/api/console/agent-knowledge/status',
+      );
       setStatus(data);
     } catch (err) {
       setStatus(null);

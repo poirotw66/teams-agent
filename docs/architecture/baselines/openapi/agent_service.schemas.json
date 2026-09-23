@@ -12,9 +12,16 @@
         "estimatedCostUsd",
         "feedbackEnabled",
         "images",
+        "isCloudProductionAnswer",
         "issueResults",
+        "knowledgeAclDecision",
+        "knowledgeAclFilteredCount",
+        "knowledgeLastSuccessfulSyncAt",
+        "knowledgeReleaseId",
+        "knowledgeSelectionMode",
         "llmCallCount",
         "retrievalTraces",
+        "serviceCatalogVersion",
         "traceId"
       ],
       "required": [
@@ -71,7 +78,14 @@
         "estimatedCostUsd",
         "feedbackEnabled",
         "images",
+        "isCloudProductionAnswer",
         "issueResults",
+        "knowledgeAclDecision",
+        "knowledgeAclFilteredCount",
+        "knowledgeLastSuccessfulSyncAt",
+        "knowledgeReleaseId",
+        "knowledgeSelectionMode",
+        "serviceCatalogVersion",
         "traceId"
       ],
       "required": [

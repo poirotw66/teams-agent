@@ -48,10 +48,18 @@ def register_agent_knowledge_sync_routes(
             path="/admin/knowledge-sync",
         )
 
-    app.get("/api/console/agent-knowledge/status")(_status)
-    app.post("/api/console/agent-knowledge/sync")(_sync)
-    app.get("/api/agent/knowledge-status")(_status)
-    app.post("/api/agent/knowledge-sync")(_sync)
+    app.get(
+        "/api/console/agent-knowledge/status",
+        operation_id="get_console_agent_knowledge_status",
+    )(_status)
+    app.post(
+        "/api/console/agent-knowledge/sync",
+        operation_id="post_console_agent_knowledge_sync",
+    )(_sync)
+    # Legacy aliases kept for compatibility; excluded from OpenAPI to avoid
+    # duplicate operationIds with the canonical console paths.
+    app.get("/api/agent/knowledge-status", include_in_schema=False)(_status)
+    app.post("/api/agent/knowledge-sync", include_in_schema=False)(_sync)
 
 
 async def _call_agent(

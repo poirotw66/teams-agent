@@ -13,12 +13,12 @@ from knowledge_core.release_artifacts import (
     validate_release_artifacts,
 )
 from knowledge_core.target_manifest import knowledge_release_target_manifest_hash
+from knowledge_portal.acl_artifact import write_acl_artifact
 from knowledge_portal.incremental_embeddings import index_setting_fingerprint
 from knowledge_portal.ports.release_publish import (
     PublishedReleaseInfo,
     get_release_directory_publisher,
 )
-from knowledge_portal.acl_artifact import write_acl_artifact
 from knowledge_portal.service_catalog_artifact import write_service_catalog_artifact
 from knowledge_portal.service_catalog_draft_store import build_catalog_draft_store
 from knowledge_portal.service_catalog_governance import load_approved_catalog_for_release

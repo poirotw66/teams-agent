@@ -7,16 +7,16 @@ from pathlib import Path
 
 import pytest
 
+from knowledge_core.runtime_inventory import (
+    build_runtime_artifact_inventory,
+    is_qa_sync_relative_path,
+)
 from knowledge_portal.acl_artifact import (
     ACL_ARTIFACT_RELATIVE_PATH,
     validate_document_acl_payload,
     write_acl_artifact,
 )
 from knowledge_portal.models import ReleaseManifestEntry
-from knowledge_core.runtime_inventory import (
-    build_runtime_artifact_inventory,
-    is_qa_sync_relative_path,
-)
 
 
 def _manifest_entry(

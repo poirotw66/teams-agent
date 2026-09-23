@@ -1,17 +1,7 @@
 from dataclasses import dataclass
-from os import environ
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from .settings_env import build_rag_settings_kwargs
-
-load_dotenv()
-
-# Normalize dotenv values that may retain trailing CR on Windows-edited files.
-for _key, _value in list(environ.items()):
-    if "\r" in _value:
-        environ[_key] = _value.replace("\r", "")
 
 
 @dataclass(frozen=True)

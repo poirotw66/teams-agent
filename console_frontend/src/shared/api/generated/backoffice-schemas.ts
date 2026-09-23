@@ -14,7 +14,7 @@
 /* eslint-disable */
 /* prettier-ignore */
 
-// Component schemas from ai_ops_backoffice OpenAPI (115 types).
+// Component schemas from ai_ops_backoffice OpenAPI (116 types).
 export type BackofficeSchemas = {
   ActivatePolicyVersionPayload: ActivatePolicyVersionPayload;
   ActivateTargetPayload: ActivateTargetPayload;
@@ -68,6 +68,7 @@ export type BackofficeSchemas = {
   ItTicketItem: ItTicketItem;
   KnowledgeBlindSpot: KnowledgeBlindSpot;
   KnowledgeGapItem: KnowledgeGapItem;
+  KnowledgeWorkspaceUpdateRequest: KnowledgeWorkspaceUpdateRequest;
   ManualChunkImage: ManualChunkImage;
   ManualChunkItem: ManualChunkItem;
   ManualDocumentItem: ManualDocumentItem;
@@ -601,6 +602,11 @@ export interface KnowledgeGapItem {
   frequency: number;
   id: string;
   sample_conversations: Array<string>;
+}
+
+export interface KnowledgeWorkspaceUpdateRequest {
+  knowledgeWorkspaceMode: string;
+  reason?: string | null;
 }
 
 export interface ManualChunkImage {

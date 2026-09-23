@@ -126,13 +126,13 @@ def build_release_index_from_sources(
     index_path: Path,
     previous_release: object | None = None,
 ) -> str | None:
-    from .publisher_finalize import ReleaseBuildError
     from .incremental_embeddings import (
         apply_reused_embeddings,
         index_setting_fingerprint,
         load_previous_release_index_payload,
     )
     from .models import ReleaseRecord
+    from .publisher_finalize import ReleaseBuildError
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_root = Path(temp_dir)

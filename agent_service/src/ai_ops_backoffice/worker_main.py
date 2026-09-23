@@ -26,6 +26,18 @@ from .settings import BackofficeSettings
 logger = logging.getLogger("ai_ops_worker")
 
 
+def _load_worker_dotenv() -> None:
+    """Load ambient .env for the standalone worker CLI only (not at import time)."""
+    from os import environ
+
+    from dotenv import load_dotenv
+
+    load_dotenv()
+    for key, value in list(environ.items()):
+        if "\r" in value:
+            environ[key] = value.replace("\r", "")
+
+
 def _collect_dependency_status(
     *,
     app: Any,
@@ -181,6 +193,8 @@ async def run_standalone_workers(
     health_file: Path | None = None,
 ) -> None:
     """Run all AI Ops background workers until cancelled or terminated."""
+    if settings is None:
+        _load_worker_dotenv()
     resolved_settings = settings or BackofficeSettings.from_env()
     # Force workers_enabled=True in the dedicated worker process
     if not resolved_settings.workers_enabled:

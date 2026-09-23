@@ -1,4 +1,25 @@
 {
-  "functions": {},
+  "functions": {
+    "agent_service/src/agent_service/extractor_normalizer.py::coerce_issue": 96,
+    "agent_service/src/agent_service/knowledge_pipeline/generation_stage.py::generate_grounded_answer": 133,
+    "agent_service/src/agent_service/knowledge_pipeline/generation_stage_result.py::prefer_query_aligned_citations": 146,
+    "agent_service/src/agent_service/knowledge_pipeline/source_roles.py::_rescue_top_score_from_incidental": 82,
+    "agent_service/src/agent_service/knowledge_release_sync.py::_mirror_release": 112,
+    "agent_service/src/agent_service/knowledge_release_sync.py::_sync_locked": 101,
+    "agent_service/src/agent_service/lifespan_wiring.py::startup_agent_runtime": 92,
+    "agent_service/src/agent_service/routers/chat_support.py::resolve_knowledge_audit_context": 81,
+    "agent_service/src/agent_service/routers/knowledge_admin.py::register_knowledge_admin_routes": 92,
+    "agent_service/src/agent_service/routers/knowledge_admin_reload.py::perform_knowledge_reload": 87,
+    "agent_service/src/ai_ops_backoffice/knowledge_bridge/capabilities.py::capability_for_portal_path": 84,
+    "agent_service/src/ai_ops_backoffice/knowledge_bridge/routes.py::_handle_knowledge_proxy": 84,
+    "agent_service/src/ai_ops_backoffice/knowledge_bridge/routes.py::build_knowledge_router": 99,
+    "agent_service/src/ai_ops_backoffice/routers/ops_health_auth_routes.py::register_ops_health_auth_routes": 196,
+    "agent_service/src/knowledge_portal/file_search_release.py::synchronize_file_search_release": 82,
+    "agent_service/src/knowledge_portal/incremental_embeddings.py::apply_reused_embeddings": 84,
+    "agent_service/src/knowledge_portal/publisher_finalize.py::finalize_release_artifacts": 93,
+    "agent_service/src/knowledge_portal/publisher_index.py::build_release_index_from_sources": 90,
+    "agent_service/src/knowledge_portal/release/activation.py::activate_release": 83,
+    "agent_service/src/knowledge_portal/routers/catalog_routes.py::register_catalog_routes": 189
+  },
   "max_new_function_lines": 80
 }

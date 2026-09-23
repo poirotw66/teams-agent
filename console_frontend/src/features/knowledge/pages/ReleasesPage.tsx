@@ -85,7 +85,9 @@ export const ReleasesPage: React.FC = () => {
   const loadAgentStatus = useCallback(async () => {
     setAgentStatusError(null);
     try {
-      const data = await apiClient<KnowledgeStatusResponse>('/api/agent/knowledge-status');
+      const data = await apiClient<KnowledgeStatusResponse>(
+        '/api/console/agent-knowledge/status',
+      );
       setAgentStatus(data);
     } catch (err) {
       setAgentStatus(null);

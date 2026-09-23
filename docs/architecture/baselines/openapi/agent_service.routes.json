@@ -1,5 +1,5 @@
 {
-  "routeCount": 15,
+  "routeCount": 16,
   "routes": [
     {
       "method": "GET",
@@ -33,6 +33,20 @@
       "method": "GET",
       "operationId": "get_knowledge_status_admin_knowledge_status_get",
       "path": "/admin/knowledge-status",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "sync_knowledge_release_admin_knowledge_sync_post",
+      "path": "/admin/knowledge-sync",
       "requestSchema": null,
       "responseSchemas": [
         "HTTPValidationError"

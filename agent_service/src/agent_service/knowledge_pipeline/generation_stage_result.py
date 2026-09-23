@@ -163,9 +163,9 @@ def prefer_query_aligned_citations(
             title_winners = {
                 key for key, score in title_scored if score == best_title
             }
-            if best_title >= 2 and title_gap >= 2:
-                keep = title_winners
-            elif best_title >= 1 and second_title == 0:
+            if (best_title >= 2 and title_gap >= 2) or (
+                best_title >= 1 and second_title == 0
+            ):
                 keep = title_winners
             elif (
                 best_title > second_title

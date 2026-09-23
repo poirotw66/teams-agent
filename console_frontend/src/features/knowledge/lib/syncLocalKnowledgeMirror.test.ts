@@ -38,7 +38,7 @@ describe('syncLocalKnowledgeMirror', () => {
 
     const outcome = await syncLocalKnowledgeMirror();
 
-    expect(apiClient).toHaveBeenCalledWith('/api/agent/knowledge-sync', {
+    expect(apiClient).toHaveBeenCalledWith('/api/console/agent-knowledge/sync', {
       method: 'POST',
     });
     expect(outcome).toEqual({

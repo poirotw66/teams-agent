@@ -116,7 +116,12 @@ def maybe_build_in_process_portal(
             portal_settings = replace(
                 portal_settings,
                 delegation_secret=resolved_secret,
-                require_service_token_with_delegation=bool(settings.knowledge_service_token),
+                require_service_token_with_delegation=bool(
+                    settings.knowledge_service_token
+                ),
+                # In-process lab portal must stay deterministic: no live
+                # embedding calls from ambient GOOGLE_API_KEY / .env.
+                embedding_model=None,
             )
             portal_app = factory(portal_settings)
             resolved_transport = httpx.ASGITransport(app=portal_app)

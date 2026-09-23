@@ -2794,6 +2794,31 @@
         "title": "KnowledgeGapItem",
         "type": "object"
       },
+      "KnowledgeWorkspaceUpdateRequest": {
+        "properties": {
+          "knowledgeWorkspaceMode": {
+            "minLength": 1,
+            "title": "Knowledgeworkspacemode",
+            "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "required": [
+          "knowledgeWorkspaceMode"
+        ],
+        "title": "KnowledgeWorkspaceUpdateRequest",
+        "type": "object"
+      },
       "ManualChunkImage": {
         "properties": {
           "alt_text": {
@@ -10336,6 +10361,398 @@
         "summary": "Capabilities"
       }
     },
+    "/api/console/agent-knowledge/status": {
+      "get": {
+        "operationId": "get_console_agent_knowledge_status",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Name"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ANALYST",
+              "title": "X-Backoffice-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Owner-Units",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Owner-Units"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Tenant-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Groups"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Revoked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "false",
+              "title": "X-Backoffice-Revoked"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Source-Delegation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Source-Delegation"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Service-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Service-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Console Agent Knowledge Status",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": " Status"
+      }
+    },
+    "/api/console/agent-knowledge/sync": {
+      "post": {
+        "operationId": "post_console_agent_knowledge_sync",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Name"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ANALYST",
+              "title": "X-Backoffice-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Owner-Units",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Owner-Units"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Tenant-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Groups"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Revoked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "false",
+              "title": "X-Backoffice-Revoked"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Source-Delegation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Source-Delegation"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Service-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Service-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Post Console Agent Knowledge Sync",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": " Sync"
+      }
+    },
     "/api/console/work-items": {
       "get": {
         "operationId": "list_work_items_api_console_work_items_get",
@@ -11453,7 +11870,7 @@
     },
     "/api/console/workbench/documents": {
       "get": {
-        "description": "Return real published documents and chunks from portal_state.json and chunks.json.",
+        "description": "Return published document metadata (chunk bodies loaded on demand).",
         "operationId": "list_workbench_documents_api_console_workbench_documents_get",
         "parameters": [
           {
@@ -43135,6 +43552,600 @@
         "summary": "Knowledge Documents"
       }
     },
+    "/api/knowledge-workspace": {
+      "delete": {
+        "operationId": "delete_knowledge_workspace_api_knowledge_workspace_delete",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Name"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ANALYST",
+              "title": "X-Backoffice-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Owner-Units",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Owner-Units"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Tenant-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Groups"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Revoked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "false",
+              "title": "X-Backoffice-Revoked"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Source-Delegation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Source-Delegation"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Service-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Service-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Delete Knowledge Workspace Api Knowledge Workspace Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Knowledge Workspace"
+      },
+      "get": {
+        "operationId": "get_knowledge_workspace_api_knowledge_workspace_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Name"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ANALYST",
+              "title": "X-Backoffice-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Owner-Units",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Owner-Units"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Tenant-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Groups"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Revoked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "false",
+              "title": "X-Backoffice-Revoked"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Source-Delegation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Source-Delegation"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Service-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Service-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Knowledge Workspace Api Knowledge Workspace Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Knowledge Workspace"
+      },
+      "put": {
+        "operationId": "put_knowledge_workspace_api_knowledge_workspace_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Name"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ANALYST",
+              "title": "X-Backoffice-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Owner-Units",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Owner-Units"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Tenant-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Groups"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Revoked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "false",
+              "title": "X-Backoffice-Revoked"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Source-Delegation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Source-Delegation"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Service-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Service-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KnowledgeWorkspaceUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Put Knowledge Workspace Api Knowledge Workspace Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Knowledge Workspace"
+      }
+    },
     "/api/knowledge/status": {
       "get": {
         "operationId": "knowledge_bridge_status_api_knowledge_status_get",
@@ -51905,8 +52916,20 @@
     },
     "/knowledge-ui": {
       "get": {
-        "description": "Same-origin Knowledge Portal UI hosted inside the ops console.",
+        "description": "Redirect legacy knowledge-ui to console-v2 (no second write flow).\n\nServes a tiny hash-aware redirect page so ``#/reviews`` and similar\nclient routes map to console-v2 equivalents without loading the old\nPortal embed write UI.",
         "operationId": "knowledge_ui_knowledge_ui_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -51915,6 +52938,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Knowledge Ui"
@@ -51922,8 +52955,20 @@
     },
     "/knowledge-ui/": {
       "get": {
-        "description": "Same-origin Knowledge Portal UI hosted inside the ops console.",
+        "description": "Redirect legacy knowledge-ui to console-v2 (no second write flow).\n\nServes a tiny hash-aware redirect page so ``#/reviews`` and similar\nclient routes map to console-v2 equivalents without loading the old\nPortal embed write UI.",
         "operationId": "knowledge_ui_knowledge_ui__get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -51932,6 +52977,54 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Knowledge Ui"
+      }
+    },
+    "/knowledge-ui/{path}": {
+      "get": {
+        "description": "Redirect legacy knowledge-ui to console-v2 (no second write flow).\n\nServes a tiny hash-aware redirect page so ``#/reviews`` and similar\nclient routes map to console-v2 equivalents without loading the old\nPortal embed write UI.",
+        "operationId": "knowledge_ui_knowledge_ui__path__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Knowledge Ui"

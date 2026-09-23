@@ -99,3 +99,20 @@ def test_legacy_agent_status_alias_still_works() -> None:
         response = client.get("/api/agent/knowledge-status")
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+def test_legacy_aliases_excluded_from_openapi_schema() -> None:
+    app = _app()
+    paths = app.openapi().get("paths") or {}
+    assert "/api/console/agent-knowledge/status" in paths
+    assert "/api/console/agent-knowledge/sync" in paths
+    assert "/api/agent/knowledge-status" not in paths
+    assert "/api/agent/knowledge-sync" not in paths
+    assert (
+        paths["/api/console/agent-knowledge/status"]["get"]["operationId"]
+        == "get_console_agent_knowledge_status"
+    )
+    assert (
+        paths["/api/console/agent-knowledge/sync"]["post"]["operationId"]
+        == "post_console_agent_knowledge_sync"
+    )

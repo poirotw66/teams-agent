@@ -145,6 +145,41 @@ def test_contrastive_query_prefers_positive_topic_over_negated_doc() -> None:
     assert "broken" not in keys
 
 
+def test_filter_does_not_rescue_high_score_off_topic_dazhou_for_sap() -> None:
+    """Higher BM25 score must not resurrect an unrelated 大州 doc for SAP."""
+    dazhou = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="dazhou",
+            title="大州系統設定",
+            content="大州系統的密碼規則。",
+            document_id="dazhou",
+            source_path="sources/dazhou.md",
+        ),
+        score=0.9,
+        sparse_score=0.9,
+        dense_score=0.0,
+    )
+    sap = SearchResult(
+        chunk=DocumentChunk(
+            chunk_id="sap",
+            title="SAP 密碼重設",
+            content="SAP 密碼重設需使用帳號管理入口。",
+            document_id="sap",
+            source_path="sources/sap-password.md",
+        ),
+        score=0.8,
+        sparse_score=0.8,
+        dense_score=0.0,
+    )
+    filtered = filter_results_for_generation(
+        query="SAP 密碼無法重置",
+        results=[dazhou, sap],
+        document_key=lambda result: result.chunk.document_id or "",
+    )
+    keys = [result.chunk.document_id for result in filtered]
+    assert keys == ["sap"]
+
+
 def test_filter_rescues_top_score_when_latin_boost_marks_it_incidental() -> None:
     """Rewrite-injected Outlook must not drop the score=1.0 郵件為亂碼 seed."""
     garbled = SearchResult(

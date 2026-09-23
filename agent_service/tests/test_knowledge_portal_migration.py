@@ -32,6 +32,7 @@ audience:
         encoding="utf-8",
     )
     settings = PortalSettings.from_env()
+    object.__setattr__(settings, "embedding_model", None)
     object.__setattr__(settings, "repository_mode", "MEMORY")
     object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
     object.__setattr__(settings, "state_path", tmp_path / "portal_state.json")
@@ -115,6 +116,7 @@ Weekdays 09:00-18:00.
         encoding="utf-8",
     )
     settings = PortalSettings.from_env()
+    object.__setattr__(settings, "embedding_model", None)
     object.__setattr__(settings, "repository_mode", "FILE")
     object.__setattr__(settings, "release_artifact_dir", tmp_path / "releases")
     object.__setattr__(settings, "state_path", tmp_path / "portal_state" / "portal_state.json")

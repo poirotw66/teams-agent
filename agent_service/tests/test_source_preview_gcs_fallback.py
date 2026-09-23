@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 
 import pytest
-from knowledge_core.source_identity import make_source_ref_id
 
 from ai_ops_backoffice.services.source_repository import (
     BoundedSourceCache,
@@ -14,6 +13,7 @@ from ai_ops_backoffice.services.source_repository import (
 )
 from ai_ops_backoffice.services.source_trace_gcs import materialize_release_preview_artifacts
 from ai_ops_backoffice.services.source_trace_resolve import resolve_source_ref
+from knowledge_core.source_identity import make_source_ref_id
 
 
 def test_materialize_release_preview_artifacts_downloads_index(tmp_path: Path) -> None:

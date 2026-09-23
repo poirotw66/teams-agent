@@ -1,0 +1,389 @@
+{
+  "summary": {
+    "caseCount": 156.0,
+    "evidenceLabeledCaseCount": 116.0,
+    "recallAt4": 0.7307692307692307,
+    "precisionAt4": 0.7318376068376069,
+    "evidenceRecallAt4": 0.896551724137931,
+    "evidencePrecisionAt4": 0.896551724137931,
+    "recallAt5": 0.7307692307692307,
+    "recallAt10": 0.7307692307692307,
+    "recallAt20": 0.7307692307692307,
+    "mrrAt10": 0.7371794871794872,
+    "ndcgAt10": 0.7317052254787122,
+    "hitAt1": 0.7371794871794872,
+    "hitAt3": 0.7371794871794872,
+    "hardNegativeAccuracy": 1.0,
+    "hardNegativeLabeledCaseCount": 16.0,
+    "aclLeakageCount": 0.0,
+    "forbiddenDocumentHitCount": 0.0,
+    "noAnswer": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "truePositive": 40.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "inputCaseCount": 156.0,
+    "excludedMultiTurnCaseCount": 0.0,
+    "multiTurnCaseCount": 20.0,
+    "aclCoverageMode": "CORPUS_HAS_NO_GROUP_GATED_DOCUMENTS",
+    "layer": 3,
+    "liveModel": true,
+    "evidenceTokenBudgets": {
+      "cliOverride": null,
+      "configuredTokenBudget": 1200,
+      "effectiveTokenBudget": 1200,
+      "queryTier": null,
+      "trivial": 500,
+      "standard": 800,
+      "hard": 1200,
+      "usesQueryTier": true
+    },
+    "documentHitAt4": 0.9913793103448276,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 0.9913793103448276,
+    "candidateRecallAt24": 0.9913793103448276,
+    "rerankerHeadroomPp": 9.482758620689658,
+    "latencyMsP50": 2581.9808335072594,
+    "latencyMsP95": 4754.2680981059675,
+    "latencyMsMean": 2800.828758839485,
+    "fastPathRate": 0.08333333333333333,
+    "avgFacetCount": 0.08974358974358974,
+    "avgBatchEmbeddingMs": 516.354,
+    "embeddingMsP50": 463.7,
+    "embeddingMsP95": 972.4550000000002,
+    "sparseMsP50": 2.3,
+    "sparseMsP95": 4.515,
+    "denseMsP50": 11.95,
+    "denseMsP95": 23.49,
+    "fusionMsP50": 0.2,
+    "fusionMsP95": 0.4,
+    "searchTotalMsP50": 437.75,
+    "searchTotalMsP95": 970.7550000000001,
+    "batchEmbeddingMsP50": 494.84,
+    "batchEmbeddingMsP95": 703.88,
+    "facetGroupCounts": {
+      "facet0": 149.0,
+      "facet1": 0.0,
+      "facet2plus": 7.0
+    },
+    "facet0SearchTotalMsP50": 454.3,
+    "facet0SearchTotalMsP95": 982.55,
+    "facet2plusSearchTotalMsP50": 24.6,
+    "facet2plusSearchTotalMsP95": 81.2,
+    "approxCacheHitRate": 0.08333333333333333,
+    "answerAccuracy": 0.967948717948718,
+    "singleTurnAnswerAccuracy": 0.9779411764705882,
+    "multiTurnAnswerAccuracy": 0.9,
+    "singleTurnCaseCount": 136.0,
+    "multiTurnScoredCaseCount": 20.0,
+    "citationPrecision": 0.9882478632478632,
+    "citationRecall": 0.9935897435897436,
+    "groundedness": 1.0,
+    "evidenceDropStages": {
+      "GENERATION_IGNORED": 12.0,
+      "CANDIDATE_MISS": 1.0,
+      "SELECTION_OR_PACKING_DROP": 1.0
+    },
+    "answerEvidenceRecallAt4": 0.967948717948718,
+    "retrievalEvidenceRecallAt4": 0.9827586206896551,
+    "retrievalMsP50": 421.75,
+    "retrievalMsP95": 789.0300000000001,
+    "relevanceMsP50": 0.5,
+    "relevanceMsP95": 2120.94,
+    "generateMsP50": 1936.4,
+    "generateMsP95": 3947.15,
+    "totalMsP50": 2448.9,
+    "totalMsP95": 4509.8,
+    "llmCallsPerQuery": 1.4487179487179487,
+    "inputTokensPerQuery": 3860.5641025641025,
+    "outputTokensPerQuery": 329.5192307692308,
+    "costUsdPerQuery": 0.0014594198717948717,
+    "usageSourceCounts": {
+      "PROVIDER": 156
+    },
+    "queryTierCounts": {
+      "trivial": 67.0,
+      "standard": 38.0,
+      "hard": 51.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "ANSWER_OMISSION": 5,
+      "BAD_CITATION": 3
+    },
+    "failureCount": 8,
+    "split": "test",
+    "evalSet": "data/eval/retrieval_eval_v3_blind.json",
+    "provenance": {
+      "datasetPath": "data/eval/retrieval_eval_v3_blind.json",
+      "datasetHash": "3969f9ac3295477113ab33850a989cf768ecbe53bf1c0d0d36e562d7fd06f448",
+      "commitSha": "bdd3894f7a99c07230ebd8069b1179e0be77f601",
+      "freezeVersion": 5,
+      "model": "google_genai:gemini-3.1-flash-lite",
+      "agentModel": "google_genai:gemini-3.8-flash",
+      "answerModel": "google_genai:gemini-3.1-flash-lite",
+      "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+      "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "liveModel": true,
+      "releaseId": "release-4f49088db9ca",
+      "region": null,
+      "knowledgeReleaseTenantId": "default",
+      "startedAt": null,
+      "completedAt": "2026-09-22T18:15:53.449649+00:00"
+    }
+  },
+  "provenance": {
+    "datasetPath": "data/eval/retrieval_eval_v3_blind.json",
+    "datasetHash": "3969f9ac3295477113ab33850a989cf768ecbe53bf1c0d0d36e562d7fd06f448",
+    "commitSha": "bdd3894f7a99c07230ebd8069b1179e0be77f601",
+    "freezeVersion": 5,
+    "model": "google_genai:gemini-3.1-flash-lite",
+    "agentModel": "google_genai:gemini-3.8-flash",
+    "answerModel": "google_genai:gemini-3.1-flash-lite",
+    "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+    "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "liveModel": true,
+    "releaseId": "release-4f49088db9ca",
+    "region": null,
+    "knowledgeReleaseTenantId": "default",
+    "startedAt": null,
+    "completedAt": "2026-09-22T18:15:53.449649+00:00"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-ans-05",
+      "query": "國泰員工入口網的密碼跟 AD 是同一組嗎？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼並非 AD 密碼，兩者並不相同 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|chk-doc-cteam-e-8813813da1-8e46657baf64cbc5"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus portal password linkage | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='國泰員工入口網的密碼並非 AD 密碼，兩者並不相同 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-23",
+      "query": "樹精靈 AP 無法登入怎麼辦？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應"
+      ],
+      "selectedEvidenceTitles": [
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應"
+      ],
+      "expectedEvidence": [
+        [
+          "樹精靈",
+          "登入"
+        ]
+      ],
+      "answer": "處理樹精靈 AP 無法登入，請依據您遇到的具體異常狀況採取對應處置：\n\n若出現「網路錯誤 12029」，代表客戶端連不上國泰公司網段，請依序執行以下步驟：\n\n若您使用的是樹精靈 WEB 版且點選登入無反應，研判為安控元件狀態無回應，請執行以下步驟：\n1. 於電腦右下角將安控元件圖示點選右鍵，選擇「離開」[S1]。\n2. 重新開啟樹精靈 WEB 網頁進行登入 [S1]。\n3. 依畫面提示重新安裝元件後，再次嘗試登入 [S1]。",
+      "citations": [
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應|chk-doc-2433239567cf-a9585c7539a96cc0"
+      ],
+      "citationPrecision": 0.0,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 樹精靈AP無法登入 | evidenceDrop=NONE facts=['NONE'] | answer_preview='處理樹精靈 AP 無法登入，請依據您遇到的具體異常狀況採取對應處置：\\n\\n若出現「網路錯誤 12029」，代表客戶端連不上國泰公司網段，請依序執行以下步驟：\\n\\n若您使用的是樹精靈 WEB 版且點選登入無反應，研判為安控元件狀態無回應，請執行以下步驟：\\n1. 於電腦右下角將安控元件圖示點選右鍵，選擇「離開」[S1]。\\n2. 重新開啟樹精靈 WEB 網頁進行登入 [S1]。\\n3. 依畫面提示重新安裝元件後，再次嘗試登入 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-05",
+      "query": "那密碼不是 AD 的話要去哪改？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "忘記密碼"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼與 AD 並非連動，若需修改密碼，請至國泰員工入口網站，點選「忘記密碼」進行變更 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|chk-doc-cteam-e-8813813da1-8e46657baf64cbc5"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=員工入口網登不進去 | multiTurn priorTurn='員工入口網登不進去' | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='國泰員工入口網的密碼與 AD 並非連動，若需修改密碼，請至國泰員工入口網站，點選「忘記密碼」進行變更 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-17",
+      "query": "那閃退要重裝嗎？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "超音樹-程式閃退問題"
+      ],
+      "selectedEvidenceTitles": [
+        "超音樹-程式閃退問題"
+      ],
+      "expectedEvidence": [
+        [
+          "新版簽章元件",
+          "輸入帳密後按登入無畫面"
+        ]
+      ],
+      "answer": "針對超音樹程式閃退或登入無畫面的問題，文件建議嘗試安裝「新版簽章元件」，請至國泰期貨官網下載安裝 [S1]。關於您提到的關閉、重裝或重新安裝等操作，目前知識庫沒有足夠資訊說明是否能解決閃退問題，建議先依上述方式排除 [S1]。",
+      "citations": [
+        "超音樹-程式閃退問題|chk-doc--7424f76326-1444d2324f79f897"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=超音樹一直關掉 | multiTurn priorTurn='超音樹一直關掉' | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='針對超音樹程式閃退或登入無畫面的問題，文件建議嘗試安裝「新版簽章元件」，請至國泰期貨官網下載安裝 [S1]。關於您提到的關閉、重裝或重新安裝等操作，目前知識庫沒有足夠資訊說明是否能解決閃退問題，建議先依上述方式排除 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-noise-02",
+      "query": "VP N 密嗎到期怎麼辦",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼到期"
+        ]
+      ],
+      "answer": "若您使用的是內網型筆電，請插上實體網路線，並使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼，請勿前往金控入口網同步開機密碼 (AD) [S1]。",
+      "citations": [
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='若您使用的是內網型筆電，請插上實體網路線，並使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼，請勿前往金控入口網同步開機密碼 (AD) [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-alias-03",
+      "query": "跳板機 VPN 掛掉",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常"
+      ],
+      "expectedEvidence": [
+        [
+          "已進入跳板機",
+          "未授權該使用者帳戶遠端登入"
+        ]
+      ],
+      "answer": "目前知識庫未定義「VPN 掛掉」的具體異常情境，請確認您遇到的錯誤訊息或症狀。若您是指以下情境，請依對應方式處理：\n1. 若已登入 **FortiClient** 但無法進入跳板機，或出現「遠端桌面無法連線」或「已拒絕連線（未授權）」症狀，請轉派工單由同仁協助 [S1]。\n2. 若已進入跳板機但無法連回公司電腦，且出現「已拒絕連線（未授權）」症狀，請轉派工單由同仁協助 [S1]。\n3. 若已進入跳板機但無法連回公司電腦，且出現「遠端桌面無法連接到遠端電腦」症狀，請先確認公司桌機是否有開啟「允許遠端連線到此電腦」；若已開啟仍無法連線，請轉派工單由同仁協助 [S1]。",
+      "citations": [
+        "VPN 跳板機連線異常|chk-doc-vpn-jumpbox-connection-e-adc7a424ee-7c2ee2b9293124b4"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='目前知識庫未定義「VPN 掛掉」的具體異常情境，請確認您遇到的錯誤訊息或症狀。若您是指以下情境，請依對應方式處理：\\n1. 若已登入 **FortiClient** 但無法進入跳板機，或出現「遠端桌面無法連線」或「已拒絕連線（未授權）」症狀，請轉派工單由同仁協助 [S1]。\\n2. 若已進入跳板機但無法連回公司電腦，且出現「已拒絕連線（未授權）」症狀，請轉派工單由同仁協助 [S1]。\\n3. 若已進入跳板機但無法連回公司電腦，且出現「遠端桌面無法連接到遠端電腦」症狀，請先確認公司桌機是否有開啟「允許遠端連線到此電腦」；若已開啟仍無法連線，請轉派工單由同仁協助 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-short-02",
+      "query": "OTP綁定",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [
+        [
+          "OTP"
+        ]
+      ],
+      "answer": "目前知識庫包含「國金 CRM」與「外網 CRM」兩種系統的 OTP 綁定方式，請確認您要綁定的是哪一個系統：\n\n若為「國金 CRM」：\n1. 下載 **Google Authenticator** App [S1]。\n2. 登入 **國金 CRM** 系統，首次登入時 OTP Code 欄位請填寫任一碼 [S1]。\n3. 系統跳出「OTP Key」視窗後，可選擇掃描 QR Code 或複製 OTP Key [S1]。\n4. 開啟 **Google Authenticator**，點選「輸入設定金鑰」，帳戶輸入「國金CRM」，密鑰貼上剛剛複製的代碼，類型選「根據時間」並新增 [S1]。\n\n若為「外網 CRM」：\n1. 下載 **FortiToken** App [S2]。\n2. 使用其他設備登入自助 Token 綁定頁面（[https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/](https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/)），輸入 AD 帳密 [S2]。\n3. 於 **FortiAuthenticator Portal** 設定頁面中，Delivery options 選取 **FortiToken**，FortiToken type 選取 **Mobile**，Activation delivery method 選取 **Scan QR code** [S2]。\n4. 開啟 **FortiToken Mobile**，掃描網頁產生的 QR Code 或手動輸入啟用碼即可完成 [S2]。",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|chk-doc-crm-otp-1965ff137d-c043d571e9442471",
+        "外網 CRM 登入連線設定方式|chk-doc-crm-fa49deb255-c41b5a9ed263831f"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | evidenceDrop=NONE facts=['NONE'] | answer_preview='目前知識庫包含「國金 CRM」與「外網 CRM」兩種系統的 OTP 綁定方式，請確認您要綁定的是哪一個系統：\\n\\n若為「國金 CRM」：\\n1. 下載 **Google Authenticator** App [S1]。\\n2. 登入 **國金 CRM** 系統，首次登入時 OTP Code 欄位請填寫任一碼 [S1]。\\n3. 系統跳出「OTP Key」視窗後，可選擇掃描 QR Code 或複製 OTP Key [S1]。\\n4. 開啟 **Google Authenticator**，點選「輸入設定金鑰」，帳戶輸入「國金CRM」，密鑰貼上剛剛複製的代碼，類型選「根據時間」並新增 [S1]。\\n\\n若為「外網 CRM」：\\n1. 下載 **FortiToken** App [S2]。\\n2. 使用其他設備登入自助 Token 綁定頁面（[https://nh-fac.cathaysec.com.tw/po'"
+    },
+    {
+      "caseId": "v3-blind-ver-04",
+      "query": "樹精靈無法登入跟超音樹閃退是不是同一份？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應",
+        "超音樹-程式閃退問題"
+      ],
+      "selectedEvidenceTitles": [
+        "樹精靈AP無法登入",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應",
+        "超音樹-程式閃退問題"
+      ],
+      "expectedEvidence": [
+        [
+          "新版簽章元件",
+          "國泰期貨"
+        ]
+      ],
+      "answer": "不是同一份。樹精靈與超音樹為不同的系統，且各自的異常原因與處理方式均不同：\n\n樹精靈無法登入的情境包含網路連線問題（錯誤 12029）[S1] 或安控元件狀態無回應 [S2]，需分別透過調整網路環境、設定 TLS 安全協定、停用 Proxy [S1] 或重啟安控元件 [S2] 來處理。\n\n超音樹閃退或輸入帳密後無畫面，則需至國泰期貨官網安裝新版簽章元件 [S3]。",
+      "citations": [
+        "樹精靈AP無法登入|chk-doc-ap-1f8ba2b78c-28fad8992f2b9d0f",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應|chk-doc-2433239567cf-a9585c7539a96cc0",
+        "超音樹-程式閃退問題|chk-doc--7424f76326-1444d2324f79f897"
+      ],
+      "citationPrecision": 0.6666666666666666,
+      "terminalReason": null,
+      "notes": "Adjacent product docs discrimination. | evidenceDrop=NONE facts=['NONE'] | answer_preview='不是同一份。樹精靈與超音樹為不同的系統，且各自的異常原因與處理方式均不同：\\n\\n樹精靈無法登入的情境包含網路連線問題（錯誤 12029）[S1] 或安控元件狀態無回應 [S2]，需分別透過調整網路環境、設定 TLS 安全協定、停用 Proxy [S1] 或重啟安控元件 [S2] 來處理。\\n\\n超音樹閃退或輸入帳密後無畫面，則需至國泰期貨官網安裝新版簽章元件 [S3]。'"
+    }
+  ]
+}
