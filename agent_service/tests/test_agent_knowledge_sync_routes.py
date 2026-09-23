@@ -121,6 +121,18 @@ def test_legacy_agent_status_alias_still_works() -> None:
     assert response.json()["ok"] is True
 
 
+def test_agent_admin_base_url_strips_chat_suffix() -> None:
+    from ai_ops_backoffice.routers.agent_knowledge_sync_routes import (
+        agent_admin_base_url,
+    )
+
+    assert (
+        agent_admin_base_url("https://agent.example/agent/chat")
+        == "https://agent.example"
+    )
+    assert agent_admin_base_url("http://agent.example/") == "http://agent.example"
+
+
 def test_legacy_aliases_excluded_from_openapi_schema() -> None:
     app = _app()
     paths = app.openapi().get("paths") or {}

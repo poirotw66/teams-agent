@@ -14,6 +14,20 @@ from fastapi import Depends, FastAPI, HTTPException
 
 logger = logging.getLogger(__name__)
 
+_AGENT_CHAT_SUFFIX = "/agent/chat"
+
+
+def agent_admin_base_url(agent_api_url: str) -> str:
+    """Return the Agent origin used for admin routes.
+
+    Adapter ``AGENT_API_URL`` values end with ``/agent/chat``. Admin APIs
+    live on the Agent origin, so that suffix must be stripped.
+    """
+    base = str(agent_api_url).rstrip("/")
+    if base.endswith(_AGENT_CHAT_SUFFIX):
+        return base[: -len(_AGENT_CHAT_SUFFIX)]
+    return base
+
 
 def register_agent_knowledge_sync_routes(
     app: FastAPI,
@@ -91,7 +105,7 @@ async def _call_agent(
             status_code=503,
             detail="Agent API URL is not configured (AGENT_API_URL).",
         )
-    base_url = str(agent_api_url).rstrip("/")
+    base_url = agent_admin_base_url(str(agent_api_url))
     headers: dict[str, str] = {}
     # Prefer Google ID token for private Cloud Run Agent (same as Portal reload).
     auth_mode = str(
