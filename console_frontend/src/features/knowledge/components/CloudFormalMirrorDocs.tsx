@@ -21,10 +21,12 @@ type KnowledgeStatusResponse = {
 
 type CloudFormalMirrorDocsProps = {
   onTestQuery?: (query: string) => void;
+  isCloudConsole?: boolean;
 };
 
 export const CloudFormalMirrorDocs: React.FC<CloudFormalMirrorDocsProps> = ({
   onTestQuery,
+  isCloudConsole = false,
 }) => {
   const [status, setStatus] = useState<KnowledgeStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,10 +46,12 @@ export const CloudFormalMirrorDocs: React.FC<CloudFormalMirrorDocsProps> = ({
       setError(
         err instanceof Error
           ? err.message
-          : '無法讀取本機 GCS 鏡像文件清單。',
+          : isCloudConsole
+            ? '無法讀取正式 Agent 目前載入的文件清單。'
+            : '無法讀取本機 GCS 鏡像文件清單。',
       );
     }
-  }, []);
+  }, [isCloudConsole]);
 
   useEffect(() => {
     void load();
@@ -91,7 +95,7 @@ export const CloudFormalMirrorDocs: React.FC<CloudFormalMirrorDocsProps> = ({
       <Alert
         type="warning"
         showIcon
-        message="雲端正式鏡像清單無法載入"
+        message={isCloudConsole ? '正式 Agent 目前載入清單無法載入' : '雲端正式鏡像清單無法載入'}
         description={error}
       />
     );
@@ -106,15 +110,18 @@ export const CloudFormalMirrorDocs: React.FC<CloudFormalMirrorDocsProps> = ({
         style={{ marginBottom: 12 }}
         message={
           <span>
-            這是本機已同步的雲端正式 release{' '}
+            {isCloudConsole
+              ? '這是正式 Agent 目前正在服務的 release '
+              : '這是本機已同步的雲端正式 release '}
             <Tag color="blue">{releaseId}</Tag>
-            ，與 Playground Agent 同一份 GCS 鏡像。
+            {isCloudConsole ? '。' : '，與 Playground Agent 同一份 GCS 鏡像。'}
           </span>
         }
         description={
           <Text type="secondary">
-            「預覽段落」讀的是已發布 index/chunks.json，版面與本機測試工作區的切分檢視器相同。
-            這不是 FILE sandbox 重切結果。
+            {isCloudConsole
+              ? '這是唯讀狀態：正式問答正在用的已發布版。要新增或刪除請到「知識文件」，發布新 release 後才會換這份清單。'
+              : '「預覽段落」讀的是已發布 index/chunks.json，版面與本機測試工作區的切分檢視器相同。這不是 FILE sandbox 重切結果。'}
           </Text>
         }
       />
@@ -123,7 +130,11 @@ export const CloudFormalMirrorDocs: React.FC<CloudFormalMirrorDocsProps> = ({
         rowKey={(row) => row.documentId || row.sourcePath || row.title || ''}
         pagination={documents.length > 12 ? { pageSize: 12 } : false}
         dataSource={documents}
-        locale={{ emptyText: '本機尚無 GCS 鏡像文件。請按「立即同步」。' }}
+        locale={{
+          emptyText: isCloudConsole
+            ? '正式 Agent 目前沒有已載入文件。請確認已發布 release。'
+            : '本機尚無 GCS 鏡像文件。請按「立即同步」。',
+        }}
         columns={[
           {
             title: '文件',

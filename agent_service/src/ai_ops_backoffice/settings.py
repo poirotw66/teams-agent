@@ -100,6 +100,8 @@ class BackofficeSettings:
     source_delegation_secret: str = ""
     knowledge_bridge_enabled: bool = True
     knowledge_in_process: bool = True
+    # LOCAL | CLOUD. Optional UI surface; does not change the write gate.
+    console_surface: str | None = None
     # LOCAL_SANDBOX (default local) | CLOUD_FORMAL (remote Portal; formal writes gated).
     knowledge_workspace_mode: str | None = None
     # Env snapshot used when clearing a durable operator override.

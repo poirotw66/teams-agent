@@ -247,6 +247,42 @@ def test_format_agent_response_hides_policy_overlay_markers_and_sources() -> Non
     assert "安全性設定變更確認原則" not in formatted
 
 
+def test_card_adds_open_url_actions_for_citation_links_by_default() -> None:
+    response = AgentResponse(
+        answer="請調整安全性設定。",
+        traceId="trace-1",
+        citations=[
+            Citation(
+                title="大州系統_功能無法點選",
+                url="https://bot.example.com/rag-sources/vpn.md",
+                originalUrl="https://bot.example.com/rag-originals/src-1",
+            )
+        ],
+        feedbackEnabled=True,
+    )
+
+    activity = build_agent_activity(
+        response,
+        AgentSettings(),
+        conversation_id="conversation-1",
+        now=1_000,
+    )
+
+    actions = activity.attachments[0].content["actions"]
+    assert actions == [
+        {
+            "type": "Action.OpenUrl",
+            "title": "開啟原始檔案：大州系統_功能無法點選",
+            "url": "https://bot.example.com/rag-originals/src-1",
+        },
+        {
+            "type": "Action.OpenUrl",
+            "title": "查看引用段落：大州系統_功能無法點選",
+            "url": "https://bot.example.com/rag-sources/vpn.md",
+        },
+    ]
+
+
 def test_card_adds_open_url_actions_for_citation_links() -> None:
     response = AgentResponse(
         answer="請調整安全性設定。",

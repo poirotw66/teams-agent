@@ -22,6 +22,8 @@ export interface UserSession {
   authMode?: string;
   relaxedWorkflow?: boolean;
   knowledgeWorkspaceMode?: string;
+  knowledgeInProcess?: boolean;
+  consoleSurface?: string;
   cloudFormalWritesAllowed?: boolean;
   cloudFormalWriteBlockReasons?: string[];
   cloudFormalWriteBlockReasonLabels?: string[];
@@ -182,6 +184,8 @@ export const authProvider: AuthProvider = {
       authMode: cachedSession.authMode,
       relaxedWorkflow: cachedSession.relaxedWorkflow,
       knowledgeWorkspaceMode: cachedSession.knowledgeWorkspaceMode,
+      knowledgeInProcess: cachedSession.knowledgeInProcess,
+      consoleSurface: cachedSession.consoleSurface,
       cloudFormalWritesAllowed: cachedSession.cloudFormalWritesAllowed,
       cloudFormalWriteBlockReasons: cachedSession.cloudFormalWriteBlockReasons,
       cloudFormalWriteBlockReasonLabels: cachedSession.cloudFormalWriteBlockReasonLabels,

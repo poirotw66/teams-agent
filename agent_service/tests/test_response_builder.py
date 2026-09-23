@@ -640,3 +640,22 @@ def test_render_sources_block_formats_inline_citation_prefixes():
     assert "- AD 帳號與系統解鎖 FAQ" in plain
     assert "[S1]" not in plain
     assert "[S2]" not in plain
+
+
+def test_render_sources_block_prefers_original_url():
+    from agent_service.response_builder import _render_sources_block
+
+    citations = [
+        Citation(
+            title="大州系統_功能無法點選",
+            url="https://bot.example.com/rag-sources/dazhou.md",
+            originalUrl="https://bot.example.com/rag-originals/src-1",
+        )
+    ]
+
+    numbered = _render_sources_block(citations, has_citations_in_answer=True)
+    assert (
+        "- [S1] [大州系統_功能無法點選](https://bot.example.com/rag-originals/src-1)"
+        in numbered
+    )
+    assert "rag-sources/dazhou.md" not in numbered

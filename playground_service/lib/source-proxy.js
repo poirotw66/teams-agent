@@ -59,6 +59,16 @@ function rewriteAdapterAssetUrls(text, adapterTarget) {
   return rewritten;
 }
 
+const MARKDOWN_LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+
+function linkifyMarkdownHtml(html, rewriteUrl) {
+  if (!html || !html.includes("](")) return html;
+  return html.replace(MARKDOWN_LINK_RE, (_all, label, url) => {
+    const rewritten = rewriteUrl(url) || url;
+    return `<a href="${rewritten}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  });
+}
+
 function linkOpenerScript() {
   return `"use strict";
 (function () {
@@ -81,6 +91,23 @@ function linkOpenerScript() {
       anchor.setAttribute("href", next);
       anchor.setAttribute("target", "_blank");
       anchor.setAttribute("rel", "noopener noreferrer");
+    });
+    linkifyMarkdown(node);
+  }
+  const markdownLink = /\\[([^\\]]+)\\]\\((https?:\\/\\/[^)\\s]+)\\)/g;
+  function linkifyMarkdown(node) {
+    const blocks = [];
+    if (node.matches && node.matches(".ac-textBlock, li")) blocks.push(node);
+    if (node.querySelectorAll) blocks.push.apply(blocks, node.querySelectorAll(".ac-textBlock, li"));
+    blocks.forEach(function (block) {
+      if (block.querySelector && block.querySelector("a[href]")) return;
+      const html = block.innerHTML;
+      if (!html || html.indexOf("](") < 0) return;
+      const next = html.replace(markdownLink, function (_all, label, url) {
+        const rewritten = assetUrl(url) || url;
+        return '<a href="' + rewritten + '" target="_blank" rel="noopener noreferrer">' + label + "</a>";
+      });
+      if (next !== html) block.innerHTML = next;
     });
   }
   const nativeOpen = window.open.bind(window);
@@ -242,6 +269,7 @@ module.exports = {
   adapterOrigin,
   isSourceAssetPath,
   linkOpenerScript,
+  linkifyMarkdownHtml,
   proxyConnector,
   proxySourceAsset,
   rewriteAdapterAssetUrls,

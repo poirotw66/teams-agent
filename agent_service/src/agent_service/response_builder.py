@@ -102,31 +102,43 @@ class BuiltResponse:
     feedback_enabled: bool
 
 
+def _citation_display_url(citation: Citation) -> str | None:
+    """Prefer the original-file URL when both delivery links exist."""
+    for candidate in (citation.originalUrl, citation.url):
+        if candidate and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def _format_source_line(
+    citation: Citation, *, index: int, has_citations_in_answer: bool
+) -> str:
+    prefix = f"[S{index}] " if has_citations_in_answer else ""
+    href = _citation_display_url(citation)
+    if href:
+        return f"- {prefix}[{citation.title}]({href})"
+    return f"- {prefix}{citation.title}"
+
+
 def _render_sources_block(
     sources: list[Citation], *, has_citations_in_answer: bool = False
 ) -> str:
     """Render a ``來源`` block matching the Teams adapter's own rendering.
 
-    Mirrors ``src/teams_agent/contracts.py::format_agent_response`` so the
+    Mirrors ``src/teams_agent/formatting.py::format_agent_response`` so the
     two surfaces stay visually consistent: ``- [title](url)`` when a URL
-    is present, ``- title`` otherwise. When the answer contains [S1]-style
-    citation markers, includes the [S{index}] prefix.
+    is present, ``- title`` otherwise. Prefer ``originalUrl`` when both
+    delivery links exist. When the answer contains [S1]-style citation
+    markers, includes the [S{index}] prefix.
     """
-    lines = [
-        (
-            f"- [S{index}] [{citation.title}]({citation.url})"
-            if citation.url
-            else f"- [S{index}] {citation.title}"
-        )
-        if has_citations_in_answer
-        else (
-            f"- [{citation.title}]({citation.url})"
-            if citation.url
-            else f"- {citation.title}"
+    return "\n".join(
+        _format_source_line(
+            citation,
+            index=index,
+            has_citations_in_answer=has_citations_in_answer,
         )
         for index, citation in enumerate(sources, start=1)
-    ]
-    return "\n".join(lines)
+    )
 
 
 def _dedupe_citations(all_sources: list[Citation]) -> list[Citation]:

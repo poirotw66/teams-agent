@@ -20,6 +20,12 @@ import {
   syncLocalKnowledgeMirror,
   syncOutcomeToastLevel,
 } from '../lib/syncLocalKnowledgeMirror';
+import {
+  isKnowledgeReleaseBehind,
+  knowledgeInventoryComplete,
+  knowledgeReleaseIdsMatch,
+  resolveKnowledgeSyncBannerState,
+} from '../components/knowledgeSyncBannerState';
 
 const { Title, Text } = Typography;
 
@@ -164,22 +170,24 @@ export const ReleasesPage: React.FC = () => {
   };
 
   const sync = agentStatus?.sync;
-  const aligned =
-    Boolean(sync?.alignedWithCloud || sync?.matchesCloudProduction) &&
-    Boolean(sync?.qaSnapshotComplete || sync?.runtimeInventoryComplete);
+  const releaseIdsMatch = knowledgeReleaseIdsMatch(
+    sync,
+    agentStatus?.currentReleaseId,
+  );
+  const inventoryComplete = knowledgeInventoryComplete(sync);
+  // Matching IDs + complete inventory are not behind, even when PINNED
+  // keeps alignedWithCloud false for answer-audit honesty.
+  const aligned = releaseIdsMatch && inventoryComplete;
+  const bannerDecision = resolveKnowledgeSyncBannerState({
+    sync,
+    currentReleaseId: agentStatus?.currentReleaseId,
+    error: agentStatusError,
+  });
   const indexOnly =
     Boolean(sync?.indexOnlyMirror) ||
-    Boolean(
-      sync?.mirroredReleaseId &&
-        !(sync?.qaSnapshotComplete || sync?.runtimeInventoryComplete),
-    );
+    Boolean(sync?.mirroredReleaseId && !inventoryComplete);
   const behind =
-    Boolean(sync?.behindCloud) ||
-    indexOnly ||
-    Boolean(
-      sync?.cloudActiveReleaseId &&
-        sync.cloudActiveReleaseId !== sync.loadedReleaseId,
-    );
+    isKnowledgeReleaseBehind(sync, agentStatus?.currentReleaseId) || indexOnly;
   // Aligned with cloud-active is honest, but a stuck RELOAD_FAILED candidate
   // may still hold published docs that never became live. Surface that gap.
   const activeReleaseId = sync?.cloudActiveReleaseId || null;
@@ -221,7 +229,16 @@ export const ReleasesPage: React.FC = () => {
         {agentStatusError ? (
           <Alert type="warning" showIcon message={agentStatusError} />
         ) : null}
-        {aligned ? (
+        {aligned && bannerDecision.kind === 'pinned_same_release' ? (
+          <Alert
+            type="success"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="已釘選此版，與目前正式 release 相同"
+            description="雲端最新、鏡像與此 Console 所連 Agent 載入的 release 相同，且 QA 快照驗證成功。選擇模式為 PINNED，並非落後雲端。"
+          />
+        ) : null}
+        {aligned && bannerDecision.kind !== 'pinned_same_release' ? (
           <Alert
             type="success"
             showIcon

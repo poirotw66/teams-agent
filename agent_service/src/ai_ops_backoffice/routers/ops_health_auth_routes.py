@@ -20,6 +20,7 @@ from ..knowledge_bridge.formal_write_gate import (
     clear_knowledge_workspace_mode,
     evaluate_knowledge_workspace_gate,
     filter_knowledge_capabilities_for_workspace,
+    resolve_console_surface,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,8 @@ def _workspace_public_payload(
     )
     payload["authMode"] = getattr(settings, "auth_mode", None)
     payload["relaxedWorkflow"] = bool(getattr(settings, "relaxed_workflow", False))
+    payload["knowledgeInProcess"] = bool(getattr(settings, "knowledge_in_process", True))
+    payload["consoleSurface"] = resolve_console_surface(settings)
     return payload
 
 

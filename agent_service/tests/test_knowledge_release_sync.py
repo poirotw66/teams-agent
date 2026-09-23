@@ -142,6 +142,18 @@ def _sync_state(value: object) -> str:
     return value.value if hasattr(value, "value") else str(value)
 
 
+def test_explicit_follow_cloud_wins_over_active_release_id(tmp_path: Path) -> None:
+    settings = RagSettings(
+        data_dir=tmp_path,
+        index_path=tmp_path / "chunks.json",
+        knowledge_release_store_mode="GCS",
+        knowledge_release_gcs_bucket="bucket",
+        knowledge_active_release_id="release-pin",
+        knowledge_release_selection_mode="FOLLOW_CLOUD",
+    )
+    assert resolve_selection_mode(settings) is KnowledgeReleaseSelectionMode.FOLLOW_CLOUD
+
+
 def test_qa_sync_path_filters_exclude_original_and_file_search() -> None:
     assert is_qa_sync_relative_path("index/chunks.json")
     assert is_qa_sync_relative_path("sources/doc.md")
@@ -268,6 +280,8 @@ def test_publish_includes_service_catalog_in_runtime_inventory(tmp_path: Path) -
     assert resolve_selection_mode(settings) is KnowledgeReleaseSelectionMode.FOLLOW_CLOUD
     object.__setattr__(settings, "knowledge_active_release_id", "release-pin")
     assert resolve_selection_mode(settings) is KnowledgeReleaseSelectionMode.PINNED
+    object.__setattr__(settings, "knowledge_release_selection_mode", "FOLLOW_CLOUD")
+    assert resolve_selection_mode(settings) is KnowledgeReleaseSelectionMode.FOLLOW_CLOUD
     object.__setattr__(settings, "knowledge_release_selection_mode", "LOCAL_SANDBOX")
     assert resolve_selection_mode(settings) is KnowledgeReleaseSelectionMode.LOCAL_SANDBOX
 

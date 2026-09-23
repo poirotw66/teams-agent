@@ -178,6 +178,9 @@ def load_knowledge_bridge_env() -> dict[str, Any]:
             os.environ.get("AI_OPS_KNOWLEDGE_IN_PROCESS", "true"),
             extras={"on"},
         ),
+        "console_surface": (
+            (os.environ.get("AI_OPS_CONSOLE_SURFACE") or "").strip().upper() or None
+        ),
         **_knowledge_workspace_mode_env(),
         "knowledge_cloud_formal_writes_enabled": truthy(
             os.environ.get("AI_OPS_KNOWLEDGE_CLOUD_FORMAL_WRITES", "false"),
