@@ -176,16 +176,59 @@ def _should_include_document(doc: dict[str, Any], seen_titles: set[str]) -> str 
     return title
 
 
+def _build_chunk_count_indexes(
+    all_chunks: list[dict[str, Any]],
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Count chunks per document without retaining full chunk payloads."""
+    count_by_doc_id: dict[str, int] = {}
+    count_by_doc_title: dict[str, int] = {}
+    for chunk in all_chunks:
+        doc_id_val = _document_id_from_chunk(chunk)
+        if doc_id_val:
+            count_by_doc_id[doc_id_val] = count_by_doc_id.get(doc_id_val, 0) + 1
+        title = str(chunk.get("title", "") or "")
+        if title:
+            count_by_doc_title[title] = count_by_doc_title.get(title, 0) + 1
+    return count_by_doc_id, count_by_doc_title
+
+
+def _match_chunk_count_for_document(
+    *,
+    doc_id: str,
+    title: str,
+    count_by_doc_id: dict[str, int],
+    count_by_doc_title: dict[str, int],
+) -> int:
+    if doc_id in count_by_doc_id:
+        return count_by_doc_id[doc_id]
+    if title in count_by_doc_title:
+        return count_by_doc_title[title]
+    matched = 0
+    for chunk_title, count in count_by_doc_title.items():
+        if chunk_title.startswith(f"{title} -") or chunk_title == title:
+            matched += count
+    if matched:
+        return matched
+    for chunk_title, count in count_by_doc_title.items():
+        if chunk_title in title or title in chunk_title:
+            return count
+    return 0
+
+
 def list_workbench_documents(
     *,
     portal_data: dict[str, Any],
     all_chunks: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Aggregate published portal documents with matched chunk payloads."""
+    """Aggregate published portal documents with matched chunk counts.
+
+    List responses intentionally omit full chunk payloads so Knowledge page
+    loads stay fast; chunk bodies are loaded on demand via preview APIs.
+    """
     if "documents" not in portal_data:
         return []
 
-    chunk_by_doc_id, chunk_by_doc_title = _build_chunk_indexes(all_chunks)
+    count_by_doc_id, count_by_doc_title = _build_chunk_count_indexes(all_chunks)
     version_map = {version["version_id"]: version for version in portal_data.get("versions", [])}
     results: list[dict[str, Any]] = []
     seen_titles: set[str] = set()
@@ -196,16 +239,15 @@ def list_workbench_documents(
             continue
         seen_titles.add(title)
         doc_id = doc.get("document_id", "")
-        doc_chunks = _match_chunks_for_document(
+        chunk_count = _match_chunk_count_for_document(
             doc_id=doc_id,
             title=title,
-            chunk_by_doc_id=chunk_by_doc_id,
-            chunk_by_doc_title=chunk_by_doc_title,
+            count_by_doc_id=count_by_doc_id,
+            count_by_doc_title=count_by_doc_title,
         )
-        if not doc_chunks:
-            doc_chunks = _chunks_from_canonical(doc, version_map)
-        if not doc_chunks:
-            doc_chunks = _fallback_chunk(doc, title)
+        if chunk_count <= 0:
+            canonical = _chunks_from_canonical(doc, version_map)
+            chunk_count = len(canonical) if canonical else 1
 
         doc_format = doc.get("format") or "md"
         results.append(
@@ -219,8 +261,8 @@ def list_workbench_documents(
                 "status": "LIVE" if doc.get("status") == "PUBLISHED" else "ARCHIVED",
                 "updated_at": str(doc.get("updated_at", ""))[:10],
                 "updated_by": doc.get("updated_by", "資訊處知識中心"),
-                "chunk_count": len(doc_chunks),
-                "chunks": doc_chunks,
+                "chunk_count": chunk_count,
+                "chunks": [],
             }
         )
     return results

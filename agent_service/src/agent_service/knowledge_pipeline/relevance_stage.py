@@ -1,4 +1,11 @@
-"""Relevance grading and query-rewrite stages for HybridKnowledgeService."""
+"""Relevance grading and query-rewrite stages for HybridKnowledgeService.
+
+Product strategy for LLM vs deterministic relevance (see ``_grade_relevance_with_llm``):
+when an LLM grader is invoked and returns ``relevant=False``, trust that rejection.
+Deterministic lexical checks still short-circuit *before* the LLM (no model,
+high-confidence skip, trivial tier) and remain available for offline observability
+comparison, but they must not override an explicit grader rejection.
+"""
 
 from __future__ import annotations
 
@@ -133,16 +140,19 @@ async def _grade_relevance_with_llm(
         execution_context=execution_context,
         counter=counter,
     )
+    llm_relevant = bool(decision.relevant)
+    record_relevance_llm_outcome(
+        deterministic_relevant=deterministic_relevant,
+        llm_relevant=llm_relevant,
+    )
+    # Trust the grader once it has run. Overriding ``relevant=False`` with a
+    # lexical match caused wrong answers and blocked rewrite/budget paths.
     annotate_relevance_attempts(
         state.trace_attempts,
         decision="LLM_RELEVANCE",
-        is_relevant=decision.relevant,
+        is_relevant=llm_relevant,
     )
-    record_relevance_llm_outcome(
-        deterministic_relevant=deterministic_relevant,
-        llm_relevant=bool(decision.relevant),
-    )
-    return decision.relevant
+    return llm_relevant
 
 
 async def documents_are_relevant(
@@ -249,9 +259,15 @@ async def rewrite_search_query(
         search_query=rewritten,
         facet_queries=state.facet_queries,
         results=state.results,
+        raw_results=getattr(state, "raw_results", []) or [],
+        filter_displaced_top1=getattr(state, "filter_displaced_top1", False),
         trace_attempts=state.trace_attempts,
         attempt=state.attempt + 1,
         stage_timings_ms=state.stage_timings_ms,
+        query_tier=getattr(state, "query_tier", None),
+        enable_generation_retries=getattr(state, "enable_generation_retries", True),
+        candidate_chunk_ids=getattr(state, "candidate_chunk_ids", ()),
+        generator_context_chunk_ids=getattr(state, "generator_context_chunk_ids", ()),
     )
 
 

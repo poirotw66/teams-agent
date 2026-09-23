@@ -10,6 +10,21 @@ import {
   KnowledgeGapItem,
 } from "../types";
 
+export type WorkbenchDomain =
+  | "overview"
+  | "conversations"
+  | "faqs"
+  | "documents"
+  | "tickets";
+
+export const ALL_WORKBENCH_DOMAINS: readonly WorkbenchDomain[] = [
+  "overview",
+  "conversations",
+  "faqs",
+  "documents",
+  "tickets",
+] as const;
+
 /** Mutable workbench data shared by every domain slice. */
 export type WorkbenchMutableState = {
   kpis: DashboardKpiMetrics;
@@ -32,6 +47,7 @@ export type NotifyFn = () => void;
 export type WorkbenchReloadHooks = {
   loadAll: () => Promise<void>;
   loadOverview: () => Promise<void>;
+  loadFaqs: () => Promise<void>;
   loadTickets: () => Promise<void>;
   loadDocuments: () => Promise<void>;
 };
@@ -77,52 +93,29 @@ export function createReloadHooksPlaceholder(): WorkbenchReloadHooks {
   return {
     loadAll: notWired("loadAll"),
     loadOverview: notWired("loadOverview"),
+    loadFaqs: notWired("loadFaqs"),
     loadTickets: notWired("loadTickets"),
     loadDocuments: notWired("loadDocuments"),
   };
 }
 
 /**
- * Owns subscription, notification, and first-load flags for the workbench store.
+ * Owns subscription, notification, and domain-load flags for the workbench store.
  * Domain data lives on the shared mutable state object passed to slices.
  */
 export class StoreCore {
   readonly state: WorkbenchMutableState = createInitialWorkbenchState();
   private listeners: Set<() => void> = new Set();
-  private isLoaded: boolean = false;
   private loading: boolean = false;
-  private loadStarted: boolean = false;
   private loadError: string | null = null;
-  private loadAllHandler: (() => Promise<void>) | null = null;
-
-  public setLoadAllHandler(handler: () => Promise<void>): void {
-    this.loadAllHandler = handler;
-  }
+  private readonly loadedDomains = new Set<WorkbenchDomain>();
+  private readonly inflightDomains = new Set<WorkbenchDomain>();
+  private readonly domainErrors = new Map<WorkbenchDomain, string>();
 
   public subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
-    this.ensureLoaded();
     listener();
     return () => this.listeners.delete(listener);
-  }
-
-  /** Start the first fetch when a UI surface actually subscribes. */
-  public ensureLoaded(): void {
-    if (this.isLoaded || this.loadStarted) {
-      return;
-    }
-    if (!this.loadAllHandler) {
-      return;
-    }
-    this.loadStarted = true;
-    this.loadAllHandler().catch((err) => {
-      this.loadStarted = false;
-      const message =
-        err instanceof Error ? err.message : "Workbench data load failed";
-      this.setLoadError(message);
-      console.warn("Workbench data load failed:", err);
-      this.notify();
-    });
   }
 
   public notify(): void {
@@ -132,7 +125,7 @@ export class StoreCore {
   }
 
   public getIsLoaded(): boolean {
-    return this.isLoaded;
+    return this.loadedDomains.size > 0;
   }
 
   public getIsLoading(): boolean {
@@ -143,6 +136,14 @@ export class StoreCore {
     return this.loadError;
   }
 
+  public getDomainErrors(): Partial<Record<WorkbenchDomain, string>> {
+    return Object.fromEntries(this.domainErrors.entries());
+  }
+
+  public isDomainLoaded(domain: WorkbenchDomain): boolean {
+    return this.loadedDomains.has(domain);
+  }
+
   public clearLoadError(): void {
     this.loadError = null;
   }
@@ -151,17 +152,75 @@ export class StoreCore {
     this.loadError = message;
   }
 
-  public beginLoadAll(): void {
+  public beginLoad(): void {
     this.loading = true;
     this.loadError = null;
   }
 
-  public markLoaded(): void {
-    this.isLoaded = true;
+  public endLoad(): void {
+    this.loading = false;
+    this.notify();
   }
 
-  public endLoadAll(): void {
+  public markDomainLoaded(domain: WorkbenchDomain): void {
+    this.loadedDomains.add(domain);
+    this.domainErrors.delete(domain);
+  }
+
+  public markDomainFailed(domain: WorkbenchDomain, message: string): void {
+    this.domainErrors.set(domain, message);
+  }
+
+  public beginDomainFetch(domain: WorkbenchDomain): boolean {
+    if (this.loadedDomains.has(domain) || this.inflightDomains.has(domain)) {
+      return false;
+    }
+    this.inflightDomains.add(domain);
+    return true;
+  }
+
+  public endDomainFetch(domain: WorkbenchDomain): void {
+    this.inflightDomains.delete(domain);
+  }
+
+  public domainsNeedingFetch(domains: readonly WorkbenchDomain[]): WorkbenchDomain[] {
+    return domains.filter(
+      (domain) => !this.loadedDomains.has(domain) && !this.inflightDomains.has(domain),
+    );
+  }
+
+  public forceDomainsNeedingFetch(
+    domains: readonly WorkbenchDomain[],
+  ): WorkbenchDomain[] {
+    for (const domain of domains) {
+      this.loadedDomains.delete(domain);
+      this.inflightDomains.delete(domain);
+    }
+    return [...domains];
+  }
+
+  public rebuildAggregateLoadError(): void {
+    if (this.domainErrors.size === 0) {
+      this.loadError = null;
+      return;
+    }
+    const parts = [...this.domainErrors.entries()].map(
+      ([domain, message]) => `${domain}: ${message}`,
+    );
+    this.loadError =
+      this.domainErrors.size === ALL_WORKBENCH_DOMAINS.length
+        ? "Workbench data load failed"
+        : `Partial workbench load failure (${parts.join("; ")})`;
+  }
+
+  /** Clear identity-bound server caches without removing subscribers. */
+  public resetServerState(): void {
+    Object.assign(this.state, createInitialWorkbenchState());
     this.loading = false;
+    this.loadError = null;
+    this.loadedDomains.clear();
+    this.inflightDomains.clear();
+    this.domainErrors.clear();
     this.notify();
   }
 }

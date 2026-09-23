@@ -11,6 +11,8 @@ import { BroadcastModal } from '../components/BroadcastModal';
 import { EscalateTicketModal, EscalateTicketInitialData } from '../components/EscalateTicketModal';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
 import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
+import { useCan } from '@refinedev/core';
+import { CONSOLE_WRITE_ACTIONS } from '../../../app/routing/routeRegistry';
 import {
   DashboardKpiMetrics,
   SpikeAlertItem,
@@ -37,6 +39,10 @@ export const DashboardPage: React.FC = () => {
   const [tickets, setTickets] = useState<ItTicketItem[]>(workbenchStore.getTickets());
   const [faqs, setFaqs] = useState<FaqItem[]>(workbenchStore.getFaqs());
   const [gaps, setGaps] = useState<KnowledgeGapItem[]>(workbenchStore.getKnowledgeGaps());
+  const [overviewLoaded, setOverviewLoaded] = useState(workbenchStore.isDomainLoaded('overview'));
+  const [overviewError, setOverviewError] = useState<string | undefined>(
+    workbenchStore.getDomainErrors().overview,
+  );
 
   // Drawer / Modals state
   const [quickFaqOpen, setQuickFaqOpen] = useState<boolean>(false);
@@ -46,8 +52,19 @@ export const DashboardPage: React.FC = () => {
 
   const [escalateOpen, setEscalateOpen] = useState<boolean>(false);
   const [escalateData, setEscalateData] = useState<EscalateTicketInitialData | null>(null);
+  const faqWrite = CONSOLE_WRITE_ACTIONS.faqWrite;
+  const { data: canWriteFaq } = useCan({
+    resource: faqWrite.resource,
+    action: faqWrite.action,
+  });
 
   useEffect(() => {
+    void workbenchStore.ensureDomains([
+      'overview',
+      'conversations',
+      'faqs',
+      'tickets',
+    ]);
     const unsubscribe = workbenchStore.subscribe(() => {
       setMetrics(workbenchStore.getKpis());
       setSpikeAlert(workbenchStore.getSpikeAlert());
@@ -57,9 +74,18 @@ export const DashboardPage: React.FC = () => {
       setTickets(workbenchStore.getTickets());
       setFaqs(workbenchStore.getFaqs());
       setGaps(workbenchStore.getKnowledgeGaps());
+      setOverviewLoaded(workbenchStore.isDomainLoaded('overview'));
+      setOverviewError(workbenchStore.getDomainErrors().overview);
     });
     return unsubscribe;
   }, []);
+
+  const kpiLoadState =
+    overviewError && !overviewLoaded
+      ? 'error'
+      : overviewLoaded
+        ? 'ready'
+        : 'loading';
 
   const handleScrollToInbox = () => {
     inboxRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -94,7 +120,7 @@ export const DashboardPage: React.FC = () => {
 
   return (
     <div>
-      <WorkbenchLoadErrorBanner />
+      <WorkbenchLoadErrorBanner domains={['overview', 'conversations', 'faqs', 'tickets']} />
       {/* Top Welcome & Quick Actions */}
       <div
         style={{
@@ -109,24 +135,34 @@ export const DashboardPage: React.FC = () => {
             營運即時儀表板
           </Title>
           <Text type="secondary" style={{ fontSize: '13px' }}>
-            早晨態勢掌握 · 突發進線防護 · 10秒直修閉環
+            早晨態勢掌握 · 突發進線防護 · FAQ 直修閉環
           </Text>
         </div>
 
         <Space>
-          <Button
-            type="primary"
-            icon={<ThunderboltOutlined />}
-            onClick={handleOpenGlobalFaq}
-            style={{ backgroundColor: '#fa8c16', borderColor: '#fa8c16' }}
-          >
-            ⚡ 30秒快速新增 FAQ
-          </Button>
+          {canWriteFaq?.can ? (
+            <Button
+              type="primary"
+              icon={<ThunderboltOutlined />}
+              onClick={handleOpenGlobalFaq}
+              style={{ backgroundColor: '#fa8c16', borderColor: '#fa8c16' }}
+            >
+              快速新增 FAQ
+            </Button>
+          ) : null}
         </Space>
       </div>
 
       {/* 1. Morning Pulse KPIs */}
-      <KpiCards metrics={metrics} onSelectUrgent={handleScrollToInbox} />
+      <KpiCards
+        metrics={metrics}
+        loadState={kpiLoadState}
+        errorMessage={overviewError}
+        onRetry={() => {
+          void workbenchStore.ensureDomains(['overview'], { force: true });
+        }}
+        onSelectUrgent={handleScrollToInbox}
+      />
 
       {/* 2. Spike Alert Banner */}
       <div style={{ marginTop: 16 }}>

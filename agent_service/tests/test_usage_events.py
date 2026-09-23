@@ -56,7 +56,7 @@ def test_collector_unknown_model_does_not_report_zero_cost() -> None:
     )
 
     event = collector.record(
-        component="knowledge_generate",
+        component="knowledge_answer",
         status="SUCCESS",
         latency_ms=12.3,
         model="custom-mystery-model",

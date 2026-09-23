@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:e10e08949ba22c3916436f2923ecbc7765810474af2b23ce51a7d914dabebb5b",
+  "pageVersion": "sha256:5519521ff09341a63e68c91cf94490951cabb7567e17dce5c04d1457721ee89b",
   "claims": [
     {
       "id": "claim_3beddc0294a14b959cbfc24de66b24a4",
       "statement": "The knowledge router selects HYBRID or GEMINI_FILE_SEARCH. An evaluation backend override applies only on an allowed evaluation channel. An unavailable select raises. A missing stored backend falls back to a registered service.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/knowledge_backends.py#L101-L121",
-          "version": "repo-lines-v1:sha256:d0c6be5c875851a04cf0735d5488ca4d5a9c261a8f4b303518de4c91fe8b1533:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImUwMDA0OGJmNTlmNTA1MzliNmM4Nzk3MmM5MjBiZGI2Yzk1ZDFkZjI1NDc5YThlZDk1NDQ1YzIzMjNmY2YyY2YiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImIwMmIyNjViOWUzZjIyZjEwNmM4YzY4MmMxNzdjNzYwZDVmODZmNmI2ZjZlYzcwOTU5NDBmNjg5NDRkZWZkOTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZmMzI3ODJhNDkxMWQ5MTI1ODA3YjM2YTYwMzQ3OTRjZDcwMTkyMGNjNzA3ZjFkN2NiNmYxZmVhMDk4ZDk4MmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdlNzgxNzg5ZmYwNWE5ZTllYWU2OGNhZWVhZTQzMjQ2MzZjYjZmNmMwMDI0OTBkNzY0ZTYxNmQyZGU1Mzg3ODcifQ"
+          "resource": "repo://agent_service/src/agent_service/knowledge_backends.py#L95-L130",
+          "version": "repo-lines-v1:sha256:5cac926d61e0f15f423386ff5a68f1b9dc44effd37f882503580a23a1861140b:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImYyNTdiN2ZjMTFjYjZlNjVmZDNjNzYyNWU3YzlkZGY2OWZkYmZhMWI3N2NmMGU5YjJkZDI2OWJkNDVhMGUxZmMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM0Y2MxOGE4MTg0YjA4MjgxMjcwOGVkOTBlYzZmZDViMjYwMzZkMTJlYWQ5YmQ0ZDRkNWJiYTdiYWM0NDAxMTAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllNjdhZDFhODdjY2ViOGUxNjgxMGVmMGZmYWI4M2U5MTQ2YjBmMzZlYzQwNDgwZTdkMjQ2ZDcyYjM5YjcwMTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdkM2RjNjgxMWRkMGMxMzk2NjEyNzM0YmZhYWMwNGJkMzBkMzA2NDY0ZmZmMDM4ZjE5ZTliOGZjOTQzZjdlY2MifQ"
         }
       ]
     },
@@ -17,8 +17,12 @@
       "statement": "Hybrid search scores chunks with BM25 and, when embeddings exist, cosine similarity. Chunks with allowed groups are skipped unless the caller shares a group.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/retrieval.py#L134-L159",
-          "version": "repo-lines-v1:sha256:683569858ec9d2b3ee0f7ae59401c454b7a1fdf5495df1cb015306650a96b947:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijk4ZjI3MGJjOGViMzlhMGZhYjQwYThhYTJjMzFjNjBjOGZhZGM1MWUxYTQxYjA3YzU1MjE4YjAzZDRmMWNjYTQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImM1MDJkNjJkNmFiNDk2MjUyYzY1OTEyOWE4YWYxNTg1MjY3OGE1ZThlMzUyY2ZhMDVmZmZhY2RkNDFjYTM5OGQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUwOWU1MzdjNjNmZjg3ZGU4NDBmNGJkZTA1MzBhODc3NmNmYjk1MWMzZGY5YjVmMDYzZDkyYmIzMGYxOTRhMjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI3NjZlNTlkYzNlNDNhZDkzMDk3YTViOWIwMTM3NDNhMTgwNjYzM2Q3YmRkNDM1Mzk5ZmZhOGY4MzgxY2I4YTUifQ"
+          "resource": "repo://agent_service/src/agent_service/retrieval.py#L425-L443",
+          "version": "repo-lines-v1:sha256:543e72f0f05ff00efdfba678e47fcf04c6f9bbbfa096ec58fe2790dcf909a4b1:eyJzZWxlY3RlZExpbmVDb3VudCI6MTksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmMTIzMGY5NmUzNmRkOWRkNjAzZTFjNTk1NmMwMjg2YmFhMzM1MjZhZTJkNjM5NDI2MTNkYTNiMTAwMzlhODAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRhOWM1NmI1MDNkZTNiMTIwZjI4MTk5ZjJmOWVkOGUzNjc5MmFkNWUwMjU0NmE3MTYyMTBjYWQ2MzMwNjJiNTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImFjNDViMDA3YzY1MmQxMzM2NzNiNTFmOTFjMjU5NjBmNGFkZjVmM2MxNTkwNWY4YjAwNzM1MmVkYjdlZjUzOWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY4NTRjOGQ1MjNkZjZkMzA0ZTZiYjYxNDE3NDA1Y2E5YmMyY2ZkZmQyZjg0OWNlNmMxNzA3N2U5Y2UzNWQxZWUifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/retrieval_acl.py#L14-L28",
+          "version": "repo-lines-v1:sha256:2ab3e28b0c0e54dc56ac4c0e8129b312a809bdd47e0c20f693c17b621885abfa:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjliNDIzMzA3NWMxN2U3M2M1ZWE2NzE2ODU3ZTIxYjc1NjdmN2IyNjhjM2YwMjg4M2FhODE1NTAwY2E4NGJkY2EiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY2N2JmMzczZTVmYjQ3YmVmMjcyZDU0MWJhOTcyYjdhNDU1M2VlMDBiNjkxYzYxMGRjZDgyZDYyYzUxYWI4ZTQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjMzZGQwOGMwNWM2YWE5OTAxYzNiYmQyMjQ0NTY5NDdjM2VhZTQyZDBlMDcwMmFiOTdkYmIwODYwNWI4YTA1MzQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
@@ -27,8 +31,8 @@
       "statement": "The hybrid RAG graph answers a small set of greetings without retrieval. Other queries retrieve when no model is configured.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/graph.py#L146-L176",
-          "version": "repo-lines-v1:sha256:3ef26d08e27f771c98db0f04b0feb7f8cd8782d67468aad892f2bf06a3689721:eyJzZWxlY3RlZExpbmVDb3VudCI6MzEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJlYmQyYjMyNzIyNjI1MzFjYzNlMTA2YWE5ODEyNGM4YzYxZjU0MjNkNzdkNjAwMzliZDc4ZjBhMjc5ODgzYzEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjQyYThiOGEzYzZjODA2MDYzZjE4N2E3NzhmNTFjZTAxMDY0ZGRlN2VjZTg0MDIwYzk4ZGNmNGZjZGU3OWQ0Y2YiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjkwMzQ2OTU0MDYyNmRhYWQ1ZDExMzllODZlNmM1MDRiNWFlYzA5OThjODhhNmQ4NzE1MTE5MTZiYjNkOGY5NzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImYxMzdkMTMyZTY3NmNiZWE5YThjMzFhYjk4NGY5Yzk2NzMyNGQ0YWY4OWQzNDc2MzMyODJmMTQzZTNmZGEyNDAifQ"
+          "resource": "repo://agent_service/src/agent_service/graph.py#L189-L195",
+          "version": "repo-lines-v1:sha256:b8f11ec724885bd01973b38d0b3e64ce5e7a4f4bc024bd47656ff572cd812c54:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWVjYjU0OTE2ODlkODJjOTQ3Mjg5OTU3OTFkMzE5NTc2NGNiZmNmZjY2YmUyYjYxYWVkMDdmN2Y1NDc4NDNjOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNDVhZDBjYWQ0ZWU3NzExYTg0MDY2YmIzMzczNjk4ZjQ5ZTA0ZGY1MzFjOWZlMTVlNDNiMDEzOTg4NzNkZTYxMyIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYTBlOTA1MTY2M2RjMWM1ODhlMjk1OTQ5YWM0ODYzMzNhNGY5ZWJiYjg3ZjdkMjAwNWYyYTdkMWQ0ZmU5NzMwYyIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmNlNjU5OTQ1NGE3NGExMTc3ZWJlMzE2ZjQxODk2YjM4MmM1ZjRhNjJjMTgzNTcyMGVlZTM0MDJkNjMwMGUxNSJ9"
         }
       ]
     },
@@ -37,14 +41,32 @@
       "statement": "Gemini File Search derives its metadata filter from the caller groups when ACL enforcement is on. A caller-supplied metadata filter is rejected rather than combined, because that combination is unverified.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/gemini_file_search.py#L167-L198",
-          "version": "repo-lines-v1:sha256:dfcb840e947430005811770a6d2606b85adb58d82dca56208264ba163de78544:eyJzZWxlY3RlZExpbmVDb3VudCI6MzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU5NmU1ODYyMDEyNTFlNzNlZTk5MjBlNDc3NWE2NzMxODY4OGE0ODFkNzM5MGEzZWE3OGQwODQyNTRjZDAxMmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM5NTYyMjJjMDQ1MDljMjVkNTM5ODY2OTRmMzM2ODE3N2I3YjcxMTgyNTQwMzE0YzViNTQxYzY3OGNkY2I5OWIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxMTllMzI3NjY1NTk5OTczM2QzN2JhNWEwNDk1NzdmZGIxOGQxZWYyZWU1Y2Y3ZDc1ZTNjZjIwNWNiZmY5ZWYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRhYTdhNDc4M2QzMzBhM2I1NjQ1ZTA4ZjVmYTYwYzgzYTJiZmEwOWRmMWE4ODVkOWFmZTcwOTgyOWM3YzhjNmMifQ"
+          "resource": "repo://agent_service/src/agent_service/gemini_file_search.py#L144-L163",
+          "version": "repo-lines-v1:sha256:8865f413ec9c88415b10d173b03b473d39887500ce3bb985ff137c92d94795aa:eyJzZWxlY3RlZExpbmVDb3VudCI6MjAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU2ZjEzMDdlODI3Y2U3MDM5OWMzNjE5Y2Y2OGYwZjYwZDE4OTM4ZmYwMDlhZjlhMzY0OGZlYzQ2ZjdhMTU1YmUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE0NmQ0ZDUxOTM0NzMzOGQ5OGRhYzY0OThjOTZlYjEyMGMwN2JjYTRiZGYxYmI5MDYyYTVhODJmNGJiZDg5MDIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImU3OGNkMjZjODhhYTc5NmMzNmJiMTg3ZWE4NWM3YWEyMmRlYzJkMzViNmYwMDkwNTk5YjE1N2U5YzZhYmVmY2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjI5NzkzMjhjNGNjMmE4OTNhYjczM2I4NmE3YzE5MzExOTcxMThkODVkMDY2MjQwZDJhNDIyMGY0MWYyOTBkMDMifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_c45d58a6e009442b9f845db0b15d328a",
+      "statement": "In GCS store mode HYBRID loads from a verified local mirror (FOLLOW_CLOUD may hot-swap after sync) and fail-closes without a verified snapshot rather than silently falling back to bundled or FILE production indexes.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/deps_sync.py#L129-L149",
+          "version": "repo-lines-v1:sha256:6c71688d4cc71d55fcba81ef9f956ec5623e24fef41d007c48a46987ffb34a61:eyJzZWxlY3RlZExpbmVDb3VudCI6MjEsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdkOWE2ZmJiZjYxNjJjM2QwMTUzMGMzOWJkYjIxY2JhOWU3MzFkMTFjNDdlZjkzNzI4NmZhZTMxYmY1M2VkYTUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImEzZTY3Zjc2YTIyODdiYjZiNmFkYjAxNTA1NWRmZjA4OWMwNjY4ZmFlMmE1Y2ZjOThmY2JmYTIzZWYyYjQyODAiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjhiOTc0ZGE0MDg2MzJhNGFhN2UyYWU4MGI4NjAzOTFhM2RjZDgyMTFjNzllY2FkN2NhOGU5NTEyOGIwMDE4MzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ4OGMzNzQyMTY0MmZmODg1NWI3NDg0N2FiMzU3MTZhMTI5NTc1MWE0YTg0YTY4MmMxMGE0NWUxMmQyNjBjY2UifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release.py#L136-L149",
+          "version": "repo-lines-v1:sha256:8cf0014c1666f4d9c774891e5e91b4d2543fd87f86720d711c1a2bf9e5560ba2:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIxYmQ1NGYxZDU3M2U0Yzk3ZWNmOTI2YzE3NGM4OTU2NGFkOTNlMDRkZDAxZTc1Zjg3ZTMzMjE3NmI5ZDE3YzAiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjVkMTE4MTQxN2YyOGY1MjQzMmU1ZmQxODhmMWE5ZDIxMjZhODlkZTdlMzkyZjliZjJjOWJmMTUxMTA5ZTkwNTQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRmMmQ0Y2U5NGQ5ZGE0ZGEzNzFjNDkxMjQ2ZmNjODRiN2FhNDRiYjEyMjJjNzQ4NTZjM2QzOTg5MDI4NzJlM2QifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release.py#L250-L264",
+          "version": "repo-lines-v1:sha256:ab2348be8770d3da64d7d000b3683dfcd9931678fc1c175989b9fc31ecb1b22e:eyJzZWxlY3RlZExpbmVDb3VudCI6MTUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQwNDBlMzUzNDgzMmU5OGI4ZGE5ODY4NjEyYWQxNzNiMjIzYWIzNWQ1NmY0Y2QyZTRjNGM0YjA4YmIzMTNkOWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjI5YmU4M2U2MmY5MDI0M2JiMzQ3ZmRlZjFhNjZhZjhhMDBiN2NlYmU0NTY0ODQxMDVlMDY5NWJmNzY2ZjI2NzEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImNiYWQ2NjFmYTFjMzVlNzQ1Nzg5ZmI1NTJmZWVlMmU4NTM2MzgxNjUzZmM1YTYyOWEwOTBhNjIzYjllMDdlMGQifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-14T06:27:21.319Z"
+    "at": "2026-09-22T17:10:06.227Z"
   }
 }

@@ -43,7 +43,16 @@ logger = logging.getLogger(__name__)
 def login_redirect_if_unauthenticated(
     request: Request,
     auth_subject: str | None,
+    settings: CitationGatewaySettings | None = None,
 ) -> Response | None:
+    """Redirect browser HTML opens to login when viewer auth is missing.
+
+    Local ``allow_unauthenticated_requests`` trusts verified signed URLs, so the
+    login interstitial is skipped and callers surface 403 for bad signatures.
+    """
+
+    if settings is not None and settings.allow_unauthenticated_requests:
+        return None
     accept = request.headers.get("accept", "").lower()
     if "text/html" in accept and not auth_subject:
         redirect_target = f"/sources/login?redirect_url={quote(str(request.url))}"
@@ -121,7 +130,7 @@ async def handle_source_preview(
             groups=citation_source_groups("playground", viewer.tenant_id, viewer.groups),
         )
     except PermissionError as error:
-        redirect = login_redirect_if_unauthenticated(request, auth_subject)
+        redirect = login_redirect_if_unauthenticated(request, auth_subject, settings)
         if redirect is not None:
             return redirect
         raise HTTPException(status_code=403, detail=str(error)) from error
@@ -194,7 +203,7 @@ async def handle_source_document(
             content = resolved.read_bytes()
             content_type = source_media_type(resolved)
     except PermissionError as error:
-        redirect = login_redirect_if_unauthenticated(request, auth_subject)
+        redirect = login_redirect_if_unauthenticated(request, auth_subject, settings)
         if redirect is not None:
             return redirect
         raise HTTPException(status_code=403, detail=str(error)) from error
@@ -236,7 +245,7 @@ async def handle_original_source_document(
             return await _head_original_source(settings, source_ref_id, viewer, request)
         return await _stream_original_source(settings, source_ref_id, viewer, request)
     except PermissionError as error:
-        redirect = login_redirect_if_unauthenticated(request, auth_subject)
+        redirect = login_redirect_if_unauthenticated(request, auth_subject, settings)
         if redirect is not None:
             return redirect
         raise HTTPException(status_code=403, detail=str(error)) from error

@@ -19,11 +19,14 @@ from ..deps import sync_knowledge_to_active_pointer
 from ..settings import RagSettings
 from ..workflow import AgentWorkflow
 from .chat_support import (
+    _acl_filtered_count_from_issue_results,
+    _audit_str,
     authorize_tenant,
     build_evaluation_response,
     build_response,
     log_chat_failure,
     log_chat_success,
+    resolve_knowledge_audit_context,
     start_chat,
 )
 
@@ -87,6 +90,20 @@ async def _success_cost_or_503(
     resolved_settings: RagSettings,
 ) -> Any:
     try:
+        audit = resolve_knowledge_audit_context(
+            request.app,
+            resolved_settings,
+            user_groups=list(payload.user.groups or []),
+            execution_context=state.get("execution_context"),
+        )
+        for key, value in audit.items():
+            if value is not None:
+                state[key] = value
+        acl_filtered = _acl_filtered_count_from_issue_results(
+            state.get("issue_results") or []
+        )
+        if acl_filtered is not None:
+            state["knowledge_acl_filtered_count"] = acl_filtered
         return await log_chat_success(
             payload,
             correlation_id,
@@ -95,9 +112,14 @@ async def _success_cost_or_503(
             started_at,
             resolved_settings=resolved_settings,
             ops_runtime=getattr(request.app.state, "ops_runtime", None),
-            knowledge_release_id=getattr(
-                request.app.state, "knowledge_release_id", None
+            knowledge_release_id=_audit_str(audit, "knowledge_release_id"),
+            knowledge_selection_mode=_audit_str(audit, "knowledge_selection_mode"),
+            knowledge_last_successful_sync_at=_audit_str(
+                audit, "knowledge_last_successful_sync_at"
             ),
+            is_cloud_production_answer=bool(audit.get("is_cloud_production_answer")),
+            service_catalog_version=_audit_str(audit, "service_catalog_version"),
+            knowledge_acl_decision=_audit_str(audit, "knowledge_acl_decision"),
         )
     except Exception as error:
         log_chat_failure(

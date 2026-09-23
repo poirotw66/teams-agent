@@ -1,0 +1,76 @@
+{
+  "measuredAt": "2026-09-21T07:27:46Z",
+  "note": "Post-optimization console-v2 chunk sizes. Use as after-baseline for architecture work on 2026-09-21. Pre-change totals were not captured on this branch; treat before as unavailable and use this file as the regression baseline.",
+  "comparisonTable": {
+    "before": {
+      "status": "unavailable_on_branch",
+      "totalAssetBytes": null
+    },
+    "after": {
+      "status": "measured",
+      "totalAssetBytes": 2196283,
+      "indexJsBytes": 85218,
+      "vendorAntdBytes": 700859,
+      "dashboardChunkBytes": 21855,
+      "triageChunkBytes": 31665
+    }
+  },
+  "topChunks": [
+    {
+      "file": "vendor-DjjfEIDK.js",
+      "bytes": 1103910
+    },
+    {
+      "file": "vendor-antd-suZOVnpy.js",
+      "bytes": 700859
+    },
+    {
+      "file": "vendor-refine-Da8rekzm.js",
+      "bytes": 135572
+    },
+    {
+      "file": "index-BkeWAQJI.js",
+      "bytes": 85218
+    },
+    {
+      "file": "KnowledgePage-cRzWrjcd.js",
+      "bytes": 38318
+    },
+    {
+      "file": "TriagePage-aeJKxkd0.js",
+      "bytes": 31665
+    },
+    {
+      "file": "DashboardPage-B2ZZ4R2a.js",
+      "bytes": 21855
+    },
+    {
+      "file": "CaseDetailPage-DvKD3zRR.js",
+      "bytes": 17212
+    },
+    {
+      "file": "vendor-react-DZ2uN0LL.js",
+      "bytes": 13668
+    },
+    {
+      "file": "vendor-markdown-I-qnc-hP.js",
+      "bytes": 8042
+    },
+    {
+      "file": "TicketsPage-JdAOYNsn.js",
+      "bytes": 6745
+    },
+    {
+      "file": "LoginPage-CGCHuGpm.js",
+      "bytes": 4040
+    }
+  ],
+  "totalAssetBytes": 2196283,
+  "chunkCount": 28,
+  "firstPaintProxy": {
+    "indexJsBytes": 85218,
+    "vendorAntdBytes": 700859,
+    "dashboardChunkBytes": 21855,
+    "triageChunkBytes": 31665
+  }
+}

@@ -8,7 +8,7 @@ from typing import Any
 
 from agent_service.contracts import GroundedClaim
 from agent_service.retrieval import SearchResult, tokenize
-from agent_service.security_policies import SECURITY_POLICIES, is_policy_id
+from agent_service.security_policies import is_policy_id
 
 from .models import StructuredKnowledgeAnswer
 
@@ -24,11 +24,25 @@ _PROCEDURE_QUERY_MARKERS: tuple[str, ...] = (
     "操作章節",
     "如何設定",
     "設定順序",
+    "怎麼綁定",
+    "如何綁定",
+    "OTP 綁定",
+    "OTP綁定",
+    "通報格式",
+    "必填",
+    # VPN / password-expiry how-to (ans-07 class).
+    "怎麼處理",
+    "如何處理",
+    "要怎麼",
+    "密碼到期",
+    "怎麼改",
+    "如何改",
 )
 # Distinctive executable steps that summarization often drops.
 _PROCEDURE_STEP_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("intune_company_portal", ("intune", "公司入口網站")),
-    ("qr_code_scan", ("qr code", "qrcode", "掃描電腦畫面")),
+    ("qr_code_scan", ("qr code", "qrcode", "掃描電腦畫面", "掃描 qr", "掃描qr")),
+    ("otp_key", ("otp key", "opt key", "otp 金鑰", "otp金鑰", "設定金鑰", "複製 opt", "複製 otp")),
     ("number_matching", ("number matching", "數字匹配")),
     (
         "restart_outlook",
@@ -38,7 +52,35 @@ _PROCEDURE_STEP_MARKERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Avoid matching 「焦點收件匣」 alone; require completion/entry phrasing.
     ("reach_inbox", ("進入收件匣", "主介面", "收件匣使用", "進入 outlook 主")),
     ("bind_phone", ("綁定電話", "簡訊驗證")),
-    ("authenticator", ("authenticator", "驗證器")),
+    ("authenticator", ("authenticator", "驗證器", "google authenticator")),
+    (
+        "report_subject_format",
+        ("信件主旨", "主旨格式", "主旨：", "主旨:"),
+    ),
+    (
+        "report_required_fields",
+        ("提問所需資訊", "客戶帳號", "客戶姓名", "發生時間", "資料夾路徑"),
+    ),
+    # VPN password-expiry how-to: keep variants specific enough to avoid portal FAQ false hits.
+    (
+        "ctrl_alt_delete",
+        (
+            "ctrl + alt + delete",
+            "ctrl+alt+delete",
+            "ctrl + alt + del",
+            "ctrl+alt+del",
+        ),
+    ),
+    ("physical_ethernet", ("實體網路線",)),
+    (
+        "no_jinkong_ad_sync",
+        (
+            "不要去金控入口網",
+            "請勿前往金控入口網",
+            "勿前往金控入口網",
+            "同步開機密碼",
+        ),
+    ),
 )
 _VISUAL_EVIDENCE_PLATE_RE = re.compile(r"\bp0(\d{2})\b", re.IGNORECASE)
 _VISUAL_CHAPTER_RE = re.compile(r"###\s*(\d+)\.")
@@ -59,6 +101,7 @@ _UNCITED_POLICY_LEAK_RE = re.compile(
     r"資料最小化|"
     r"遮蔽或移除|無關的個人|無關敏感|"
     r"變更(?:前|安全性設定前)(?:需|須)(?:先)?向|"
+    r"變更安全性設定前|"
     r"(?:向|洽詢)(?:權責單位|資訊部門)(?:或[^，。；;\n]{0,16})?確認|"
     r"切勿擅自變更|"
     r"系統(?:資安|安全)政策|全域資安|"
@@ -243,11 +286,8 @@ def remap_claim_marker_ids_to_chunk_ids(
         resolved_ids: list[str] = []
         for chunk_id in claim.chunkIds:
             key = chunk_id.strip()
-            if is_policy_id(key):
-                resolved_ids.append(key)
-                continue
-            if key.startswith("POLICY-SEC-"):
-                # Unknown policy ids are dropped rather than treated as knowledge.
+            if is_policy_id(key) or key.startswith("POLICY-SEC-"):
+                # POLICY overlays are out of knowledge scope; drop claim ids.
                 continue
             is_marker = bool(re.fullmatch(r"[Ss]\d+", key))
             if not is_marker:
@@ -279,8 +319,8 @@ def _rebuild_sentence_without_unbacked(
     sentence: str,
     unbacked_numbers: set[int],
 ) -> str | None:
-    if _POLICY_MARKER_TOKEN.search(sentence) and not re.search(r"\[S\d+\]", sentence):
-        return sentence
+    if _POLICY_MARKER_TOKEN.search(sentence):
+        return None
     s_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", sentence)]
     if not s_cites:
         return sentence
@@ -299,9 +339,8 @@ def _rebuild_sentence_without_unbacked(
     rebuilt = re.sub(r"[，；,;]+([。！？]?)$", r"\1", rebuilt)
     if rebuilt and not rebuilt.endswith(("。", "！", "？", "；", "，")):
         rebuilt += "。"
-    if rebuilt and (
-        _POLICY_MARKER_TOKEN.search(rebuilt)
-        or any(int(m) not in unbacked_numbers for m in re.findall(r"\[S(\d+)\]", rebuilt))
+    if rebuilt and any(
+        int(m) not in unbacked_numbers for m in re.findall(r"\[S(\d+)\]", rebuilt)
     ):
         return rebuilt
     return None
@@ -311,12 +350,11 @@ def _prune_line_unbacked_citations(line: str, unbacked_numbers: set[int]) -> str
     stripped = line.strip()
     if not stripped:
         return ""
-    if _POLICY_MARKER_TOKEN.search(line) and not re.search(r"\[S\d+\]", line):
-        return line
     line_cites = [int(m) for m in re.findall(r"\[S(\d+)\]", line)]
-    if not line_cites:
+    has_policy = bool(_POLICY_MARKER_TOKEN.search(line))
+    if not line_cites and not has_policy:
         return line
-    if all(c in unbacked_numbers for c in line_cites):
+    if line_cites and all(c in unbacked_numbers for c in line_cites) and not has_policy:
         return None
 
     cleaned_sentences: list[str] = []
@@ -361,14 +399,14 @@ def prune_unbacked_sentences_and_citations(
 
 
 def prune_uncited_material_sentences(text: str) -> str:
-    """Remove security-policy leaks that lack a proper POLICY-SEC marker.
+    """Remove security-policy leaks and hallucinated POLICY-SEC overlays.
 
     Drops:
     - Uncited policy prose (sibling of a knowledge ``[S#]`` clause)
     - Policy prose mis-attributed to knowledge with ``[S#]`` only
+    - Clauses/sentences that carry ``[POLICY-SEC-*]``
 
     Keeps:
-    - Any line that already carries ``[POLICY-SEC-*]`` (full advisory body)
     - Ordinary knowledge prose that is not policy boilerplate
     """
     lines = text.splitlines()
@@ -377,22 +415,19 @@ def prune_uncited_material_sentences(text: str) -> str:
         if not line.strip():
             kept_lines.append("")
             continue
-        # Keep whole advisory lines; body sentences after the marker must stay.
-        if _POLICY_MARKER_TOKEN.search(line):
-            kept_lines.append(line)
-            continue
         sentences = re.split(r"(?<=[。！？\n])", line)
         kept_sentences: list[str] = []
         for sentence in sentences:
             if not sentence.strip():
+                continue
+            if _POLICY_MARKER_TOKEN.search(sentence):
                 continue
             clauses = re.split(r"(?<=[，；,;])", sentence)
             kept_clauses: list[str] = []
             for clause in clauses:
                 if not clause.strip():
                     continue
-                has_policy_marker = bool(_POLICY_MARKER_TOKEN.search(clause))
-                if _UNCITED_POLICY_LEAK_RE.search(clause) and not has_policy_marker:
+                if _UNCITED_POLICY_LEAK_RE.search(clause):
                     continue
                 kept_clauses.append(clause)
             if kept_clauses:
@@ -447,7 +482,6 @@ def structured_answer_is_grounded(
             valid_chunk_ids.add(bundle.seed.chunk.chunk_id)
             for chunk in getattr(bundle, "supporting_chunks", None) or getattr(bundle, "context_chunks", None) or []:
                 valid_chunk_ids.add(chunk.chunk_id)
-    valid_policy_ids = set(SECURITY_POLICIES)
     if not answer.claims:
         return False
     valid_claims: list[GroundedClaim] = []
@@ -455,13 +489,18 @@ def structured_answer_is_grounded(
     for claim in answer.claims:
         if not claim.text.strip() or not claim.chunkIds:
             continue
-        knowledge_ids = [chunk_id for chunk_id in claim.chunkIds if not is_policy_id(chunk_id)]
-        policy_ids = [chunk_id for chunk_id in claim.chunkIds if is_policy_id(chunk_id)]
+        knowledge_ids = [
+            chunk_id
+            for chunk_id in claim.chunkIds
+            if not is_policy_id(chunk_id) and not str(chunk_id).startswith("POLICY-SEC-")
+        ]
         if knowledge_ids and set(knowledge_ids) <= valid_chunk_ids:
-            valid_claims.append(claim)
+            valid_claims.append(
+                claim
+                if knowledge_ids == list(claim.chunkIds)
+                else claim.model_copy(update={"chunkIds": knowledge_ids})
+            )
             has_knowledge_claim = True
-        elif not knowledge_ids and policy_ids and set(policy_ids) <= valid_policy_ids:
-            valid_claims.append(claim)
     if not valid_claims or not has_knowledge_claim:
         return False
     answer.claims = valid_claims

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import re
 from pathlib import Path
 
 import httpx
@@ -96,14 +98,31 @@ def test_console_v2_spa_and_static_serving(tmp_path: Path) -> None:
     assert res_case.status_code == 200
     assert '<div id="root">' in res_case.text
 
-    # 3. Static JS asset serves file correctly
-    static_assets_dir = Path(__file__).resolve().parents[1] / "src" / "ai_ops_backoffice" / "static" / "console-v2" / "assets"
-    js_files = list(static_assets_dir.glob("*.js"))
-    assert js_files, f"Expected at least one built JS asset in {static_assets_dir}"
-    asset_name = js_files[0].name
+    # 3. Entry JS asset from index.html serves with correct MIME (size varies by chunk).
+    console_v2_dir = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "ai_ops_backoffice"
+        / "static"
+        / "console-v2"
+    )
+    index_html = (console_v2_dir / "index.html").read_text(encoding="utf-8")
+    entry_match = re.search(
+        r'src="/console-v2/assets/([^"]+\.js)"',
+        index_html,
+    )
+    assert entry_match, "Expected module entry script in console-v2 index.html"
+    asset_name = entry_match.group(1)
+    asset_path = console_v2_dir / "assets" / asset_name
+    assert asset_path.is_file(), f"Missing entry asset on disk: {asset_path}"
+    expected_digest = hashlib.sha256(asset_path.read_bytes()).hexdigest()
+
     res_asset = client.get(f"/console-v2/assets/{asset_name}")
     assert res_asset.status_code == 200
-    assert len(res_asset.content) > 1000
+    content_type = (res_asset.headers.get("content-type") or "").lower()
+    assert "javascript" in content_type or "ecmascript" in content_type
+    assert hashlib.sha256(res_asset.content).hexdigest() == expected_digest
+    assert len(res_asset.content) > 0
 
     # 4. Nonexistent static asset returns 404 (does not serve index.html)
     res_missing_asset = client.get("/console-v2/assets/nonexistent-bundle-12345.js")

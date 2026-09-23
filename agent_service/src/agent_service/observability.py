@@ -107,7 +107,12 @@ def _configure_metrics(*, service_name: str, exporter_endpoint: str | None) -> b
     return True
 
 
-def record_metric_counter(name: str, amount: float = 1.0) -> None:
+def record_metric_counter(
+    name: str,
+    amount: float = 1.0,
+    *,
+    attributes: dict[str, str | int | float | bool] | None = None,
+) -> None:
     """Increment an OTel counter when a MeterProvider is configured; else no-op."""
     if amount == 0:
         return
@@ -118,9 +123,56 @@ def record_metric_counter(name: str, amount: float = 1.0) -> None:
     try:
         meter = metrics.get_meter("teams-agent.rag")
         counter = meter.create_counter(name)
-        counter.add(amount)
+        if attributes:
+            counter.add(amount, attributes=attributes)
+        else:
+            counter.add(amount)
     except Exception:  # noqa: BLE001 - metrics must never break request path
         logger.debug("Failed to record OTel counter %s", name, exc_info=True)
+
+
+def record_metric_histogram(
+    name: str,
+    value: float,
+    *,
+    attributes: dict[str, str | int | float | bool] | None = None,
+) -> None:
+    """Record an OTel histogram sample when metrics are configured; else no-op."""
+    try:
+        from opentelemetry import metrics
+    except ImportError:
+        return
+    try:
+        meter = metrics.get_meter("teams-agent.rag")
+        histogram = meter.create_histogram(name)
+        if attributes:
+            histogram.record(value, attributes=attributes)
+        else:
+            histogram.record(value)
+    except Exception:  # noqa: BLE001 - metrics must never break request path
+        logger.debug("Failed to record OTel histogram %s", name, exc_info=True)
+
+
+# Named counters from the production-optimization observability contract.
+METRIC_TURN_PLANNER_SELECTED = "agent_turn_planner_selected_total"
+METRIC_TURN_PLANNER_FALLBACK = "agent_turn_planner_fallback_total"
+METRIC_LLM_BUDGET_DENIED = "agent_llm_budget_denied_total"
+METRIC_LLM_BUDGET_EVENT = "agent_llm_budget_event_total"
+METRIC_ANSWER_ESCALATION = "rag_answer_escalation_total"
+METRIC_ANSWER_ESCALATION_SUCCESS = "rag_answer_escalation_success_total"
+METRIC_EVIDENCE_DROP = "rag_evidence_drop_total"
+METRIC_CITATION_PRUNED = "rag_citation_pruned_total"
+METRIC_LEGACY_RAG_AGENT = "legacy_rag_agent_invocation_total"
+METRIC_REQUEST_LATENCY_MS = "agent_request_latency_ms"
+METRIC_FIRST_STAGE_LATENCY_MS = "agent_first_stage_latency_ms"
+METRIC_LLM_SEMAPHORE_WAIT_MS = "agent_llm_semaphore_wait_ms"
+METRIC_RETRIEVAL_LATENCY_MS = "rag_retrieval_latency_ms"
+METRIC_RELEVANCE_LATENCY_MS = "rag_relevance_latency_ms"
+METRIC_REWRITE_LATENCY_MS = "rag_rewrite_latency_ms"
+METRIC_GENERATION_LATENCY_MS = "rag_generation_latency_ms"
+METRIC_CLAIM_REPAIR_LATENCY_MS = "rag_claim_repair_latency_ms"
+METRIC_TOTAL_LATENCY_MS = "rag_total_latency_ms"
+
 
 def start_span(
     name: str,

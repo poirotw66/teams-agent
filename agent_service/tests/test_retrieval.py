@@ -2,9 +2,9 @@ from agent_service.documents import DocumentChunk
 from agent_service.retrieval import (
     HybridIndex,
     _embedding_models_compatible,
-    is_chunk_visible_to_groups,
     tokenize,
 )
+from agent_service.retrieval_acl import is_chunk_visible_to_groups
 
 
 def test_chinese_tokenizer_creates_bigrams() -> None:
@@ -122,6 +122,13 @@ def test_is_chunk_visible_to_groups_matches_hybrid_acl() -> None:
         content="公開內容",
         allowed_groups=[],
     )
+    public_sentinel = DocumentChunk(
+        chunk_id="public-sentinel",
+        title="全員公開",
+        source_path="sources/public-sentinel.md",
+        content="全員公開內容",
+        allowed_groups=["grp_public"],
+    )
     restricted = DocumentChunk(
         chunk_id="restricted",
         title="限制",
@@ -132,6 +139,29 @@ def test_is_chunk_visible_to_groups_matches_hybrid_acl() -> None:
 
     assert is_chunk_visible_to_groups(public, set()) is True
     assert is_chunk_visible_to_groups(public, {"HR"}) is True
+    assert is_chunk_visible_to_groups(public_sentinel, set()) is True
+    assert is_chunk_visible_to_groups(public_sentinel, {"HR"}) is True
     assert is_chunk_visible_to_groups(restricted, set()) is False
     assert is_chunk_visible_to_groups(restricted, {"HR"}) is False
     assert is_chunk_visible_to_groups(restricted, {"IT"}) is True
+
+
+def test_search_with_timings_reports_acl_filtered_chunk_count() -> None:
+    public = DocumentChunk(
+        chunk_id="public",
+        title="公開",
+        source_path="sources/public.md",
+        content="VPN 密碼重設",
+        allowed_groups=[],
+    )
+    restricted = DocumentChunk(
+        chunk_id="restricted",
+        title="限制",
+        source_path="sources/restricted.md",
+        content="VPN 內部流程",
+        allowed_groups=["IT"],
+    )
+    index = HybridIndex([public, restricted])
+    _results, timings = index.search_with_timings("VPN", limit=5, groups={"HR"})
+    assert timings["aclVisibleChunks"] == 1.0
+    assert timings["aclFilteredChunks"] == 1.0

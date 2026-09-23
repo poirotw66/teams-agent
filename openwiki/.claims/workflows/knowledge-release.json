@@ -1,14 +1,14 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:9a1432023d71f0cf5c2e762bcb807622d4979a11f273a425688eee47ebfa6c71",
+  "pageVersion": "sha256:0199887f738a45705880b5f535e732e4b21a76fe686a2df07d075c0659f7dc72",
   "claims": [
     {
       "id": "claim_c1c39bbdf3264ebc8e85184650fa3496",
       "statement": "A review can be decided only once. APPROVED sets the version and document to APPROVED. CHANGES_REQUESTED sets both to CHANGES_REQUESTED. Any other decision rejects the version and returns the document to DRAFT.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/knowledge_portal/services/review_service.py#L149-L187",
-          "version": "repo-lines-v1:sha256:68d0d7da3812d64420d0996322f80b3de8cda49446ff8c28313eba9f02e464c1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzksImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQ5ODFlOTA0YjY2OTUzM2RkZGYyYzZmYTU2OGI1NGM1YmNjM2Q1NzYwMzM1MzM3OTgzZjFmYzViMzYzY2FjZGEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZmYmQ2Yjc1ZmRmNjExMGYxMTY2ZmFhMjMyMDA4NzIwZmRjYjVkYzJkMmFlMmRmNDlmNDBjZTRhYTI1YzQ0MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNlMWYxMmUwYzExYjdhNDUxODI1NGVkOWUxM2Q3Yjg5NzRhZWQ4NzgzY2YxMDFiNTg5ZWM3MGU0YjA1MzU0ZjUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6Ijk4ZmMwNjFkZTk0NWM5MTk4YWE0NGQ2YjY1MDY3ODhiZGUyZWI0MmUxMGU1YTc0ZjNiYTlhNmMyNGMxMTAzNWIifQ"
+          "resource": "repo://agent_service/src/knowledge_portal/services/review_service.py#L145-L181",
+          "version": "repo-lines-v1:sha256:456d1957f8f85435a53d02c5314538bd09c30dfdc6912b27b2aec4344374a7d2:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjY3YWQ0MmRiMDFmMTc0YTRmZjM4NzFlMzIxZjU0OGMyM2QxNDNlZDBmNjVhY2JhOGRhNjEwMjlmYWRjZGM0YzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIzZDhlNzI4YTYzYjA0YjYyODc4OTRhNGI5NTQzZDg5YmFiOTljYjgyOTUxYzFlNTE3M2M3Y2Y0ZTllNWJiZDEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjBmMTkxNTMxYzM2ZGY3YzI1NTc3OTExNTg0MmEwNmJkYTExODM0OTAxMDljMTEyYzk5YjViYTYzZDUxNDdkODUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjM3MzdjYmNhN2FhOWMxZDFjYjk5NzQ5ZjQ0NDgxNmUzMWQ3ODkxMzAwMTkzZWFiZmMyNmM1MTYyYjE2YWQ3ZjkifQ"
         }
       ]
     },
@@ -17,8 +17,12 @@
       "statement": "Only an APPROVED version can be published, and only by a publish role. Dual approval blocks the version creator from publishing their own content unless the actor is PLATFORM.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/knowledge_portal/services/release_service.py#L91-L106",
-          "version": "repo-lines-v1:sha256:784a5345f512bfa1648e0c5cb2d6e5868aa7e25f29a7685510e8706395be9ecb:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMwNjdkOTliNDY0ZTBmMjhmMDM3ODg5ZDBhMTZmZjI5NGM5M2MxNjExZDEwMTU2MmU5MDE4NjQwMTYzNTAzMjUiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU3ZTMyODdhZTRhNjljMTc4YjBkNDNiZDFjOWZlMTU3OTQyMWY1YjM5YWIyYzBlZjE2ZmU4NTU1YWJjZTVjZWYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjllMjYyN2QyNTE5MzY1ZDJiZGJmOWFmYzM4NmUxZTdjODBhODYxZjViMGRmMjFlMGZiMjQ2NWU0YzBhZDFlMmMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjBlOGU5ZGU2Y2ZiMzdmNjE3MmUyNTQ3NWU5OTIxZDVjNjZkY2QzNDYyNmVkMzlkMGJmMzZiZjE3YWQ1MzIxMjEifQ"
+          "resource": "repo://agent_service/src/knowledge_portal/release/publish.py#L136-L143",
+          "version": "repo-lines-v1:sha256:f12d496795c99ed74135ce0b73a192e251eb00a593f59d47712243e485c0fa15:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjllNzM2Y2EwMDRmZWQwMTkwNDllMjVjNjQ1NmI5N2RjZDZlOTVjZWI0MjQxMjJhOTgxYzg3N2MyNmE2MDdjMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg4ZWMyYTc5NGIwMWE5YjVjYThiOGMxNTI4Y2Q3OGMwZjVmYjA0NWI5NGJmNzhmNzNjM2IzOTJjMTJlYmZkNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMmY5MzRhYTgwZDM3NDJjYjliN2ZiZTJlN2RlN2JlMDhlYTU1MTc5MmJmZGI2NWExZjVlZmVkNWM4NzdkYTcxZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiOTU3ODJhYmI2OTJkZTk5ZWQ4NDQ2M2RiZDJhZmI3YTY5YWQ5MjAyYzljYzJkYjRjOTU3YjFlNmZkMzIwYzIwOCJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/release/publish.py#L204-L206",
+          "version": "repo-lines-v1:sha256:94d0523a2ba4b2de9a5096406fb093f56ed834a5beeee2c81cb8f6e582219efa:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZjM2YTQ3OGNiMzZlNzJmYWNkYjdlYmI2N2RmN2FjZmMzYmZiN2RjZmVjMTQ5Yjk4OWU2MmZhMGM2OTQ1NzExZiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjMyYmQ5NmZlMjljYTNiOGI4Mzg1MWQxYjA4NGUzODBmNGQ2MDlmNWZhZTJjMGYyMDc5M2I1YzFjZGJlYmI5ZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMDM4ODgzZWJjYWEzOWEyOGUwMGQ2NzIzZWVkOWFjZjhhNmFiZDg2OWYxNGY3NzRhNGQ0NzhiOWY0Y2I1YmY3ZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZDU4ZWUyOWMxOTkyZTQ4MGQ0ZjliMWRlY2MzZWM0MTU1YWNkMTk1MjkwZWE2OTIyNTQ1NmE3ZjA2MTFhNTg5MCJ9"
         }
       ]
     },
@@ -27,16 +31,12 @@
       "statement": "Publish holds a coordination lock, rebuilds the active published set, and activates a release artifact containing index/chunks.json before marking the document PUBLISHED.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/knowledge_portal/publisher.py#L41-L46",
-          "version": "repo-lines-v1:sha256:f76fc32a6edc0798f86c5f272b461cb750bea6f9c741c8a7674429f85e2e0df4:eyJzZWxlY3RlZExpbmVDb3VudCI6NiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiOTY5YTg5NTMwNTBkM2E1NzdiZjRkOGQ1ODAxNjVkMDEwMmQzYTU1ZmY3MGM1OWQ3YzA1YzI1ZTAwZGJkZGIxOCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNjZlNzdhNWRlY2U2MDI5YTk3ODAwNjU1MjY2NzJkOTg3MTA3ZDU1ZmMzNzI4MjkwNDk0NmE5YzQ0YTA2YWJiYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiM2U0NjE3NjkxZWQ1Y2RkZmU5MDNjODUzNGE1YjgwMWFlZjJkMzAwYTQyODhkZTAzMjIxNDVkYzBjOTM1OGZjNCIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmE5MjM4NWRiNTRmNWUyZDkzM2FjNTRlZjQ3NWY5ZDllYzJlNGViNzIxZDJhNmU0ZWJiNTNmYmVlMzBmNTA3ZiJ9"
+          "resource": "repo://agent_service/src/knowledge_portal/publisher.py#L35-L72",
+          "version": "repo-lines-v1:sha256:251994dae89f6094a0c31dc2c81f8d51465cd7dca160285761c6715447cab79e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzgsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjMzNTQzZjE4NTNiYWQxODMwYzk0MWI1Njk5YjNkMjcyNDljYzkwMTc1MmQxMjIyZjAzNjk2MzIyMjllZjA0NGIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjgyODVjZTE5MjljODY4ZjY3YTExMjc3NWFkNWM5NTZhYmU3MTM0YTQwNzlmNzM2Y2FhMzUxMGI0ZGVlYzYyYTgiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         },
         {
-          "resource": "repo://agent_service/src/knowledge_portal/publisher.py#L97-L100",
-          "version": "repo-lines-v1:sha256:89378e33ae961addf598e2dd6b6fee963eb3b00a55b6e220f35053a3bf573753:eyJzZWxlY3RlZExpbmVDb3VudCI6NCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiNjI1N2EyYWVjNzA4MDgwYmZiMWUyMTE4NTBmYjhkNDZlMTg0MWQ3NGE5MmNjZWNiMzVjNjI4ZDQ4NzQzOTU2NiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMjdlNTdjYmUxMjEyZmJkYjUzN2JiNDI3OGZiN2U2YjY4Yzc3MGVmY2I5MDM5ODdhNDczZDZlYzBjZmEyM2M1ZCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQzNzllY2ZhYTBjZjZjN2ViOGFiMGNjMzBhOTZjNzAwMWFkNDBlMzkyZWY4NjBhNjBjZTg5ODY1YTYyN2UzNSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZmFhYTNhMGZkMDY5M2RjYjU5ZmUxODkzMGNlOWY2MDdjMzAwNDZhOWFhMDlkZjNhYWFlMzI4YzUwZjI3MzM1OCJ9"
-        },
-        {
-          "resource": "repo://agent_service/src/knowledge_portal/services/release_service.py#L108-L132",
-          "version": "repo-lines-v1:sha256:fb269b378cff40ea26f6c7f90da872c69861f3744162b3c3cba53dc4c1cba841:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJjZTYwNzhhYjViNDc3YTY0ZmYyZjdmZGQ0ODYzNDUzMzU1OGRiZTNkNjljZWUzN2JmMDczOTVhMDhkZTg3ZjIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjIyYWMzMDcyMjk1Y2EzMTkwZWU5MjMyNjc5YjgzY2NiMTI4MTI5NGZiZGM1OWMyZGMyMzEwZmIwMTRmNjU4MDciLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjczZjFlZGZjODM4ODdlM2M2ZWNmM2IzOTYzNTZjN2FhYjk4YmE2N2Y0NTEwOGNhOTRjMWU2ZmNkMWZlMjM4N2IiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjhmNWMwNTU4NGQxZTk4ZDQ0MmVhNTI1YmY0YjhiY2EyNDFiZjRhZmExM2ViYzIwMTI1YzE5NGE3NzlhYjg1YzQifQ"
+          "resource": "repo://agent_service/src/knowledge_portal/release/publish.py#L145-L160",
+          "version": "repo-lines-v1:sha256:fcc7741d9680ed4b2e00a4e253c120d7d4ac55cb44258ccc2dbe6ca26d4d687d:eyJzZWxlY3RlZExpbmVDb3VudCI6MTYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImY5ZmVlYmMzOGYzNjQyYzQwMzFiNTE3YzgxZDY1NjA5NDZjNTI4NDA2YzRiNjk1MGU3OWEyMjA0NzU0MDg0MTIiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMwYjhhOTM3NmM5NmE1ZWJjNTdjM2Y1YjhiOTdlZGUzNmVkNzFlYTA5ODQxOTRjYWRlNWVkZDMzYmIwMDI3YzkiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjZhOTliYzMwNjYyZjcyNmMyMDI5ODNjZDc0MjlkMTIyYWJkMmRkMjVlMWNjMTE2YzgzMjNmZGIyODliNmE1MWIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImY0NWI2ZDY2MTQyNzBkZDVjOThmZTAyMTMxYjEyMzA1YjE5OGE3Mzc2YmY3MTk2MjBlMTYxZmNmMGNiY2Y2NjcifQ"
         }
       ]
     },
@@ -45,24 +45,58 @@
       "statement": "The console calls the portal with a signed delegation envelope. A missing secret, a bad signature, a bad issuer or audience, or an expired envelope is rejected.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/ai_ops_backoffice/knowledge_bridge/delegation.py#L38-L109",
-          "version": "repo-lines-v1:sha256:8f3d76a26c8550329725c1a0235d5000110e506d6b943491f8d4eb00c1ca4f3d:eyJzZWxlY3RlZExpbmVDb3VudCI6NzIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4OGM4ODZhNjU3MGZkNDFjOGY5NThlYTJhYTc1MjhmZjhkY2U0N2U5Nzk4ZGZlNThiMmM5ZGY2ZTVkYTY4MjgiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjE1YWNhMzllMjk1MDMwMzQ1YjRmNDM1M2FjOWM1M2U3Y2VmMGY4M2NkM2M4NjQ4YjZlZjBkOGU3ZWIyYjcxOWMiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiYThmMzFjNWFiNGQ0MzJhZTE5MWUyZDQyOWRjM2FiMjg2ZThjODk4NTAyNmQzOTBlZTE3NTFjZThhYzVmMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjoxLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjRjNGFkYzc4ZjQ2MDdjZjY3M2VlYTFlZDhlNGY5NTJlMTAwNzE4MzlmYjE4ZDkxNmRiODczOTI5ZTAyY2ZkMTEifQ"
+          "resource": "repo://agent_service/src/ai_ops_backoffice/knowledge_bridge/delegation.py#L36-L71",
+          "version": "repo-lines-v1:sha256:fe9c606be0f7c6c26c502a92ea4e85411524f10a8c4f8c680a67e0727c871cc1:eyJzZWxlY3RlZExpbmVDb3VudCI6MzYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImMxMGIzN2E2ZDgwNDhhZGU4NmYxYzhjNDc2NDNkNzgzNGQ1NjVjMmI4NDI4ODUxZjhhNGFhNjAwNmRmZTZhNWQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImJkNmQ5NmJlZDYwOTE4YmEzZDllYzY2ZTk1MGJmN2VmZjY5MTM0ZjQ0YjM0ZDNlNTgzMzI5OTk4ZjY1NTdjY2EiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQzZDE3MWRlNzU0MzFhMDIxYTBkOTRmYTc2ZmFiZjBkNzEzOWM4OThjMWEwYjQ0YjQzY2E2MDkwM2ZhMWI4NDUiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/platform_kernel/delegation.py#L30-L64",
+          "version": "repo-lines-v1:sha256:a646421d0d1f2ef4959efc992aee71f2af9301f4d393b154a4252c395d9b7274:eyJzZWxlY3RlZExpbmVDb3VudCI6MzUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6Ijg0NjAwNWFlMjczMGMzMWUzMjRiZjVhNzQzZDNmMDQ0NzgxZmJkNWMwYjVjMjZhMzUzNmM3Y2QyNzUxMGZiNzYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjRjNGFkYzc4ZjQ2MDdjZjY3M2VlYTFlZDhlNGY5NTJlMTAwNzE4MzlmYjE4ZDkxNmRiODczOTI5ZTAyY2ZkMTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImNiYThmMzFjNWFiNGQ0MzJhZTE5MWUyZDQyOWRjM2FiMjg2ZThjODk4NTAyNmQzOTBlZTE3NTFjZThhYzVmMWQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjowLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImUzYjBjNDQyOThmYzFjMTQ5YWZiZjRjODk5NmZiOTI0MjdhZTQxZTQ2NDliOTM0Y2E0OTU5OTFiNzg1MmI4NTUifQ"
         }
       ]
     },
     {
       "id": "claim_df2c4726f4f847aba4095c9925b5f597",
-      "statement": "Agent Service reloads the hybrid index when the active release pointer changes and the release index exists. A missing index leaves the previous index in place.",
+      "statement": "Under FILE store mode, Agent Service reloads the hybrid index when the local active release pointer changes and the release index exists; under GCS store mode, admin reload syncs the cloud mirror before resolving, and chat does not follow the FILE pointer.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/deps.py#L36-L57",
-          "version": "repo-lines-v1:sha256:43d09ebdce208cfefdfcaa96ba2be19f9f40de57df86e4625f68cbd863ccb013:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImU0OWY3NTJmYTlmMmU2MWQ5ZWQ2M2VhMDcxZGZjMGEzNGRhOTY3ZmZhNmQzYzFlYjUzYjU2NzAwZWMwOGQwMDMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjJhOWY4YzJiYzdhMTQxYTAyMmFmM2ZlYjhhYjUwMDhlYzI1NzU3ZWYyNGFjZDA0OWY1MDg5YTc0YjdjOWFlODEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImUyM2UwN2JlMDYyMGYxMjg0MTgwOGU3Y2RmNTBhZDQxMjNhMDg3YjUyOTE4M2ZlOTdiZTNjMWQ1Yjk2ZWM3NjYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImZhOWVhZjMyOWYzNzMzZWQ1MzFiN2Q1MTg1ZWUyZmVlMzFkY2I5NjQ4MmU4NDQ1YjMzMGNhNWQwZDcxYTAxNjQifQ"
+          "resource": "repo://agent_service/src/agent_service/deps.py#L52-L76",
+          "version": "repo-lines-v1:sha256:f5f57e471e5f6153fae6778836f051f2862f8c62edba6e75a8daf228e053f00a:eyJzZWxlY3RlZExpbmVDb3VudCI6MjUsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZmN2QyMWUzYzY1NGU0OTY0MzU4MDAwODQ4MjkwMGY3YzQyYTU0N2YxZWUyYjI2MTIyMWFmZWMzOGM5MzRlOTYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5N2M3MTI0N2FmM2NkMWVkZjU1NWE3ZDEwNzU5MzE1N2Y2ZGMyYTIyYWYwZGU4MmU3Nzc0YWJmMTBmOGFkZTEiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQzNTNmMzgwYmIxMzdiMWI5YmY3NWJjM2U5OTU4NTI3MjY1MDA1NzliZGExMzA2MDdjZDRkMjUwMTMyOGYwMzMiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjA1ZjI3MTdkZjcyYjc3ZTNlNjFkNGI5ODIzYWY2MTE0MzU4OTJmOWEwNDJiMzgxYmFjNzZhODdkZjk0OWEwZjcifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/routers/knowledge_admin_reload.py#L175-L176",
+          "version": "repo-lines-v1:sha256:471f48e464af935b6a9a9004f64f0d99f77ad2c1674a3eb94f5a08b780a5e352:eyJzZWxlY3RlZExpbmVDb3VudCI6MiwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMmZhZjljOWYwZDgzZDU4MDU5NzMwYTFlNDM0OThmMzFhOGNiNGQxZTRiYTQ0YjRmY2M5YWMxZGM0ZDc3MzRiYSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiNWY1ZGJlYzM4ZmJlZTBhNzNmNDIxMzQyZDkzZWMxOTNlYzEwNjE5OGQzZmQ1YWQ5YTU3Nzc0NGI4OTE1NTNjYSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYzc1ZTM3NmVlYzBkYmFhMGUxM2YyNDMzN2JlZTA0OWMxNjI0YzMzYjFhOWJkYzU3YWMwNmI1ZDQ4YzEwZDgyMSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZGYxYzFjZTIxMTJkOWM0N2VhY2E3Nzc3NmM2MzU2OTdhYjUwYWRlM2E0NGU0ZTVmYTU3ZWE4NmU0OWI2YmZkMiJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/routers/knowledge_admin_reload.py#L34-L47",
+          "version": "repo-lines-v1:sha256:49fca19d9e224267e9cbcf7cb4e2f14c4adf759cba2e9a9286352e7f92771489:eyJzZWxlY3RlZExpbmVDb3VudCI6MTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjI4YzkzMmE1MTdhMzYzNmJhNGU3M2NjNWYxNmQ4YmIzOWJkNTZjZjBhYmUxMTA2OWIxOTg1MGVhNzNhNjc1ZDYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjkwNzRiMTY5ZGRhNGMxZDIzZmQzNzE1NzdiYjZmODFhMTE5NThmYTkzODA5YTllOGZhNzJiMDQ4YWM4MmJkNmQiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjRmNTIxOGRkNWVjM2EwZmIyNjRhNzQ1MDYyMjc0YzhhYTE0M2NjYTVmNjFlMWU3ZDdkY2IyMTBiMzJiYTEzMjQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImI1OGEzYzQ2ZGJmNGQ5YTY5NzgzNjdjNzJjZWRiYmUyMzQ2NTY4MzU1Mzc2MGM3ODBlODAwMzA3MWExMzk2MDUifQ"
+        }
+      ]
+    },
+    {
+      "id": "claim_032ffbcc275c43d6a63b692a4bad625f",
+      "statement": "GCS releases attach a runtimeArtifacts inventory for QA sync, and Portal activation notifies Agent reload then settles RELOAD_FAILED with compensation when reload fails while the candidate still owns the active pointer.",
+      "evidence": [
+        {
+          "resource": "repo://agent_service/src/agent_service/knowledge_release_gcs.py#L45-L84",
+          "version": "repo-lines-v1:sha256:a225b1d8e9e49ce884eaebddf80ea1443b06a20c4d732c186cd25b9b6463044a:eyJzZWxlY3RlZExpbmVDb3VudCI6NDAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImZhOGU0NGI1N2UwYmNkODU3NWRhMDU2ZmFlOTA1YjE0MmMyMzY2MzA0MzA3YTc5YzI1ZGExZjQ5YzU5YzUyOWEiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImE1NGMwMjVlNzgxM2NhYTg0OTBhYmIxZTJiMGM4NmJlNjg5OWRmMDg2N2EwYzFlODkxMTA4YmI3ODYzYzQzYjIiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjQ2ODQ1NDU1ZmMxZGI2MTc3YTUzZGE0NGVhYTczZDUwOWNkZGRiMzg2NDdmMDgyMDMxNWU5MGJjMDMxYmU5ZDQiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjIyYmI3YWU3NzhhZDczYTRmMmZjNjY5NDE3ZjA2NDQ5NDJiODU4M2MzMTY0MDM1NzlmYTFiMGI0ZDMyZWYwZmMifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/knowledge_core/runtime_inventory.py#L86-L111",
+          "version": "repo-lines-v1:sha256:8a912174b9b49db6d7e43b80362047e7af5d768919161734ffe85381dab3ee49:eyJzZWxlY3RlZExpbmVDb3VudCI6MjYsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImVhODc1YmFlNTkxYTJmMTE1ZDI1OTJlNWQxYjFlZTNkMjE4MzhjMzBlMzFhZTFmMmU0MjJlNWQ4NTc2MjlhNGMiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6ImQzMTVmZmNkYWQ3MTRjMTllOTI3Yzc2NjUzOWQxNjBjY2I3NjMyYzUwY2RhOTAzMTYwMWYxMzZkNjhhODg4M2UiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijg5ZTAwZjMyMTM3MGZjOGVhNzhkYzE4ZGMyMTY4ZDBjNjRjMDJmNjA0NDY0Y2YzMWUxNmM5ZDBlOWY1ZGRlM2MiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImRlNjBiYWIxMTUwNzMzOTE3YzUwN2ZmYjMxNWMxYjZkZjdiOGM1OWJiYzQ0ZmRjMThiYTBiOWYxNjcxYzRmMmYifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/release/activation.py#L445-L453",
+          "version": "repo-lines-v1:sha256:dab2ec1592d1f3aa33ec75b6ef8e412e4bc48741b6199d917d803d65ec83267a:eyJzZWxlY3RlZExpbmVDb3VudCI6OSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiODdhMGNlOTA2NTIzMDM0MGYwNTMzMGViZDk5YTk3NTBkMTg3ZTEyZTBhZmRmN2FhNGNmMmYzZDEwYjc5MDZmNSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTE5M2NiNTI1YzdiNzA0ODk5ZTBlNjZmYTZmYzIwMjhmNTBlMTY2Y2Y1NTZlNTU3MTZiNjlkNGE1Y2ViYTAwZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiMTc2NjZlYzE2MmVkNmVjYzRiZTcyOGY2OTE5MTc4MjdmNmIyNDk4MDk2ZDI5ZDBhNDUxM2NlN2JjMzM4NGNjYSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNDFmMDA2MjZiNGQ0MGM0NTY4ZWUwOTE0YjdmNDRlNzkwNGRlM2ExNGIwMWE3ZmFiYmE1Yzk1OWViMjI4ODJlYyJ9"
+        },
+        {
+          "resource": "repo://agent_service/src/knowledge_portal/release/transitions.py#L109-L111",
+          "version": "repo-lines-v1:sha256:70291a9fdbd3dfedb22cfd1617e471c6f19b6db69327f1d793cb8aa39322afb4:eyJzZWxlY3RlZExpbmVDb3VudCI6MywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU1NmEzMWZhMzY0MjQ5OGZkMDE1MWUxM2VjYmM0MWI2NTgyZjQ1YzdhZmZjMzc5NmI5NjJjNjA1NjllNDllMSIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiODgwNWExNGE2MmM3NDc4ZmU1ZDg2OGRhYjc5MWI3Yjk4YzM5ZDY1OTFlYWQ5NmNmODhmZGI4ODQzZmFlNzdiNCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOGI5NzRkYTQwODYzMmE0YWE3ZTJhZTgwYjg2MDM5MWEzZGNkODIxMWM3OWVjYWQ3Y2E4ZTk1MTI4YjAwMTgzMiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiMWM3MWMyM2ZmYmMyNTc3MGY1ZWVlZjY0ZDY0OTkzMTEzMWQwYmIxZjdkZWQyZGEyZDNhNWM5NzQ5YmFiZGMzZCJ9"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-14T06:27:21.319Z"
+    "at": "2026-09-22T17:10:06.227Z"
   }
 }

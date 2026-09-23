@@ -196,8 +196,11 @@ def _render_knowledge_answered(issue: Issue, result: IssueResult) -> str:
     # Citations travel separately in BuiltResponse and are rendered by the
     # Teams adapter. Keeping them out of the answer body prevents duplicate
     # source sections in both plain text and Adaptive Cards.
+    from .answer_presentation import format_knowledge_answer_display
+
     answer = strip_policy_overlay_for_display(result.answer)
-    return f"問題：{_safe_description(issue)}\n\n處理方式：\n{answer}"
+    # Deterministic layout only (lists / paragraph breaks) — no wording rewrite.
+    return format_knowledge_answer_display(answer)
 
 
 def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
@@ -210,12 +213,20 @@ def _render_need_more_info(issue: Issue, result: IssueResult) -> str:
 
 
 def _render_no_knowledge(
-    issue: Issue, result: IssueResult, *, offer_ticket: bool
+    issue: Issue, result: IssueResult, *, offer_ticket: bool, correlation_id: str | None
 ) -> str:
     # Explicit create requests are routed with route=TICKET and should only
     # ask for confirmation — never pretend we searched the knowledge base.
     if offer_ticket and issue.route == "TICKET":
         return "是否需要協助建立派工單？請回覆<是>以建立派工單。"
+
+    from .provider_status import format_provider_busy_message, is_provider_busy_terminal
+
+    if is_provider_busy_terminal(result.terminalReason):
+        return format_provider_busy_message(
+            issue_description=_safe_description(issue),
+            correlation_id=correlation_id,
+        )
 
     # Spec §8.4: never fabricate an answer when the knowledge base has none.
     text = f"問題：{_safe_description(issue)}\n\n目前企業知識庫中查無相關資訊，我無法提供答案。"
@@ -259,8 +270,17 @@ def _render_ticket_delete_denied() -> str:
     )
 
 
-def _render_failed(issue: Issue, correlation_id: str | None) -> str:
+def _render_failed(
+    issue: Issue, result: IssueResult, correlation_id: str | None
+) -> str:
     # Spec §17: never leak IssueResult.error / a stack trace to the user.
+    from .provider_status import format_provider_busy_message, is_provider_busy_terminal
+
+    if is_provider_busy_terminal(result.terminalReason):
+        return format_provider_busy_message(
+            issue_description=_safe_description(issue),
+            correlation_id=correlation_id,
+        )
     text = f"問題：{_safe_description(issue)}\n\n處理時發生問題，請稍後再試。"
     if correlation_id:
         text += f"\n\n追蹤編號：{correlation_id}"
@@ -282,7 +302,10 @@ def _render_result(
         return _render_need_more_info(issue, result)
     if result.resultType == "NO_KNOWLEDGE":
         return _render_no_knowledge(
-            issue, result, offer_ticket=offer_ticket_on_no_knowledge
+            issue,
+            result,
+            offer_ticket=offer_ticket_on_no_knowledge,
+            correlation_id=correlation_id,
         )
     if result.resultType == "TICKET_CREATED":
         return _render_ticket_created(issue, result)
@@ -293,7 +316,7 @@ def _render_result(
     if result.resultType == "TICKET_DELETE_DENIED":
         return _render_ticket_delete_denied()
     # FAILED (and any unrecognised/defensive fallback).
-    return _render_failed(issue, correlation_id)
+    return _render_failed(issue, result, correlation_id)
 
 
 def _render_multi_issue_block(position: int, issue: Issue, content: str) -> str:

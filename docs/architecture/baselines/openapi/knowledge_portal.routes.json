@@ -1,5 +1,5 @@
 {
-  "routeCount": 52,
+  "routeCount": 57,
   "routes": [
     {
       "method": "GET",
@@ -31,6 +31,76 @@
       "operationId": "list_audit_api_audit_events_get",
       "path": "/api/audit-events",
       "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_catalog_draft_api_catalog_get",
+      "path": "/api/catalog",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "approve_catalog_api_catalog_approve_post",
+      "path": "/api/catalog/approve",
+      "requestSchema": "CatalogTransitionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "upsert_catalog_draft_api_catalog_draft_put",
+      "path": "/api/catalog/draft",
+      "requestSchema": "CatalogDraftUpsertRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "reject_catalog_api_catalog_reject_post",
+      "path": "/api/catalog/reject",
+      "requestSchema": "CatalogTransitionRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "submit_catalog_review_api_catalog_submit_review_post",
+      "path": "/api/catalog/submit-review",
+      "requestSchema": "CatalogTransitionRequest",
       "responseSchemas": [
         "HTTPValidationError"
       ],

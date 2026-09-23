@@ -53,7 +53,7 @@ def test_faq_answered_template_matches_spec_13():
     )
 
 
-def test_knowledge_answered_template_matches_spec_13():
+def test_knowledge_answered_leads_with_answer():
     issue = make_issue(id=1, description="VPN 錯誤 691", route="KNOWLEDGE")
     result = IssueResult(
         issueId=1,
@@ -64,11 +64,24 @@ def test_knowledge_answered_template_matches_spec_13():
     built = build_response(
         issues=[issue], results=[result], settings=make_settings()
     )
-    assert built.text == (
-        "問題：VPN 錯誤 691\n\n"
-        "處理方式：\n依照知識文件，請先確認帳號密碼是否已更新……"
-    )
+    assert built.text == "依照知識文件，請先確認帳號密碼是否已更新……"
     assert built.citations == [Citation(title="vpn-guide.md")]
+
+
+def test_knowledge_answered_preserves_multiline_list_and_citation():
+    issue = make_issue(id=1, description="哪些系統可用 AD 自助解鎖？", route="KNOWLEDGE")
+    answer = "可用於以下系統的 AD 帳號鎖定 [S1]：\n\n- CRM\n- OPWEB\n\n> 💡 **注意事項**：請確認正式入口。"
+    result = IssueResult(
+        issueId=1,
+        resultType="KNOWLEDGE_ANSWERED",
+        answer=answer,
+        sources=[Citation(title="AD 帳號與系統解鎖 FAQ")],
+    )
+
+    built = build_response(issues=[issue], results=[result], settings=make_settings())
+
+    assert built.text == answer
+    assert built.citations == result.sources
 
 
 def test_knowledge_answered_source_with_url_renders_markdown_link():
@@ -256,7 +269,7 @@ def test_multi_issue_uses_separate_numbered_sections_for_mixed_results():
         "1. 請問您需要進行什麼操作？\n\n"
         "---\n\n"
         "**問題 2｜大州系統無法連線**\n\n"
-        "處理方式：\n請調整瀏覽器安全性設定。"
+        "請調整瀏覽器安全性設定。"
     )
     assert built.text.count("Webex 相關協助") == 1
     assert built.text.count("大州系統無法連線") == 1
@@ -563,7 +576,15 @@ def test_build_response_sanitises_description_even_if_extractor_gate_is_bypassed
         issueId=1, resultType="KNOWLEDGE_ANSWERED", answer="請重新設定 VPN 用戶端。"
     )
 
-    built = build_response(issues=[issue], results=[result], settings=make_settings())
+    second_issue = make_issue(id=2, description="Outlook 登入問題", route="KNOWLEDGE")
+    second_result = IssueResult(
+        issueId=2, resultType="KNOWLEDGE_ANSWERED", answer="請重新登入 Outlook。"
+    )
+    built = build_response(
+        issues=[issue, second_issue],
+        results=[result, second_result],
+        settings=make_settings(),
+    )
 
     assert leaked_phrase not in built.text
     assert NEUTRAL_DESCRIPTION_PLACEHOLDER in built.text
@@ -593,10 +614,10 @@ def test_build_response_hides_policy_overlay_from_user_facing_text():
     built = build_response(issues=[issue], results=[result], settings=make_settings())
 
     assert "[S1]" in built.text
-    assert "向權責單位確認" in built.text
     assert "請調整 IE 信任的網站設定" in built.text
     assert "POLICY-SEC-003" not in built.text
     assert "系統資安政策提醒" not in built.text
+    assert "向權責單位確認" not in built.text
     assert [citation.chunkId for citation in built.citations] == ["chunk-1"]
 
 

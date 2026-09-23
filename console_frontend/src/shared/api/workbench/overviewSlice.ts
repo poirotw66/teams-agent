@@ -59,23 +59,27 @@ export class OverviewSlice {
   public async setSpikeBroadcast(
     message: string,
     durationHours: number = 2,
-  ): Promise<void> {
-    await postBroadcast(message, durationHours);
+  ): Promise<{ expiresAt: string }> {
+    const response = await postBroadcast(message, durationHours);
+    const expiresAt =
+      typeof response.expires_at === "string" && response.expires_at.trim()
+        ? response.expires_at
+        : new Date(Date.now() + durationHours * 3600 * 1000).toISOString();
+
+    const displayExpires = expiresAt.includes("T")
+      ? expiresAt.slice(0, 16).replace("T", " ")
+      : expiresAt;
 
     if (this.ctx.state.spikeAlert) {
-      const expires = new Date(
-        Date.now() + durationHours * 3600 * 1000,
-      ).toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      });
       this.ctx.state.spikeAlert.active_broadcast = {
         message,
-        expires_at: `${expires} (有效 ${durationHours} 小時)`,
+        expires_at: displayExpires,
       };
+      this.ctx.state.spikeAlert.is_active = true;
       this.ctx.notify();
     }
-    this.ctx.reloads.loadOverview().catch(() => {});
+    void this.ctx.reloads.loadOverview();
+    return { expiresAt: displayExpires };
   }
 
   public dismissSpikeAlert(): void {

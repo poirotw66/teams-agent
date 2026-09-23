@@ -2,6 +2,12 @@ import { ConversationDetail } from "../types";
 import { postConversationAction, fetchConversations } from "./conversationsApi";
 import { WorkbenchSliceContext } from "./storeCore";
 
+type RootCause =
+  | "OUTDATED_DOC"
+  | "MISSING_KNOWLEDGE"
+  | "MISUNDERSTOOD"
+  | "HARDWARE_TICKET";
+
 export class ConversationsSlice {
   constructor(private readonly ctx: WorkbenchSliceContext) {}
 
@@ -27,41 +33,38 @@ export class ConversationsSlice {
   }
 
   public async resolveConversation(conversationId: string): Promise<void> {
-    const conv = this.ctx.state.conversations.find((c) => c.id === conversationId);
-    if (conv) {
-      conv.status = "RESOLVED";
-      if (this.ctx.state.kpis.urgent_attention_count > 0) {
-        this.ctx.state.kpis.urgent_attention_count -= 1;
-      }
-      this.ctx.notify();
-    }
-
     await postConversationAction(conversationId, {
       action: "resolve",
-    }).catch((err) => {
-      console.error("Failed to resolve conversation on server:", err);
     });
+
+    const conv = this.ctx.state.conversations.find((c) => c.id === conversationId);
+    if (!conv) {
+      return;
+    }
+
+    const wasUnresolved = conv.status !== "RESOLVED";
+    conv.status = "RESOLVED";
+    if (wasUnresolved && this.ctx.state.kpis.urgent_attention_count > 0) {
+      this.ctx.state.kpis.urgent_attention_count -= 1;
+    }
+    this.ctx.notify();
   }
 
   public async setRootCause(
     conversationId: string,
-    cause:
-      | "OUTDATED_DOC"
-      | "MISSING_KNOWLEDGE"
-      | "MISUNDERSTOOD"
-      | "HARDWARE_TICKET",
+    cause: RootCause,
   ): Promise<void> {
-    const conv = this.ctx.state.conversations.find((c) => c.id === conversationId);
-    if (conv) {
-      conv.root_cause = cause;
-      this.ctx.notify();
-    }
-
     await postConversationAction(conversationId, {
       action: "root_cause",
       root_cause: cause,
-    }).catch((err) => {
-      console.error("Failed to update root cause on server:", err);
     });
+
+    const conv = this.ctx.state.conversations.find((c) => c.id === conversationId);
+    if (!conv) {
+      return;
+    }
+
+    conv.root_cause = cause;
+    this.ctx.notify();
   }
 }

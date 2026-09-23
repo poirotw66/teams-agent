@@ -182,11 +182,19 @@ def register_static_ui_routes(
 
     @app.get("/knowledge-ui")
     @app.get("/knowledge-ui/")
-    async def knowledge_ui() -> FileResponse:
-        """Same-origin Knowledge Portal UI hosted inside the ops console."""
-        return FileResponse(
-            STATIC_DIR / "knowledge-ui.html",
+    @app.get("/knowledge-ui/{path:path}")
+    async def knowledge_ui(path: str = "") -> HTMLResponse:
+        """Redirect legacy knowledge-ui to console-v2 (no second write flow).
+
+        Serves a tiny hash-aware redirect page so ``#/reviews`` and similar
+        client routes map to console-v2 equivalents without loading the old
+        Portal embed write UI.
+        """
+        del path
+        return HTMLResponse(
+            content=(STATIC_DIR / "knowledge-ui.html").read_text(encoding="utf-8"),
             headers={"Cache-Control": "no-cache, must-revalidate"},
+            status_code=200,
         )
 
     _register_console_v2_routes(app, enabled=settings.console_v2_enabled)

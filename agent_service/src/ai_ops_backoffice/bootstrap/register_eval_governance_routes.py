@@ -75,11 +75,13 @@ def register_eval_governance_routes(app: FastAPI, container: BackofficeContainer
         current_actor=deps.current_actor,
         require_capability=deps.require_capability,
     )
+    # Agent knowledge sync BFF is registered once via register_ops_support_routes.
     app.include_router(
         build_knowledge_router(
             client=container.knowledge_client,
             current_actor=deps.current_actor,
             enabled=container.settings.knowledge_bridge_enabled,
+            settings=container.settings,
         ),
         prefix="/api/knowledge",
     )

@@ -159,8 +159,15 @@ class AgentWorkflow(
     async def run(
         self, request: AgentRequest, *, correlation_id: str | None = None
     ) -> AgentState:
-        from .observability import start_span
+        import time
 
+        from .observability import (
+            METRIC_REQUEST_LATENCY_MS,
+            record_metric_histogram,
+            start_span,
+        )
+
+        started = time.perf_counter()
         with start_span(
             "agent.workflow.run",
             attributes={
@@ -171,6 +178,11 @@ class AgentWorkflow(
         ):
             result: AgentState = await self.graph.ainvoke(
                 self._initial_state(request, correlation_id)
+            )
+            record_metric_histogram(
+                METRIC_REQUEST_LATENCY_MS,
+                (time.perf_counter() - started) * 1000.0,
+                attributes={"component": "agent_workflow"},
             )
             return result
 

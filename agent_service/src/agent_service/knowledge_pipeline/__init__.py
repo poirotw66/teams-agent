@@ -22,6 +22,8 @@ from .document_selection import (
     canonical_version_results,
     inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
+    inject_same_doc_discrimination_evidence,
+    inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
 from .generator import (
@@ -63,7 +65,11 @@ from .planner import (
     missing_diagnosis_facet_queries,
     requested_diagnosis_facets,
 )
-from .policy_overlay import merge_policy_advisories, sanitize_answer_security
+from .policy_overlay import (
+    merge_policy_advisories,
+    repair_answer_markdown_links,
+    sanitize_answer_security,
+)
 from .prompts import ANSWER_PROMPT, CLAIM_REPAIR_PROMPT, REWRITE_PROMPT
 from .relevance import (
     GRADE_PROMPT,
@@ -140,6 +146,8 @@ __all__ = [
     "infer_markers_from_claims",
     "inject_employee_portal_password_evidence",
     "inject_enterprise_app_evidence",
+    "inject_same_doc_discrimination_evidence",
+    "inject_vpn_password_expiry_howto",
     "is_non_production_knowledge_chunk",
     "is_numbered_section",
     "is_unsupported_miss_answer",
@@ -165,6 +173,7 @@ __all__ = [
     "query_lexically_matches_results",
     "remap_answer_citation_markers",
     "remap_claim_marker_ids_to_chunk_ids",
+    "repair_answer_markdown_links",
     "repair_structured_answer",
     "requested_diagnosis_facets",
     "resolve_doc_key_for_marker",

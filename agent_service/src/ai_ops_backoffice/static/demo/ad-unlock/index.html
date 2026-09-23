@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>解鎖申請</title>
+  <style>
+    :root {
+      --page-bg: #f3f2f1;
+      --card-bg: #ffffff;
+      --text: #242424;
+      --muted: #605e5c;
+      --input-bg: #f3f2f1;
+      --input-border: #edebe9;
+      --warn-bg: #fde7e9;
+      --warn-border: #a4262c;
+      --warn-title: #a4262c;
+      --link: #0f6cbd;
+      --btn: #0b6a4a;
+      --btn-hover: #08553b;
+      --required: #a4262c;
+      --focus: #0f6cbd;
+      --shadow: 0 1.6px 3.6px rgba(0, 0, 0, 0.13), 0 0.3px 0.9px rgba(0, 0, 0, 0.11);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "Microsoft JhengHei", "PingFang TC", "Noto Sans TC", sans-serif;
+      color: var(--text);
+      background: var(--page-bg);
+      line-height: 1.5;
+    }
+
+    .page {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 28px 16px 48px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 28px 32px 24px;
+    }
+
+    .warn {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+      background: var(--warn-bg);
+      border: 2px dashed var(--warn-border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 28px;
+    }
+
+    .warn-icon {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      margin-top: 2px;
+    }
+
+    .warn h2 {
+      margin: 0 0 6px;
+      font-size: 18px;
+      color: var(--warn-title);
+      font-weight: 700;
+    }
+
+    .warn p {
+      margin: 0;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    h1 {
+      margin: 0 0 14px;
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .guide-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--link);
+      text-decoration: none;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .guide-link:hover { text-decoration: underline; }
+
+    .bullets {
+      margin: 8px 0 16px;
+      padding-left: 18px;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .bullets li { margin: 4px 0; }
+
+    .contact {
+      font-size: 14px;
+      margin: 12px 0 8px;
+    }
+
+    .contact .label {
+      font-weight: 600;
+      margin: 8px 0 4px;
+    }
+
+    .contact ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    .identity-note {
+      margin: 18px 0 22px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .field {
+      margin-bottom: 22px;
+    }
+
+    .field-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .field-label .req { color: var(--required); margin-left: 2px; }
+
+    .field-hint {
+      margin: -2px 0 8px 28px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .icon {
+      width: 18px;
+      height: 18px;
+      color: #616161;
+      flex: 0 0 auto;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      border: 1px solid transparent;
+      border-bottom: 1px solid #8a8886;
+      border-radius: 2px 2px 0 0;
+      background: var(--input-bg);
+      padding: 10px 12px;
+      font-size: 14px;
+      font-family: inherit;
+      color: var(--text);
+      outline: none;
+    }
+
+    input[type="text"]::placeholder { color: #a19f9d; }
+
+    input[type="text"]:focus {
+      border-bottom: 2px solid var(--focus);
+      background: #ebebeb;
+    }
+
+    input.invalid {
+      border-bottom: 2px solid var(--required);
+    }
+
+    .error {
+      display: none;
+      margin-top: 6px;
+      color: var(--required);
+      font-size: 12px;
+    }
+
+    .error.show { display: block; }
+
+    .submit {
+      margin-top: 8px;
+      border: none;
+      border-radius: 4px;
+      background: var(--btn);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: inherit;
+      padding: 10px 28px;
+      cursor: pointer;
+    }
+
+    .submit:hover { background: var(--btn-hover); }
+    .submit:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .success {
+      display: none;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 4px;
+      background: #dff6dd;
+      color: #0e700e;
+      font-size: 14px;
+    }
+
+    .success.show { display: block; }
+
+    .powered {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 28px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .lists-mark {
+      width: 18px;
+      height: 18px;
+      border-radius: 3px;
+      background: linear-gradient(135deg, #d83b01 0%, #ca5010 55%, #ffb900 100%);
+      position: relative;
+    }
+
+    .lists-mark::after {
+      content: "";
+      position: absolute;
+      inset: 4px 3px;
+      border-left: 2px solid #fff;
+      border-right: 2px solid rgba(255,255,255,0.7);
+      opacity: 0.95;
+    }
+
+    .disclaimer {
+      margin-top: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    @media (max-width: 640px) {
+      .card { padding: 20px 16px 18px; }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="card" aria-labelledby="form-title">
+      <div class="warn" role="status">
+        <svg class="warn-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#a4262c" d="M12 2L1 21h22L12 2zm0 4.5l7.2 12.5H4.8L12 6.5z"/>
+          <rect x="11" y="10" width="2" height="5" fill="#fff"/>
+          <rect x="11" y="16.5" width="2" height="2" fill="#fff"/>
+        </svg>
+        <div>
+          <h2>此為測試環境 (非正式環境)</h2>
+          <p>本系統僅供測試使用，送出之申請不會進入正式流程，不會實際進行帳號解鎖，亦不會影響您的正式帳號。</p>
+        </div>
+      </div>
+
+      <h1 id="form-title">解鎖申請</h1>
+
+      <a class="guide-link" href="#guide" id="guide">🔐 開機密碼自助解鎖申請說明</a>
+      <ul class="bullets">
+        <li>送出申請後，系統約 2 分鐘內完成解鎖</li>
+        <li>本服務僅限內網使用</li>
+        <li>每日最多 3 次 解鎖申請</li>
+      </ul>
+
+      <div class="contact">
+        <div>💜 若對上述自助解鎖流程有任何疑問，歡迎與我們聯繫。</div>
+        <div class="label">📞 聯繫方式</div>
+        <ul>
+          <li>CTeam 使用者：請透過 IT 資訊小幫手 2.0 進行回饋。</li>
+          <li>資訊服務窗口 123：(02) 7711-1123 分機 123</li>
+        </ul>
+      </div>
+
+      <p class="identity-note">您好 Demo User，當您提交此表單時，擁有者會看到您的姓名和電子郵件地址。</p>
+
+      <form id="unlock-form" novalidate>
+        <div class="field">
+          <label class="field-label" for="emp-id">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5z"/></svg>
+            員工編號<span class="req">*</span>
+          </label>
+          <input id="emp-id" name="employeeId" type="text" placeholder="在這裡輸入值" autocomplete="off" required />
+          <div class="error" data-for="emp-id">此欄位為必填</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="mobile-tail">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M15.5 1h-7A2.5 2.5 0 0 0 6 3.5v17A2.5 2.5 0 0 0 8.5 23h7a2.5 2.5 0 0 0 2.5-2.5v-17A2.5 2.5 0 0 0 15.5 1zm-3.5 20a1.25 1.25 0 1 1 1.25-1.25A1.25 1.25 0 0 1 12 21zm4-3.5H8V4h8z"/></svg>
+            手機後三碼<span class="req">*</span>
+          </label>
+          <input id="mobile-tail" name="mobileTail" type="text" inputmode="numeric" maxlength="3" placeholder="在這裡輸入值" autocomplete="off" required />
+          <div class="error" data-for="mobile-tail">請輸入手機後三碼（3 位數字）</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="id-tail">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4V6h16zm-9-3h7v2h-7zm-4.5-1.5A2.5 2.5 0 1 1 9 11a2.5 2.5 0 0 1-2.5 2.5zM5 17.5c0-1.4 1.8-2.2 3.5-2.2s3.5.8 3.5 2.2V18H5z"/></svg>
+            身分證後四位<span class="req">*</span>
+          </label>
+          <input id="id-tail" name="idTail" type="text" maxlength="4" placeholder="在這裡輸入值" autocomplete="off" required />
+          <div class="error" data-for="id-tail">請輸入身分證後四位</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="birth-year">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M19 4h-1V2h-2v2H8V2H6v2H5a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 15H5V10h14zm0-11H5V6h14z"/></svg>
+            生日年份<span class="req">*</span>
+          </label>
+          <div class="field-hint">西元年份 EX：19XX(四位數)</div>
+          <input id="birth-year" name="birthYear" type="text" inputmode="numeric" maxlength="4" placeholder="在這裡輸入值" autocomplete="off" required />
+          <div class="error" data-for="birth-year">請輸入四位數西元出生年份</div>
+        </div>
+
+        <button class="submit" type="submit" id="submit-btn">提交</button>
+        <div class="success" id="success-msg" role="status">
+          已送出（測試環境模擬）。此申請不會進入正式流程，亦不會實際解鎖帳號。
+        </div>
+      </form>
+
+      <div class="powered">
+        <span class="lists-mark" aria-hidden="true"></span>
+        <span>由 Microsoft Lists 提供</span>
+      </div>
+      <p class="disclaimer">此內容是由表單擁有者所建立。您提交的資料將會傳送給表單擁有者。永遠不提供您的密碼。</p>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const form = document.getElementById("unlock-form");
+      const success = document.getElementById("success-msg");
+      const submitBtn = document.getElementById("submit-btn");
+
+      const rules = {
+        "emp-id": (v) => v.trim().length > 0,
+        "mobile-tail": (v) => /^\d{3}$/.test(v.trim()),
+        "id-tail": (v) => v.trim().length === 4,
+        "birth-year": (v) => /^(19|20)\d{2}$/.test(v.trim()),
+      };
+
+      function setInvalid(id, invalid) {
+        const input = document.getElementById(id);
+        const error = document.querySelector('.error[data-for="' + id + '"]');
+        input.classList.toggle("invalid", invalid);
+        if (error) error.classList.toggle("show", invalid);
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        success.classList.remove("show");
+        let ok = true;
+        Object.keys(rules).forEach(function (id) {
+          const value = document.getElementById(id).value;
+          const valid = rules[id](value);
+          setInvalid(id, !valid);
+          if (!valid) ok = false;
+        });
+        if (!ok) return;
+        submitBtn.disabled = true;
+        success.classList.add("show");
+        window.setTimeout(function () {
+          submitBtn.disabled = false;
+        }, 800);
+      });
+
+      Object.keys(rules).forEach(function (id) {
+        document.getElementById(id).addEventListener("input", function () {
+          setInvalid(id, false);
+          success.classList.remove("show");
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

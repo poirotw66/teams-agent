@@ -22,6 +22,7 @@ from .source_link_signing import (
 )
 from .viewer_sessions import (
     InMemoryViewerMembershipStore,
+    ViewerMembership,
     ViewerMembershipResolver,
     get_viewer_membership_store,
 )
@@ -73,6 +74,40 @@ def _bind_viewer_subject(
     return claimed_subject, auth_subject or claimed_subject
 
 
+def _resolve_or_seed_lab_membership(
+    store: InMemoryViewerMembershipStore | ViewerMembershipResolver,
+    *,
+    subject: str,
+    settings: CitationGatewaySettings,
+    tenant_id: str | None,
+    now: float,
+) -> ViewerMembership | None:
+    """Resolve membership, seeding a short-lived lab entry when local escape hatch is on.
+
+    Local ``DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS`` trusts a verified signed
+    URL subject without a prior chat-turn membership refresh. Call only after the
+    HMAC signature has been verified.
+    """
+
+    membership = store.resolve(subject, now=now)
+    if membership is not None:
+        return membership
+    if not settings.allow_unauthenticated_requests:
+        return None
+    remember = getattr(store, "remember", None)
+    if not callable(remember):
+        return None
+    claimed_tenant = str(tenant_id or "").strip() or "default"
+    return remember(
+        subject,
+        groups=("grp_public",),
+        tenant_id=claimed_tenant,
+        revoked=False,
+        ttl_seconds=float(settings.asset_url_ttl_seconds),
+        now=now,
+    )
+
+
 def authorize_original_open(
     source_ref_id: str,
     expires: str | None,
@@ -112,7 +147,13 @@ def authorize_original_open(
         raise PermissionError("Invalid source signature.")
 
     store = membership_store or get_viewer_membership_store(settings)
-    membership = store.resolve(viewer_subject, now=float(current_time))
+    membership = _resolve_or_seed_lab_membership(
+        store,
+        subject=viewer_subject,
+        settings=settings,
+        tenant_id=tenant_id,
+        now=float(current_time),
+    )
     if membership is None:
         raise PermissionError("Viewer membership is required to open a source citation.")
     if membership.revoked:
@@ -243,7 +284,13 @@ def authorize_source_open(
         raise PermissionError("Source reference not found or access denied.")
 
     store = membership_store or get_viewer_membership_store(settings)
-    membership = store.resolve(subject, now=now)
+    membership = _resolve_or_seed_lab_membership(
+        store,
+        subject=subject,
+        settings=settings,
+        tenant_id=tenant_id,
+        now=float(time() if now is None else now),
+    )
     if membership is None:
         raise PermissionError("Source reference not found or access denied.")
     if membership.revoked:

@@ -15,6 +15,10 @@ from knowledge_core.source_resolution import (
 
 from .source_models import MappingStatus
 from .source_repository import BoundedSourceCache, SourceRecordRepository
+from .source_trace_gcs import (
+    materialize_release_preview_artifacts,
+    read_firestore_active_release_id,
+)
 from .source_trace_locator import build_locator, match_chunk
 from .source_trace_mapping import resolved_to_source_record, source_record_to_resolved
 from .source_trace_release import ReleaseLoad, list_release_ids, load_release
@@ -247,6 +251,8 @@ def resolve_source_ref(
     cache: BoundedSourceCache,
     source_ref_id: str,
     tenant_id: str = "default",
+    gcp_project_id: str | None = None,
+    firestore_database: str | None = "(default)",
 ) -> ResolvedSource | None:
     """Resolve a source reference directly using O(1) bounded cache and repository."""
     if not source_ref_id or not re.fullmatch(r"src-[0-9a-f]{24}", source_ref_id):
@@ -265,7 +271,7 @@ def resolve_source_ref(
         cache.put(rec)
         return source_record_to_resolved(rec)
 
-    # 3. Fallback only for legacy unindexed release directories
+    # 3. Fallback only for legacy unindexed release directories (and cloud GCS)
     return _resolve_source_ref_from_releases(
         releases_dir=releases_dir,
         release_cache=release_cache,
@@ -273,6 +279,8 @@ def resolve_source_ref(
         cache=cache,
         source_ref_id=source_ref_id,
         tenant_id=tenant_id,
+        gcp_project_id=gcp_project_id,
+        firestore_database=firestore_database,
     )
 
 
@@ -284,8 +292,31 @@ def _resolve_source_ref_from_releases(
     cache: BoundedSourceCache,
     source_ref_id: str,
     tenant_id: str,
+    gcp_project_id: str | None = None,
+    firestore_database: str | None = "(default)",
 ) -> ResolvedSource | None:
-    for release_id in list_release_ids(releases_dir):
+    preferred = read_firestore_active_release_id(
+        project_id=gcp_project_id,
+        database=firestore_database,
+    )
+    if preferred:
+        materialize_release_preview_artifacts(
+            releases_dir,
+            preferred,
+            project_id=gcp_project_id,
+            firestore_database=firestore_database,
+        )
+    for release_id in list_release_ids(releases_dir, preferred):
+        if (
+            gcp_project_id
+            and not (releases_dir / release_id / "index" / "chunks.json").is_file()
+        ):
+            materialize_release_preview_artifacts(
+                releases_dir,
+                release_id,
+                project_id=gcp_project_id,
+                firestore_database=firestore_database,
+            )
         loaded = load_release(releases_dir, release_id, release_cache)
         if loaded is None:
             continue

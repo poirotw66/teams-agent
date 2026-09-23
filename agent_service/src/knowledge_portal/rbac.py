@@ -18,6 +18,8 @@ OPERATIONAL_ROLE_RANK = {
 
 REVIEW_ROLES: frozenset[PortalRole] = frozenset({"REVIEWER", "MANAGER", "PLATFORM"})
 PUBLISH_ROLES: frozenset[PortalRole] = frozenset({"MANAGER", "PLATFORM"})
+# Catalog approve is intentionally distinct from document publish RBAC.
+CATALOG_APPROVE_ROLES: frozenset[PortalRole] = frozenset({"MANAGER", "PLATFORM"})
 AUDIT_ROLES: frozenset[PortalRole] = frozenset({"AUDITOR", "MANAGER", "PLATFORM"})
 
 
@@ -114,6 +116,28 @@ def ensure_can_review(
 def ensure_can_publish(actor: PortalActor) -> None:
     if actor.role not in PUBLISH_ROLES:
         raise PortalPermissionError("You do not have permission to publish documents.")
+
+
+def ensure_can_approve_catalog(
+    actor: PortalActor,
+    submitted_by: str,
+    *,
+    relaxed_workflow: bool = False,
+) -> None:
+    """Approve service-catalog drafts (not document/release publish).
+
+    Managers/PLATFORM only. Reuses submitter≠approver SoD unless PLATFORM or
+    relaxed workflow. Callers must not substitute ``ensure_can_publish``.
+    """
+    if actor.role not in CATALOG_APPROVE_ROLES:
+        raise PortalPermissionError(
+            "You do not have permission to approve the service catalog."
+        )
+    ensure_can_review(
+        actor,
+        submitted_by,
+        relaxed_workflow=relaxed_workflow,
+    )
 
 
 def can_view_audit(actor: PortalActor) -> bool:

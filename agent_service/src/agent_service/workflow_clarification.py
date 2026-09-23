@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from .confirmation import (
     TicketIntent,
@@ -11,6 +12,7 @@ from .confirmation import (
 from .contracts import AgentRequest, ConversationContext
 from .execution_context import ExecutionContext
 from .graph import user_context_from_identity
+from .service_scope_evidence import has_service_scope_evidence
 from .supervisor import ConversationSupervisorDecision
 from .turn_planner import (
     planned_issues_to_issues,
@@ -27,6 +29,8 @@ from .workflow_pending_helpers import (
     _has_pending_ticket_offer,
     _pending_clarifications,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ClarificationWorkflowMixin:
@@ -70,6 +74,11 @@ class ClarificationWorkflowMixin:
             return routing
 
         if decision.intent == "NON_IT":
+            # In-scope service-directory evidence vetoes high-confidence NON_IT
+            # short-circuit. Continue into the issue pipeline so retrieval (or
+            # a knowledge-miss) decides answerability — never claim「非 IT」.
+            if has_service_scope_evidence(request.message.text):
+                return routing
             return {
                 **routing,
                 "skip_issue_pipeline": True,
@@ -121,32 +130,22 @@ class ClarificationWorkflowMixin:
         )
         recent_turns = _conversation_turns_for_supervisor(conversation) or None
         planned_issues: list = []
-        if self.settings.turn_planner_enabled:
-            turn_plan = await self.turn_planner.plan(
-                message=request.message.text,
-                pending_clarification=pending_clarification,
-                recent_turns=recent_turns,
-                execution_context=execution_context,
-            )
-            supervisor_decision = turn_plan_to_supervisor_decision(turn_plan)
-            if turn_plan.issues:
-                faq_keys = await asyncio.to_thread(
-                    self.faq_service.available_keys,
-                    tuple(request.user.groups),
-                )
-                planned_issues = planned_issues_to_issues(
-                    turn_plan.issues,
-                    raw_utterance=request.message.text,
-                    allowed_faq_keys=set(faq_keys),
-                    max_missing_info=self.settings.max_missing_info_per_issue,
-                )
-        else:
-            supervisor_decision = await self.supervisor.decide(
-                message=request.message.text,
-                pending_clarification=pending_clarification,
-                recent_turns=recent_turns,
-                execution_context=execution_context,
-            )
+        from .turn_planner_policy import should_invoke_turn_planner
+
+        use_turn_planner = should_invoke_turn_planner(
+            mode=getattr(self.settings, "turn_planner_mode", "OFF"),
+            message=request.message.text,
+            pending_clarification=pending_clarification,
+            recent_turns=list(recent_turns or []),
+            has_pending_ticket_offer=_has_pending_ticket_offer(conversation),
+        )
+        supervisor_decision, planned_issues, use_turn_planner = await self._resolve_turn_plan(
+            request=request,
+            execution_context=execution_context,
+            pending_clarification=pending_clarification,
+            recent_turns=recent_turns,
+            use_turn_planner=use_turn_planner,
+        )
         routing = self._apply_supervisor_routing(conversation, request, supervisor_decision)
         return {
             "user": user,
@@ -158,6 +157,68 @@ class ClarificationWorkflowMixin:
             "planned_issues": planned_issues,
             **routing,
         }
+
+    async def _resolve_turn_plan(
+        self,
+        *,
+        request: AgentRequest,
+        execution_context: ExecutionContext,
+        pending_clarification: bool,
+        recent_turns: list | None,
+        use_turn_planner: bool,
+    ) -> tuple[object, list, bool]:
+        planned_issues: list = []
+        if use_turn_planner:
+            try:
+                from .observability import (
+                    METRIC_TURN_PLANNER_SELECTED,
+                    record_metric_counter,
+                )
+
+                record_metric_counter(METRIC_TURN_PLANNER_SELECTED)
+                turn_plan = await self.turn_planner.plan(
+                    message=request.message.text,
+                    pending_clarification=pending_clarification,
+                    recent_turns=recent_turns,
+                    execution_context=execution_context,
+                )
+            except Exception:
+                from .observability import (
+                    METRIC_TURN_PLANNER_FALLBACK,
+                    record_metric_counter,
+                )
+
+                record_metric_counter(
+                    METRIC_TURN_PLANNER_FALLBACK,
+                    attributes={"exception_type": "TurnPlannerError"},
+                )
+                logger.exception(
+                    "turn_planner_fallback_total exception_type=%s",
+                    "TurnPlannerError",
+                )
+                use_turn_planner = False
+                turn_plan = None
+            if use_turn_planner and turn_plan is not None:
+                supervisor_decision = turn_plan_to_supervisor_decision(turn_plan)
+                if turn_plan.issues:
+                    faq_keys = await asyncio.to_thread(
+                        self.faq_service.available_keys,
+                        tuple(request.user.groups),
+                    )
+                    planned_issues = planned_issues_to_issues(
+                        turn_plan.issues,
+                        raw_utterance=request.message.text,
+                        allowed_faq_keys=set(faq_keys),
+                        max_missing_info=self.settings.max_missing_info_per_issue,
+                    )
+                return supervisor_decision, planned_issues, True
+        supervisor_decision = await self.supervisor.decide(
+            message=request.message.text,
+            pending_clarification=pending_clarification,
+            recent_turns=recent_turns,
+            execution_context=execution_context,
+        )
+        return supervisor_decision, planned_issues, False
 
     async def _extract_issues(self, state: AgentState) -> dict:
         from .workflow_clarification_extract import (
@@ -195,6 +256,7 @@ class ClarificationWorkflowMixin:
             requested_offer_contexts=requested_offer_contexts,
             prior_pending_issues=prior_pending_issues,
             decision=decision,
+            latest_text=request.message.text,
         )
         if issues is None:
             issues, too_many_issues = await resolve_issues_for_extraction(

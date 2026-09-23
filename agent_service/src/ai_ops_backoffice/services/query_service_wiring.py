@@ -54,6 +54,8 @@ def build_source_trace(
         releases_dir,
         source_repository=source_repository,
         artifact_storage=resolved_artifact_storage,
+        gcp_project_id=getattr(settings, "gcp_project_id", None),
+        firestore_database=getattr(settings, "firestore_database", None) or "(default)",
     )
 
 

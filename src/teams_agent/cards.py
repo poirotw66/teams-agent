@@ -6,6 +6,7 @@ from .contracts import (
     format_agent_response,
     format_turn_cost_line,
 )
+from .formatting import extract_answer_urls, open_url_action_title
 from .settings import AgentSettings
 from .source_links import CitationViewerContext, enrich_citation_urls
 
@@ -109,6 +110,23 @@ def _feedback_action(
     }
 
 
+def _answer_open_url_actions(response: AgentResponse) -> list[dict[str, object]]:
+    """OpenUrl buttons for http(s) links that appear in the answer body.
+
+    Adaptive Card TextBlock markdown links are not reliably clickable in
+    Agents Playground. Always surface answer-body URLs as ``Action.OpenUrl``
+    so the host can open them.
+    """
+    return [
+        {
+            "type": "Action.OpenUrl",
+            "title": open_url_action_title(url),
+            "url": url,
+        }
+        for url in extract_answer_urls(response.answer)
+    ]
+
+
 def _source_open_actions(
     response: AgentResponse, *, enabled: bool
 ) -> list[dict[str, object]]:
@@ -151,6 +169,16 @@ def _source_open_actions(
     return actions
 
 
+def _card_open_url_actions(
+    response: AgentResponse, *, citation_open_actions_enabled: bool
+) -> list[dict[str, object]]:
+    """Answer-body URL actions first, then optional citation source actions."""
+    return [
+        *_answer_open_url_actions(response),
+        *_source_open_actions(response, enabled=citation_open_actions_enabled),
+    ]
+
+
 def _card_activity(
     response: AgentResponse,
     body: list[dict[str, object]],
@@ -168,11 +196,11 @@ def _card_activity(
         "version": "1.5",
         "body": body,
     }
-    source_actions = _source_open_actions(
-        response, enabled=citation_open_actions_enabled
+    open_url_actions = _card_open_url_actions(
+        response, citation_open_actions_enabled=citation_open_actions_enabled
     )
-    if source_actions:
-        card["actions"] = source_actions
+    if open_url_actions:
+        card["actions"] = open_url_actions
     return MessageActivityInput(
         summary=response.answer[:200],
         attachments=[
@@ -191,10 +219,12 @@ def _text_only_activity(
     feedback_issue_ids: list[int],
     citation_actions_enabled: bool,
 ) -> MessageActivityInput | str:
-    has_source_actions = bool(
-        _source_open_actions(response, enabled=citation_actions_enabled)
+    has_open_url_actions = bool(
+        _card_open_url_actions(
+            response, citation_open_actions_enabled=citation_actions_enabled
+        )
     )
-    if not feedback_issue_ids and not has_source_actions:
+    if not feedback_issue_ids and not has_open_url_actions:
         return format_agent_response(response)
     body: list[dict[str, object]] = [
         {

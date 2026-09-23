@@ -45,6 +45,7 @@ from .gemini_file_search_result import (
 )
 from .gemini_file_search_sdk import import_genai
 from .knowledge import answer_indicates_insufficient_information
+from .knowledge_pipeline.policy_overlay import repair_answer_markdown_links
 from .llm_call_counter import LlmCallCounter
 from .usage_events import extract_file_search_usage_from_result
 
@@ -292,7 +293,9 @@ class GeminiFileSearchKnowledgeService:
                 decision="NO_GROUNDING",
                 terminal_reason="NO_RELEVANT_EVIDENCE",
             )
-        answer = canonicalize_legacy_terms(response_text(response), chunks)
+        answer = repair_answer_markdown_links(
+            canonicalize_legacy_terms(response_text(response), chunks)
+        )
         if answer_indicates_insufficient_information(answer):
             return self._with_trace(
                 empty_miss_result(),

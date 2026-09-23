@@ -8,7 +8,7 @@ import {
 } from "@ant-design/icons";
 import { ManualChunkItem } from "../../../shared/api/types";
 import { MarkdownChunkContent } from "./MarkdownChunkContent";
-import { QUALITY_ISSUE_LABELS } from "./chunkInspectorUtils";
+import { QUALITY_ISSUE_LABELS, hasBlockingChunkIssues } from "./chunkInspectorUtils";
 
 const { Text } = Typography;
 
@@ -34,7 +34,8 @@ export const ChunkInspectorChunkCard: React.FC<ChunkInspectorChunkCardProps> = (
   const fullContent = chunk.content || chunk.content_preview;
   const charCount = chunk.character_count || fullContent.length;
   const qualityIssues = chunk.quality_issues || [];
-  const isProblematic = qualityIssues.length > 0;
+  const isProblematic = hasBlockingChunkIssues(qualityIssues);
+  const hasShortWarning = qualityIssues.includes("SHORT");
 
   const handleCopyChunk = (text: string) => {
     if (!text) return;
@@ -51,14 +52,18 @@ export const ChunkInspectorChunkCard: React.FC<ChunkInspectorChunkCardProps> = (
         borderRadius: 8,
         border: isProblematic
           ? "2px solid #D97706"
-          : isExpanded
-            ? "1px solid #5B5FC7"
-            : "1px solid #E1DFDD",
+          : hasShortWarning
+            ? "1px solid #FBBF24"
+            : isExpanded
+              ? "1px solid #5B5FC7"
+              : "1px solid #E1DFDD",
         backgroundColor: isProblematic
           ? "#FFF8E8"
-          : isExpanded
-            ? "#FFFFFF"
-            : "#FAFAFC",
+          : hasShortWarning
+            ? "#FFFBEB"
+            : isExpanded
+              ? "#FFFFFF"
+              : "#FAFAFC",
         transition: "all 0.2s ease",
       }}
     >
@@ -104,7 +109,7 @@ export const ChunkInspectorChunkCard: React.FC<ChunkInspectorChunkCardProps> = (
             <Tag>Parent {chunk.parent_id.split("-").pop()}</Tag>
           )}
           {qualityIssues.map((issue) => (
-            <Tag key={issue} color="warning">
+            <Tag key={issue} color={issue === "SHORT" ? "default" : "warning"}>
               {QUALITY_ISSUE_LABELS[issue]}
             </Tag>
           ))}

@@ -44,6 +44,16 @@ _COMPARISON_QUERY_MARKERS: tuple[str, ...] = (
     "不同之處",
     "差異",
     "比較",
+    # Same-document discrimination (“are these the same doc?”).
+    "是不是同一份",
+    "是不是同一篇",
+    "是不是同一個",
+    "同一份",
+    "同一篇",
+    "vs",
+)
+_ADJACENT_PRODUCT_PAIR_MARKERS: tuple[tuple[str, str], ...] = (
+    ("樹精靈", "超音樹"),
 )
 _NUMBERED_SECTION_RE = re.compile(r"^(?:[#\s]*\d+[\.\-\s]|目錄)")
 
@@ -58,7 +68,16 @@ def query_asks_for_error_branch_selection(query: str) -> bool:
 
 def query_asks_for_comparison(query: str) -> bool:
     """True when the query asks to compare entities/docs (needs multi-doc Top-k)."""
-    return any(marker in query for marker in _COMPARISON_QUERY_MARKERS)
+    text = query or ""
+    if any(marker in text for marker in _COMPARISON_QUERY_MARKERS):
+        return True
+    if "vs" in text.casefold():
+        return True
+    # Naming both adjacent products in one ask is discrimination even without
+    # 「是不是同一份」/「vs」(Playground often uses short「A vs B」or「A跟B」).
+    return any(
+        left in text and right in text for left, right in _ADJACENT_PRODUCT_PAIR_MARKERS
+    )
 
 
 def query_asks_for_multi_section_selection(query: str) -> bool:

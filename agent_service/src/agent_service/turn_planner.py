@@ -55,9 +55,10 @@ _SYSTEM_PROMPT = """You are the Turn Planner for an enterprise IT helpdesk agent
 Return structured JSON only. In ONE call decide routing AND extract IT issues.
 
 Classify intent (same meanings as the conversation supervisor):
-- IT_SUPPORT: company systems, devices, accounts, permissions, software, errors
+- IT_SUPPORT: company systems, devices, accounts, permissions, software, errors.
+  IT service-request examples: 座位搬遷 / 座位遷移 / 換座位 / 電腦聯繫單 — not NON_IT.
 - GREETING: greetings/thanks without an IT question
-- NON_IT: clearly outside IT
+- NON_IT: clearly outside IT (food/weather/general knowledge)
 - ASSISTANT_META: what this assistant can do / IT service scope
 - HUMAN_ESCALATION: contact live human support
 - TICKET_QUERY / TICKET_CREATE: ticket list or explicit create
@@ -74,6 +75,7 @@ When intent is IT_SUPPORT, populate issues[] (max 3):
 When intent is GREETING / NON_IT / ASSISTANT_META / HUMAN_ESCALATION /
 TICKET_*, leave issues[] empty — routing handles those paths.
 Prefer explicit user meaning. Mixed IT + non-IT → IT_SUPPORT with IT issues only.
+Refusal remains gated by policy and retrieval evidence, not this planner alone.
 """
 
 
@@ -95,8 +97,11 @@ def planned_issues_to_issues(
     max_missing_info: int,
 ) -> list[Issue]:
     """Coerce planner issues through the same normalizer as the extractor."""
+    limited = planned[:3]
+    # Match extractor postprocess: utterance-level evidence only on single-issue.
+    utterance_for_coerce = raw_utterance if len(limited) == 1 else ""
     issues: list[Issue] = []
-    for index, item in enumerate(planned[:3], start=1):
+    for index, item in enumerate(limited, start=1):
         draft = Issue(
             id=index,
             description=item.description,
@@ -114,7 +119,7 @@ def planned_issues_to_issues(
                 new_id=index,
                 allowed_faq_keys=allowed_faq_keys,
                 max_missing_info=max_missing_info,
-                raw_utterance=raw_utterance,
+                raw_utterance=utterance_for_coerce,
             )
         )
     return issues

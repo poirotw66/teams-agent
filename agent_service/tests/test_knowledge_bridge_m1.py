@@ -341,17 +341,20 @@ def test_capabilities_advertise_knowledge_bridge(tmp_path: Path) -> None:
     body = response.json()
     assert body["knowledgeBridgeEnabled"] is True
     assert "knowledge.read" in body["knowledgeCapabilities"]
-    assert body["knowledgeUiUrl"] == "/knowledge-ui/#/knowledge"
+    assert body["knowledgeUiUrl"] == "/console-v2/knowledge"
 
 
-def test_knowledge_ui_same_origin_entry(tmp_path: Path) -> None:
+def test_knowledge_ui_redirects_to_console_v2(tmp_path: Path) -> None:
     client = TestClient(create_app(_backoffice_settings(tmp_path, bridge=True)))
     page = client.get("/knowledge-ui/")
     assert page.status_code == 200
-    assert b"__AI_OPS_KNOWLEDGE_EMBED__" in page.content
-    assert b"/static/kp/" in page.content
-    css = client.get("/static/kp/styles.css")
-    assert css.status_code == 200
+    assert b"console-v2" in page.content
+    assert b"location.replace" in page.content
+    assert b"__AI_OPS_EMBED_SESSION__" not in page.content
+    assert b"/static/kp/js/main.js" not in page.content
+    nested = client.get("/knowledge-ui/legacy-path")
+    assert nested.status_code == 200
+    assert b"/console-v2/knowledge" in nested.content
 
 
 def test_in_process_portal_mount_and_e2e_request(tmp_path: Path) -> None:

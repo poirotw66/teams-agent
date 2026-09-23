@@ -1,5 +1,5 @@
 {
-  "routeCount": 15,
+  "routeCount": 17,
   "routes": [
     {
       "method": "GET",
@@ -31,8 +31,36 @@
     },
     {
       "method": "GET",
+      "operationId": "get_knowledge_mirror_document_admin_knowledge_mirror_documents__document_id__get",
+      "path": "/admin/knowledge-mirror-documents/{document_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
       "operationId": "get_knowledge_status_admin_knowledge_status_get",
       "path": "/admin/knowledge-status",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "sync_knowledge_release_admin_knowledge_sync_post",
+      "path": "/admin/knowledge-sync",
       "requestSchema": null,
       "responseSchemas": [
         "HTTPValidationError"

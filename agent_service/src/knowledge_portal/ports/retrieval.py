@@ -35,7 +35,7 @@ class HybridIndexPort(Protocol):
     def save(self, index_path: Path) -> None:
         ...
 
-    def add_embeddings(self) -> None:
+    def add_embeddings(self, *, only_missing: bool = False) -> None:
         ...
 
 

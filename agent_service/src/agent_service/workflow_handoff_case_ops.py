@@ -21,6 +21,7 @@ from .handoff_flow import (
     deterministic_summary,
     offer_message,
 )
+from .provider_status import is_provider_busy_terminal
 from .workflow_handoff_common import HandoffCommonOps
 from .workflow_helpers import AgentState
 
@@ -295,6 +296,7 @@ class HandoffCaseOps(HandoffCommonOps):
             result.issueId
             for result in state.get("issue_results", [])
             if result.resultType in {"NO_KNOWLEDGE", "FAILED"}
+            and not is_provider_busy_terminal(result.terminalReason)
         }
         if not trigger_results:
             return {"handoff_handled": False}

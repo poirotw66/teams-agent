@@ -138,6 +138,14 @@ def load_ops_store_env(ops_dir: Path, primary_store_mode: str) -> dict[str, Any]
     }
 
 
+def _knowledge_workspace_mode_env() -> dict[str, str | None]:
+    mode = (os.environ.get("AI_OPS_KNOWLEDGE_WORKSPACE_MODE") or "").strip().upper() or None
+    return {
+        "knowledge_workspace_mode": mode,
+        "knowledge_workspace_mode_default": mode,
+    }
+
+
 def load_knowledge_bridge_env() -> dict[str, Any]:
     public_url = os.environ.get(
         "KNOWLEDGE_PORTAL_PUBLIC_URL", "http://127.0.0.1:8091"
@@ -168,6 +176,11 @@ def load_knowledge_bridge_env() -> dict[str, Any]:
         ),
         "knowledge_in_process": truthy(
             os.environ.get("AI_OPS_KNOWLEDGE_IN_PROCESS", "true"),
+            extras={"on"},
+        ),
+        **_knowledge_workspace_mode_env(),
+        "knowledge_cloud_formal_writes_enabled": truthy(
+            os.environ.get("AI_OPS_KNOWLEDGE_CLOUD_FORMAL_WRITES", "false"),
             extras={"on"},
         ),
     }

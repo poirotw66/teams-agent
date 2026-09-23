@@ -32,6 +32,19 @@ def _str_env(name: str) -> str | None:
     return environ.get(name, "").strip() or None
 
 
+def _resolve_turn_planner_mode() -> str:
+    """Prefer TURN_PLANNER_MODE; else map TURN_PLANNER_ENABLED to OFF/ALL."""
+    mode = (_str_env("TURN_PLANNER_MODE") or "").upper()
+    if mode:
+        if mode not in {"OFF", "CONTEXTUAL", "ALL"}:
+            raise ValueError(
+                "TURN_PLANNER_MODE must be OFF, CONTEXTUAL, or ALL; "
+                f"got {mode!r}"
+            )
+        return mode
+    return "ALL" if _bool_env("TURN_PLANNER_ENABLED", False) else "OFF"
+
+
 def resolve_paths(project_dir: Path) -> tuple[Path, Path, Path, Path, Path, Path]:
     raw = environ.get("RAG_DATA_DIR")
     if raw and Path(raw).is_absolute():
@@ -67,6 +80,13 @@ def load_core_rag_env(
         "model": environ.get("RAG_MODEL", "").strip() or None,
         "agent_model": environ.get("AGENT_MODEL", "").strip() or None,
         "embedding_model": environ.get("RAG_EMBEDDING_MODEL", "").strip() or None,
+        "rag_answer_model": environ.get("RAG_ANSWER_MODEL", "").strip() or None,
+        "rag_relevance_model": environ.get("RAG_RELEVANCE_MODEL", "").strip() or None,
+        "rag_rewrite_model": environ.get("RAG_REWRITE_MODEL", "").strip() or None,
+        "rag_hard_answer_model": environ.get("RAG_HARD_ANSWER_MODEL", "").strip() or None,
+        "rag_answer_escalation_policy": (
+            environ.get("RAG_ANSWER_ESCALATION_POLICY", "OFF").strip().upper() or "OFF"
+        ),
         "top_k": _int_env("RAG_TOP_K", 4),
         "min_score": _float_env("RAG_MIN_SCORE", 0.08),
         "max_rewrites": _int_env("RAG_MAX_REWRITES", 1),
@@ -104,7 +124,12 @@ def load_issue_cost_controls_env() -> dict[str, Any]:
             "SUPERVISOR_TERMINAL_CONFIDENCE", 0.9
         ),
         "turn_planner_enabled": _bool_env("TURN_PLANNER_ENABLED", False),
+        "turn_planner_mode": _resolve_turn_planner_mode(),
         "max_llm_calls_per_request": _int_env("MAX_LLM_CALLS_PER_REQUEST", 6),
+        "max_concurrent_llm_calls_per_request": _int_env(
+            "MAX_CONCURRENT_LLM_CALLS_PER_REQUEST", 2
+        ),
+        "request_deadline_seconds": _float_env("AGENT_REQUEST_DEADLINE_SECONDS", 90.0),
         "max_retrieval_rewrites": _int_env(
             "MAX_RETRIEVAL_REWRITES", int(environ.get("RAG_MAX_REWRITES", "1"))
         ),
@@ -298,6 +323,13 @@ def load_knowledge_release_env(data_dir: Path) -> dict[str, Any]:
         )
         .expanduser()
         .resolve(),
+        "knowledge_release_sync_interval_seconds": _int_env(
+            "KNOWLEDGE_RELEASE_SYNC_INTERVAL_SECONDS",
+            300,
+        ),
+        "knowledge_release_selection_mode": (
+            (_str_env("KNOWLEDGE_RELEASE_SELECTION_MODE") or "").upper() or None
+        ),
         "knowledge_release_firestore_project": _str_env(
             "KNOWLEDGE_RELEASE_FIRESTORE_PROJECT"
         ),

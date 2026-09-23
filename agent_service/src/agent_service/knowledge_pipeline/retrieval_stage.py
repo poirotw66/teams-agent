@@ -381,6 +381,14 @@ async def run_retrieve(
         trace_attempts=state.trace_attempts,
         attempt=state.attempt,
         stage_timings_ms=state.stage_timings_ms,
+        query_tier=getattr(state, "query_tier", None),
+        enable_generation_retries=getattr(state, "enable_generation_retries", True),
+        candidate_chunk_ids=tuple(
+            result.chunk.chunk_id
+            for result in results
+            if getattr(result.chunk, "chunk_id", None)
+        ),
+        generator_context_chunk_ids=getattr(state, "generator_context_chunk_ids", ()),
     )
 
 

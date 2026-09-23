@@ -79,6 +79,7 @@ def citations_from_chunks(
     request: AgentRequest | None,
 ) -> list[Citation]:
     sources: list[Citation] = []
+    seen_documents: set[str] = set()
     include_retrieval_evidence = (
         request is not None and request.channel == EVALUATION_EVIDENCE_CHANNEL
     )
@@ -88,6 +89,17 @@ def citations_from_chunks(
         source_path = safe_source_path(raw_source_path)
         if source_path == "[REDACTED_SOURCE]":
             source_path = None
+        document_key = (
+            (identity.document_id if identity is not None else None)
+            or source_path
+            or chunk.title
+            or chunk.document_name
+            or ""
+        ).strip()
+        if document_key and document_key in seen_documents:
+            continue
+        if document_key:
+            seen_documents.add(document_key)
         source_ref_id = (
             make_source_ref_id(
                 release_id=identity.release_id,

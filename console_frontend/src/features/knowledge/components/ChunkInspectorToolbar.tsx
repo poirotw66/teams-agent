@@ -14,6 +14,7 @@ interface ChunkInspectorToolbarProps {
   document: ManualDocumentItem | null;
   isRechunking: boolean;
   chunkSearchText: string;
+  readOnly?: boolean;
   onProfileChange: (profile: ChunkingProfile) => void;
   onSearchChange: (value: string) => void;
   onExpandAll: () => void;
@@ -24,6 +25,7 @@ export const ChunkInspectorToolbar: React.FC<ChunkInspectorToolbarProps> = ({
   document,
   isRechunking,
   chunkSearchText,
+  readOnly = false,
   onProfileChange,
   onSearchChange,
   onExpandAll,
@@ -53,19 +55,23 @@ export const ChunkInspectorToolbar: React.FC<ChunkInspectorToolbarProps> = ({
     </Space>
 
     <Space size="small">
-      <Select
-        size="small"
-        value={document?.chunking_profile || "AUTO"}
-        loading={isRechunking}
-        onChange={onProfileChange}
-        style={{ width: 150 }}
-        options={[
-          { label: "自動判斷", value: "AUTO" },
-          { label: "簡報", value: "SLIDE_DECK" },
-          { label: "操作手冊", value: "MANUAL" },
-          { label: "政策規章", value: "POLICY" },
-        ]}
-      />
+      {readOnly ? (
+        <Tag color="geekblue">已發布切分（唯讀）</Tag>
+      ) : (
+        <Select
+          size="small"
+          value={document?.chunking_profile || "AUTO"}
+          loading={isRechunking}
+          onChange={onProfileChange}
+          style={{ width: 150 }}
+          options={[
+            { label: "自動判斷", value: "AUTO" },
+            { label: "簡報", value: "SLIDE_DECK" },
+            { label: "操作手冊", value: "MANUAL" },
+            { label: "政策規章", value: "POLICY" },
+          ]}
+        />
+      )}
       <Input
         placeholder="搜尋段落關鍵字..."
         prefix={<SearchOutlined style={{ color: "#8c8c8c" }} />}

@@ -17,8 +17,17 @@ from .indexer import build_index
 from .knowledge_backends import KnowledgeBackendRouter, build_backend_state_store
 from .knowledge_release import resolve_knowledge_index
 from .knowledge_release_control import build_firestore_release_control
+from .knowledge_release_sync import (
+    KnowledgeReleaseSelectionMode,
+    KnowledgeReleaseSyncer,
+    resolve_selection_mode,
+)
 from .operations.runtime import build_ops_runtime
 from .retrieval import HybridIndex, hybrid_index_fusion_kwargs
+from .service_scope_evidence import (
+    configure_service_scope_from_release,
+    reset_service_scope_catalog,
+)
 from .settings import RagSettings
 from .source_refs import hydrate_index_sources
 from .ticket import build_ticket_service
@@ -51,6 +60,10 @@ def load_startup_index(settings: RagSettings) -> tuple[HybridIndex, Any]:
         release_dir=release_dir,
         release_id=resolved_index.release_id,
     )
+    if resolved_index.release_id:
+        configure_service_scope_from_release(release_dir, resolved_index.release_id)
+    else:
+        reset_service_scope_catalog()
     return index, resolved_index
 
 
@@ -61,6 +74,7 @@ def build_knowledge_router(
     *,
     release_id: str | None,
     active_file_search_store: str | None,
+    rag_models: Any | None = None,
 ) -> tuple[KnowledgeBackendRouter, Any]:
     """Build hybrid/file-search knowledge services and the backend router."""
     hybrid_settings = replace(settings, knowledge_service_mode="HYBRID")
@@ -70,6 +84,7 @@ def build_knowledge_router(
             index,
             rag_model,
             release_id=release_id,
+            models=rag_models,
         )
     }
     unavailable_backends: dict[str, str] = {}
@@ -104,6 +119,7 @@ def build_startup_workflow(
     resolved_index: Any,
     rag_model: Any,
     agent_model: Any,
+    rag_models: Any | None = None,
 ) -> tuple[AgentWorkflow, KnowledgeBackendRouter, Any, Any, Any]:
     """Construct FAQ/conversation/ticket collaborators and the agent workflow."""
     from .prompt_runtime import ExtractorPromptRuntime, GovernanceRuntime
@@ -121,6 +137,7 @@ def build_startup_workflow(
         rag_model,
         release_id=resolved_index.release_id,
         active_file_search_store=active_file_search_store,
+        rag_models=rag_models,
     )
     governance_runtime = GovernanceRuntime.from_settings(settings)
     extractor = IssueExtractor(
@@ -176,6 +193,7 @@ def attach_app_state(
         if settings.knowledge_release_store_mode == "GCS"
         else None
     )
+    app.state.knowledge_release_syncer = getattr(app.state, "knowledge_release_syncer", None)
     app.state.agent = agent
     app.state.knowledge_router = knowledge_router
     app.state.workflow = workflow
@@ -225,9 +243,36 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
     """Wire all startup collaborators onto ``app.state``."""
     import asyncio
 
+    from .prompt_runtime import GovernanceRuntime
+    from .rag_models import build_rag_model_bundle, governance_overrides_from_runtime
+
+    syncer: KnowledgeReleaseSyncer | None = None
+    if settings.knowledge_release_store_mode == "GCS":
+        syncer = KnowledgeReleaseSyncer(settings)
+        app.state.knowledge_release_syncer = syncer
+        selection = resolve_selection_mode(settings)
+        if selection is not KnowledgeReleaseSelectionMode.LOCAL_SANDBOX:
+            # First sync is offline of the Q&A path but required before load when
+            # no verified mirror exists yet.
+            await asyncio.to_thread(syncer.sync_now)
+
     index, resolved_index = await asyncio.to_thread(load_startup_index, settings)
     agent = await asyncio.to_thread(RagAgent, settings, index)
-    rag_model = build_chat_model(settings.model, temperature=0.0)
+    governance_runtime = GovernanceRuntime.from_settings(settings)
+    rag_models = build_rag_model_bundle(
+        settings,
+        build_chat_model=build_chat_model,
+        governance_overrides=governance_overrides_from_runtime(governance_runtime),
+    )
+    if rag_models.ids is not None:
+        from .rag_models import selection_audit_event
+
+        for role in ("answer", "relevance", "rewrite", "hard_answer"):
+            logger.info(
+                "rag_model_selection %s",
+                selection_audit_event(rag_models.ids, role=role),
+            )
+    rag_model = rag_models.answer or build_chat_model(settings.model, temperature=0.0)
     agent_model = build_chat_model(
         settings.agent_model or settings.model,
         temperature=0.0,
@@ -236,7 +281,7 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
         workflow,
         knowledge_router,
         hybrid_settings,
-        governance_runtime,
+        _governance_from_workflow,
         handoff_repository,
     ) = build_startup_workflow(
         settings,
@@ -244,7 +289,10 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
         resolved_index=resolved_index,
         rag_model=rag_model,
         agent_model=agent_model,
+        rag_models=rag_models,
     )
+    # Prefer the pre-built runtime so peeks match the models already constructed.
+    workflow.governance_runtime = governance_runtime
     attach_app_state(
         app,
         settings,
@@ -258,7 +306,23 @@ async def startup_agent_runtime(app: FastAPI, settings: RagSettings) -> None:
         rag_model=rag_model,
         hybrid_settings=hybrid_settings,
     )
+    app.state.rag_models = rag_models
     configure_pricing_and_ops(app, settings)
+    if syncer is not None:
+        from .deps_sync import apply_follow_cloud_mirror_reload
+
+        syncer.set_loaded_release_id(resolved_index.release_id)
+
+        def _on_follow_cloud_ready(release_id: str, release_dir: Any) -> None:
+            apply_follow_cloud_mirror_reload(
+                app,
+                settings,
+                release_id=release_id,
+                release_dir=release_dir,
+            )
+
+        syncer.set_follow_cloud_ready_handler(_on_follow_cloud_ready)
+        syncer.start_background()
     from .observability import configure_tracing
 
     configure_tracing(

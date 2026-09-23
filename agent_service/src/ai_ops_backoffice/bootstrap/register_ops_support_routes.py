@@ -10,6 +10,9 @@ from ai_ops_backoffice.routers import (
     register_prompt_poc_routes,
     register_sync_routes,
 )
+from ai_ops_backoffice.routers.agent_knowledge_sync_routes import (
+    register_agent_knowledge_sync_routes,
+)
 
 
 def register_ops_support_routes(app: FastAPI, container: BackofficeContainer) -> None:
@@ -23,6 +26,12 @@ def register_ops_support_routes(app: FastAPI, container: BackofficeContainer) ->
         require_capability=deps.require_capability,
         faq_service=container.faq_service,
         query_service=container.query_service,
+    )
+    register_agent_knowledge_sync_routes(
+        app,
+        resolved_settings=container.settings,
+        current_actor=deps.current_actor,
+        require_capability=deps.require_capability,
     )
     register_budget_routes(
         app,

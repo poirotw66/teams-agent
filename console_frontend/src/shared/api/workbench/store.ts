@@ -15,8 +15,10 @@ import { DocumentsSlice } from "./documentsSlice";
 import { FaqsSlice } from "./faqsSlice";
 import { OverviewSlice } from "./overviewSlice";
 import {
+  ALL_WORKBENCH_DOMAINS,
   createReloadHooksPlaceholder,
   StoreCore,
+  WorkbenchDomain,
   WorkbenchSliceContext,
 } from "./storeCore";
 import { TicketsSlice } from "./ticketsSlice";
@@ -50,18 +52,13 @@ class WorkbenchStore {
 
     reloads.loadAll = () => this.loadAll();
     reloads.loadOverview = () => this.overview.loadOverview();
+    reloads.loadFaqs = () => this.faqs.loadFaqs();
     reloads.loadTickets = () => this.tickets.loadTickets();
     reloads.loadDocuments = () => this.documents.loadDocuments();
-
-    this.core.setLoadAllHandler(() => this.loadAll());
   }
 
   public subscribe(listener: () => void): () => void {
     return this.core.subscribe(listener);
-  }
-
-  public ensureLoaded(): void {
-    this.core.ensureLoaded();
   }
 
   public getKpis(): DashboardKpiMetrics {
@@ -116,6 +113,14 @@ class WorkbenchStore {
     return this.core.getLoadError();
   }
 
+  public getDomainErrors(): Partial<Record<WorkbenchDomain, string>> {
+    return this.core.getDomainErrors();
+  }
+
+  public isDomainLoaded(domain: WorkbenchDomain): boolean {
+    return this.core.isDomainLoaded(domain);
+  }
+
   public async loadOverview(): Promise<void> {
     return this.overview.loadOverview();
   }
@@ -136,29 +141,75 @@ class WorkbenchStore {
     return this.tickets.loadTickets();
   }
 
-  public async loadAll(): Promise<void> {
-    this.core.beginLoadAll();
+  /**
+   * Load only the requested domains. Already-loaded domains are skipped unless
+   * `force` is true (used by retry).
+   */
+  public async ensureDomains(
+    domains: readonly WorkbenchDomain[],
+    options: { force?: boolean } = {},
+  ): Promise<void> {
+    const needed = options.force
+      ? this.core.forceDomainsNeedingFetch(domains)
+      : this.core.domainsNeedingFetch(domains);
+    if (needed.length === 0) {
+      return;
+    }
+
+    this.core.beginLoad();
     try {
-      const results = await Promise.allSettled([
-        this.loadOverview(),
-        this.loadConversations(),
-        this.loadFaqs(),
-        this.loadDocuments(),
-        this.loadTickets(),
-      ]);
-      const failureCount = results.filter(
-        (result) => result.status === "rejected",
-      ).length;
-      if (failureCount === results.length) {
-        this.core.setLoadError("Workbench data load failed");
-      } else if (failureCount > 0) {
-        this.core.setLoadError(
-          `Partial workbench load failure (${failureCount}/${results.length})`,
-        );
-      }
-      this.core.markLoaded();
+      const loaders: Array<Promise<void>> = needed.map(async (domain) => {
+        if (!this.core.beginDomainFetch(domain)) {
+          return;
+        }
+        try {
+          await this.loadDomain(domain);
+          this.core.markDomainLoaded(domain);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : `${domain} load failed`;
+          this.core.markDomainFailed(domain, message);
+          throw error;
+        } finally {
+          this.core.endDomainFetch(domain);
+        }
+      });
+
+      const results = await Promise.allSettled(loaders);
+      this.core.rebuildAggregateLoadError();
+      // Failures are surfaced through getLoadError()/getDomainErrors(); callers
+      // should not need try/catch for ordinary page mounts.
+      void results;
     } finally {
-      this.core.endLoadAll();
+      this.core.endLoad();
+    }
+  }
+
+  public async loadAll(): Promise<void> {
+    await this.ensureDomains(ALL_WORKBENCH_DOMAINS, { force: true });
+  }
+
+  private async loadDomain(domain: WorkbenchDomain): Promise<void> {
+    switch (domain) {
+      case "overview":
+        await this.loadOverview();
+        return;
+      case "conversations":
+        await this.loadConversations();
+        return;
+      case "faqs":
+        await this.loadFaqs();
+        return;
+      case "documents":
+        await this.loadDocuments();
+        return;
+      case "tickets":
+        await this.loadTickets();
+        return;
+      default: {
+        const exhaustive: never = domain;
+        throw new Error(`Unsupported workbench domain: ${String(exhaustive)}`);
+      }
     }
   }
 
@@ -188,7 +239,7 @@ class WorkbenchStore {
   public async setSpikeBroadcast(
     message: string,
     durationHours: number = 2,
-  ): Promise<void> {
+  ): Promise<{ expiresAt: string }> {
     return this.overview.setSpikeBroadcast(message, durationHours);
   }
 
@@ -258,6 +309,12 @@ class WorkbenchStore {
   public async deleteFaq(faqId: string): Promise<void> {
     return this.faqs.deleteFaq(faqId);
   }
+
+  /** Drop cached server state when the signed-in identity changes. */
+  public resetForIdentityChange(): void {
+    this.core.resetServerState();
+  }
 }
 
 export const workbenchStore = new WorkbenchStore();
+export type { WorkbenchDomain };

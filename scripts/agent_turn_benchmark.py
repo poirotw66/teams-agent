@@ -77,7 +77,7 @@ class CountingStubModel:
         from langchain_core.messages import AIMessage
 
         self.generate_calls += 1
-        self.last_component = "knowledge_generate"
+        self.last_component = "knowledge_answer"
         return AIMessage(content="（基準測試樁）請依文件步驟操作。[S1]")
 
 

@@ -12,8 +12,13 @@ from knowledge_core.release_pointer import (
     write_active_release_pointer,
 )
 
-from .knowledge_release_control import read_firestore_release_reference
-from .knowledge_release_gcs import download_release_metadata
+from .knowledge_release_cache import resolve_mirrored_release_dir
+from .knowledge_release_sync import (
+    KnowledgeReleaseSelectionMode,
+    is_verified_qa_snapshot,
+    read_sync_status,
+    resolve_selection_mode,
+)
 from .release_artifacts import (
     MANIFEST_FILENAME,
     KnowledgeIndexArtifact,
@@ -129,9 +134,18 @@ def resolve_knowledge_index(
 
     release_dir = settings.knowledge_release_dir or (settings.data_dir / "releases")
     if settings.knowledge_release_store_mode == "GCS":
-        return _resolve_gcs_knowledge_index(
+        selection = resolve_selection_mode(settings)
+        if selection is KnowledgeReleaseSelectionMode.LOCAL_SANDBOX:
+            return _resolve_local_sandbox_under_gcs_store(
+                settings,
+                release_dir=release_dir,
+                release_id_override=release_id_override,
+                mode=mode,
+            )
+        return _resolve_gcs_mirrored_knowledge_index(
             settings,
             release_id=release_id_override or settings.knowledge_active_release_id,
+            selection=selection,
         )
 
     explicit_release_id = release_id_override or settings.knowledge_active_release_id
@@ -171,56 +185,117 @@ def resolve_knowledge_index(
     )
 
 
-def _resolve_gcs_knowledge_index(
+def _resolve_local_sandbox_under_gcs_store(
+    settings: RagSettings,
+    *,
+    release_dir: Path,
+    release_id_override: str | None,
+    mode: str,
+) -> ResolvedKnowledgeIndex:
+    """LOCAL_SANDBOX may use the local sandbox tree; never silent bundled fallback."""
+    explicit_release_id = release_id_override or settings.knowledge_active_release_id
+    pointer_release_id = read_active_release_id(release_dir)
+    release_id = explicit_release_id or pointer_release_id
+    if not release_id:
+        raise FileNotFoundError(
+            "LOCAL_SANDBOX selection requires a sandbox release id "
+            "(KNOWLEDGE_ACTIVE_RELEASE_ID or active_release.json)."
+        )
+    resolved = _resolve_local_portal_release(
+        settings,
+        release_dir=release_dir,
+        release_id=release_id,
+        mode="PORTAL",
+    )
+    if resolved is None:
+        raise FileNotFoundError(
+            f"LOCAL_SANDBOX knowledge release index not found for '{release_id}'."
+        )
+    return ResolvedKnowledgeIndex(
+        index_path=resolved.index_path,
+        release_id=resolved.release_id,
+        source="local_sandbox",
+        artifact=resolved.artifact,
+        release_dir=resolved.release_dir,
+        file_search_store=resolved.file_search_store,
+    )
+
+
+def _resolve_gcs_mirrored_knowledge_index(
     settings: RagSettings,
     *,
     release_id: str | None,
+    selection: KnowledgeReleaseSelectionMode,
 ) -> ResolvedKnowledgeIndex:
-    reference = read_firestore_release_reference(settings, release_id=release_id)
+    """Load a previously synced local mirror. Never downloads on the Q&A path."""
     cache_dir = settings.knowledge_release_cache_dir or (
         settings.data_dir / "knowledge_cache"
     )
-    index_path = download_release_metadata(
+    tenant_id = settings.knowledge_release_tenant_id
+    sync_status = read_sync_status(cache_dir, tenant_id)
+
+    if selection is KnowledgeReleaseSelectionMode.PINNED:
+        target_release_id = release_id
+        if not target_release_id:
+            raise FileNotFoundError(
+                "PINNED selection requires KNOWLEDGE_ACTIVE_RELEASE_ID."
+            )
+    else:
+        target_release_id = (
+            release_id
+            or (sync_status.loaded_release_id if sync_status else None)
+            or (sync_status.mirrored_release_id if sync_status else None)
+        )
+
+    if not target_release_id:
+        raise FileNotFoundError(
+            "No verified local knowledge snapshot is available for GCS mirror mode. "
+            "Wait for the background syncer or run sync now."
+        )
+
+    mirrored = resolve_mirrored_release_dir(
         cache_dir,
-        bucket_name=reference.bucket,
-        object_prefix=settings.knowledge_release_gcs_prefix,
-        tenant_id=reference.tenant_id,
-        release_id=reference.release_id,
-        manifest_generation=reference.manifest_generation,
-        index_generation=reference.index_generation,
+        tenant_id=tenant_id,
+        release_id=target_release_id,
     )
+    if mirrored is None:
+        raise FileNotFoundError(
+            f"Local knowledge mirror for release '{target_release_id}' is missing."
+        )
+
+    releases_root = mirrored.parent
+    release_root_for_validation = releases_root
+
+    marker_ok = is_verified_qa_snapshot(mirrored)
+    legacy_index_only = (mirrored / MANIFEST_FILENAME).is_file() and (
+        mirrored / "index" / "chunks.json"
+    ).is_file()
+    if not marker_ok and not legacy_index_only:
+        raise FileNotFoundError(
+            f"Local knowledge mirror for release '{target_release_id}' is not verified."
+        )
+
     artifact = validate_release_artifacts(
-        cache_dir,
-        reference.release_id,
+        release_root_for_validation,
+        target_release_id,
         require_vectors=settings.knowledge_release_require_vectors,
-        expected_tenant_id=reference.tenant_id,
-        expected_purpose=reference.purpose,
+        expected_tenant_id=tenant_id,
+        expected_purpose=None,
     )
-    expected_metadata = {
-        "sha256": reference.index_sha256,
-        "chunk_count": reference.chunk_count,
-        "vector_count": reference.vector_count,
-        "embedding_model": reference.embedding_model,
-        "embedding_dimensions": reference.embedding_dimensions,
-    }
-    actual_metadata = {
-        "sha256": artifact.sha256,
-        "chunk_count": artifact.chunk_count,
-        "vector_count": artifact.vector_count,
-        "embedding_model": artifact.embedding_model,
-        "embedding_dimensions": artifact.embedding_dimensions,
-    }
-    if actual_metadata != expected_metadata:
-        raise ValueError(
-            "Downloaded knowledge index does not match its Firestore release record."
+    index_path = mirrored / "index" / "chunks.json"
+    source = "gcs_mirror" if marker_ok else "gcs_mirror_index_only"
+    if source == "gcs_mirror_index_only":
+        logger.warning(
+            "Loading index-only GCS mirror for %s; runtimeArtifacts inventory absent.",
+            target_release_id,
         )
     return ResolvedKnowledgeIndex(
         index_path=index_path,
-        release_id=reference.release_id,
-        source="gcs_release",
+        release_id=target_release_id,
+        source=source,
         artifact=artifact,
-        release_dir=cache_dir,
-        file_search_store=manifest_file_search_store(index_path.parents[1]),
+        release_dir=release_root_for_validation,
+        file_search_store=manifest_file_search_store(mirrored),
     )
 
 

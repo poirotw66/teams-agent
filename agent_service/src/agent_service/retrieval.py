@@ -1,4 +1,5 @@
 import json
+import logging
 import math
 import re
 import time
@@ -14,6 +15,9 @@ from knowledge_core.contextual_representation import effective_retrieval_text
 
 from .documents import DocumentChunk
 from .knowledge_eligibility import is_chunk_generation_eligible
+from .retrieval_acl import is_chunk_visible_to_groups
+
+logger = logging.getLogger(__name__)
 
 TOKEN_PATTERN = re.compile(r"[a-zA-Z0-9_./:\\-]+|[\u3400-\u9fff]+")
 
@@ -108,21 +112,6 @@ def check_sparse_fast_path(
     if top1_matches_code and not top2_matches_code:
         return True
     return bool(top1_score >= 1.5 * top2_score)
-
-
-def is_chunk_visible_to_groups(
-    chunk: DocumentChunk,
-    groups: set[str] | None,
-) -> bool:
-    """Return whether Hybrid ACL allows the caller to see ``chunk``.
-
-    Empty ``allowed_groups`` means public. Otherwise the caller's groups must
-    intersect the document allowlist.
-    """
-    caller_groups = groups or set()
-    if not chunk.allowed_groups:
-        return True
-    return bool(set(chunk.allowed_groups).intersection(caller_groups))
 
 
 @dataclass(frozen=True)
@@ -265,14 +254,29 @@ class HybridIndex:
             encoding="utf-8",
         )
 
-    def add_embeddings(self) -> None:
+    def add_embeddings(self, *, only_missing: bool = False) -> None:
         if not self.embedding_client:
             return
-        vectors = self.embedding_client.embed_documents(
-            [effective_retrieval_text(chunk) for chunk in self.chunks]
-        )
-        for chunk, vector in zip(self.chunks, vectors, strict=True):
-            chunk.vector = vector
+        if only_missing:
+            pending = [
+                (index, chunk)
+                for index, chunk in enumerate(self.chunks)
+                if not chunk.vector
+            ]
+            if not pending:
+                self.has_vectors = any(bool(chunk.vector) for chunk in self.chunks)
+                return
+            vectors = self.embedding_client.embed_documents(
+                [effective_retrieval_text(chunk) for _, chunk in pending]
+            )
+            for (index, _), vector in zip(pending, vectors, strict=True):
+                self.chunks[index].vector = vector
+        else:
+            vectors = self.embedding_client.embed_documents(
+                [effective_retrieval_text(chunk) for chunk in self.chunks]
+            )
+            for chunk, vector in zip(self.chunks, vectors, strict=True):
+                chunk.vector = vector
         self.has_vectors = any(bool(chunk.vector) for chunk in self.chunks)
 
     def _bm25_scores(
@@ -342,19 +346,34 @@ class HybridIndex:
         authorized_indices: list[int],
         sparse_scores: list[float],
         query_vector: list[float] | None,
-    ) -> tuple[list[float] | None, float, bool]:
+    ) -> tuple[list[float] | None, float, bool, bool]:
+        """Return ``(vector, embedding_ms, is_fast_path, embedding_degraded)``.
+
+        Transient embed failures (429 / exhausted retries) degrade to sparse-only
+        instead of aborting the whole knowledge turn as a false miss.
+        """
         if query_vector is not None or not self.embedding_client or not self.has_vectors:
-            return query_vector, 0.0, False
+            return query_vector, 0.0, False, False
         if getattr(self, "enable_sparse_fast_path", True) and check_sparse_fast_path(
             query, self.chunks, authorized_indices, sparse_scores
         ):
-            return None, 0.0, True
+            return None, 0.0, True, False
         embed_started = time.perf_counter()
-        from .retrieval_embeddings import embed_single_query
+        from .retrieval_embeddings import embed_single_query, is_transient_embedding_error
 
-        vector = embed_single_query(self.embedding_client, query)
+        try:
+            vector = embed_single_query(self.embedding_client, query)
+        except Exception as exc:
+            if not is_transient_embedding_error(exc):
+                raise
+            logger.warning(
+                "Query embedding unavailable (%s); continuing with sparse-only retrieval.",
+                type(exc).__name__,
+            )
+            embedding_ms = (time.perf_counter() - embed_started) * 1000
+            return None, embedding_ms, False, True
         embedding_ms = (time.perf_counter() - embed_started) * 1000
-        return vector, embedding_ms, False
+        return vector, embedding_ms, False, False
 
     def _resolve_fusion_weights(
         self,
@@ -415,8 +434,10 @@ class HybridIndex:
         max_sparse = max(sparse_scores, default=0.0)
         normalized_sparse = [score / max_sparse if max_sparse else 0.0 for score in sparse_scores]
 
-        query_vector, embedding_ms, is_fast_path = self._resolve_query_vector(
-            query, authorized_indices, sparse_scores, query_vector
+        query_vector, embedding_ms, is_fast_path, embedding_degraded = (
+            self._resolve_query_vector(
+                query, authorized_indices, sparse_scores, query_vector
+            )
         )
         dense_started = time.perf_counter()
         results = self._candidate_results(authorized_indices, normalized_sparse, query_vector)
@@ -449,6 +470,9 @@ class HybridIndex:
             "fusionMs": round(fusion_ms, 1),
             "searchTotalMs": round((time.perf_counter() - started) * 1000, 1),
             "fastPath": 1.0 if is_fast_path else 0.0,
+            "embeddingDegraded": 1.0 if embedding_degraded else 0.0,
+            "aclVisibleChunks": float(len(authorized_indices)),
+            "aclFilteredChunks": float(max(0, len(self.chunks) - len(authorized_indices))),
         }
         return filtered, timings
 

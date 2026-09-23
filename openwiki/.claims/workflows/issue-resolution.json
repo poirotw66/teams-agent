@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "pageVersion": "sha256:625aa230acd1fcd08dca94655dfa9e6bef7b46238d2142906db5060dd667ed73",
+  "pageVersion": "sha256:dce69fb93ea1243efd2f5cefb1e0fdb05e2394f08da0eb8f23b612b2174d8e0d",
   "claims": [
     {
       "id": "claim_a2ed1b599a3e41cdb1095b9283279a25",
@@ -21,12 +21,12 @@
       "statement": "A turn is limited to 3 issues by default. Ticket, handoff, and operational-event side effects must stay idempotent before interrupt/resume is enabled.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/settings.py#L54-L54",
-          "version": "repo-lines-v1:sha256:1892dc00ad24a0a41e6d071dceaf64000a60aa34e0e5d52867ef2af9f467e854:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg5MmRjMDBhZDI0YTBhNDFlNmQwNzFkY2VhZjY0MDAwYTYwYWEzNGUwZTVkNTI4NjdlZjJhZjlmNDY3ZTg1NCIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiMTg5MmRjMDBhZDI0YTBhNDFlNmQwNzFkY2VhZjY0MDAwYTYwYWEzNGUwZTVkNTI4NjdlZjJhZjlmNDY3ZTg1NCIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiY2MyOTVmNTY4OTZjMjIzOWViY2ZkOTAyMGFkNTM0NzdkNzgzMzY2Y2ZlOGMxNzI4YTVlOGU2ZmFiZDE1MzFlYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiZWY4NjExM2Y5NjAyY2FlYjFhOTM1ODdlYzNjMTFiMWRkNjE3ZjdiMzNhYzhiYzkzZDNkODJlYjNmMDNmOGY1OSJ9"
+          "resource": "repo://agent_service/src/agent_service/settings.py#L43-L43",
+          "version": "repo-lines-v1:sha256:ae989b3da33132c3f01522183521deabfcacabce2db5f964ccdb4b9ac1177a16:eyJzZWxlY3RlZExpbmVDb3VudCI6MSwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU5ODliM2RhMzMxMzJjM2YwMTUyMjE4MzUyMWRlYWJmY2FjYWJjZTJkYjVmOTY0Y2NkYjRiOWFjMTE3N2ExNiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiYWU5ODliM2RhMzMxMzJjM2YwMTUyMjE4MzUyMWRlYWJmY2FjYWJjZTJkYjVmOTY0Y2NkYjRiOWFjMTE3N2ExNiIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiOTI3ZDAzNGQ1ZjhmOGFiODc4NTM2Yjg0Y2QzZmE0NjQ1NzY3NmE5NGQ5ZDE3ZTZjYWFmZTFkNGM0MDQ2ODMzYiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiNTA0ODNkM2JjZmRjNTM4NDg5OWE2NjJkNzQyZGQ5ODNhMmUxOWExMGI4YTAyOTVkMmNjYzRlODBkZDI1N2Q3YiJ9"
         },
         {
-          "resource": "repo://agent_service/src/agent_service/workflow_subgraphs.py#L36-L42",
-          "version": "repo-lines-v1:sha256:154766ddc910ec2bef8e5ca23c54d8fb74530f05165731e067b719295937f578:eyJzZWxlY3RlZExpbmVDb3VudCI6NywiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZmFkNmY3YWFlMmQ2MDU4MmM2NjViOGVjYTc0MzRkNjY0NTg1NjFmYjMzNWI4YzdhMzEzYWI2MGFmMDZiMTJiYyIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWIzOWUwMjJlMGQ4NTQxMjAwMDNkNzkwYzI4Yjc1OTYyZWRkMzAzNzU2ZDUxMzMzZGY3NDVjZmI4NmVhMTFjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiNGQ5MTQ0YzQ1NTBiMjJmN2VlMDkzNjlkMThlMjQxYTc1ODliZjQwMmNmOWQxOTUwZWU1MGU3NDg2NDY1ZTFiZSIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2Q0MzFjNzg4YjRkYTI0YTk2Y2I4YjE4YTJkYWEyN2MwMjM5MDNiNWI5ZGMwNTdhMGZlZGQ4ZDZiMTFlMzVkOSJ9"
+          "resource": "repo://agent_service/src/agent_service/workflow_subgraphs.py#L35-L42",
+          "version": "repo-lines-v1:sha256:dbe0af479f3bacce5af6a89f1e9f106d3b9361f964afe73ce2de96a731f5f288:eyJzZWxlY3RlZExpbmVDb3VudCI6OCwiZmlyc3RTZWxlY3RlZExpbmVIYXNoIjoiZGRlMGNkOWIzOWNmMmYxOTIzMjg4ODY1ZGU2NjE5ODc0MmE3OGU5YmM3MjVmNzRjMjk5MjFmNzYyMDYwYjU3MiIsImxhc3RTZWxlY3RlZExpbmVIYXNoIjoiOWIzOWUwMjJlMGQ4NTQxMjAwMDNkNzkwYzI4Yjc1OTYyZWRkMzAzNzU2ZDUxMzMzZGY3NDVjZmI4NmVhMTFjZSIsInByZWNlZGluZ0NvbnRleHRMaW5lQ291bnQiOjMsInByZWNlZGluZ0NvbnRleHRIYXNoIjoiYjAyOTRjMzAxYzE0NDdlOTNlNTk2ZmUzZjU4OTU4ZTgwZjg2ZDk3MDRmOTY3NDFhYWRkZjkyMTMyZDg1MmQzZiIsImZvbGxvd2luZ0NvbnRleHRMaW5lQ291bnQiOjMsImZvbGxvd2luZ0NvbnRleHRIYXNoIjoiM2Q0MzFjNzg4YjRkYTI0YTk2Y2I4YjE4YTJkYWEyN2MwMjM5MDNiNWI5ZGMwNTdhMGZlZGQ4ZDZiMTFlMzVkOSJ9"
         }
       ]
     },
@@ -35,24 +35,28 @@
       "statement": "An FAQ hit returns the stored answer verbatim and does not call the model. A miss or disabled entry falls through to knowledge search instead of failing the turn.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/workflow_issue_processing.py#L145-L166",
-          "version": "repo-lines-v1:sha256:ba332d4128910f6a0170aba08a1070c0c8acd571a4f13b30bcc375d90519c74d:eyJzZWxlY3RlZExpbmVDb3VudCI6MjIsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjM1MWEwOGY4OGYwMzM1YmQxNTk3ZDJjN2Q4M2M2MjRhN2I5MDIwOTU1ZDZhYjk5ZDQ4NWYyMzE4YWQzZTk5ZjkiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjdjZjhlNmYwMDQzZTdjZTEyNjQxYmVhYzM0YTYxNGUxMjYyNGFhNGJkY2Y2YTdlNjRhNzM2NDcxNDNjZjJiN2MiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6IjE1NzU4ZjNkNjg2OTdlNWQ0OWNjNGQzYjRkNDI4NDczNjRhOTZjNDhhZjY3YmEzOTNjNzI1ZDRiN2M4MjAyN2UiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjdmMjRjZmNiMjhiN2VjOGFjOGI5YzdiM2RmNzNiZGRjZGZkY2ZlODAzYjY0NGJlYzZiMDFhMGY3NTdmOGY0MTYifQ"
+          "resource": "repo://agent_service/src/agent_service/workflow_issue_processing.py#L261-L283",
+          "version": "repo-lines-v1:sha256:47eaec428a0a31859d0c529b97b303fe0bce5f8cf6bc45c2417172ed75e8e9ad:eyJzZWxlY3RlZExpbmVDb3VudCI6MjMsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImNlMjNjYWRkYWI5ODkxZWYyNTc2YWNkYzY4MmFiZjU5NGM2OTE2MWU1Y2U5MTI3MTVlZWQ4Y2Y3ZDQwOGUyNzQiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImQxMWIyNWRkY2IwMjVlY2I2MWQ5OWMxM2MwYWFkNDIyNWQ4ODNkZTJhOGQzY2JlOTgyNDBkZmFmYjUxYzkyZmYiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImVhYTFiYjE0YjI5N2I0ZmZjZmY3NTg4OWFhMmE0NzYzYWMzYmM2NWI1MWNmNmIyMTY3MTkxNTViNTJkZTNmYjkifQ"
         }
       ]
     },
     {
       "id": "claim_342028870d524c2d848d095a41c63b7a",
-      "statement": "NEED_MORE_INFO returns questions and does not search. A TICKET route without a deterministic CREATE or QUERY intent does not call the ticket API.",
+      "statement": "NEED_MORE_INFO runs a retrieval probe and returns clarification questions when the probe is not answerable. A TICKET route without a deterministic CREATE or QUERY intent does not call the ticket API.",
       "evidence": [
         {
-          "resource": "repo://agent_service/src/agent_service/workflow_issue_processing.py#L138-L191",
-          "version": "repo-lines-v1:sha256:9f227ffc4b6054029f3ef7c7b8a635dbb39e27fa547b4748fe7682f0103d943e:eyJzZWxlY3RlZExpbmVDb3VudCI6NTQsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5YWM2NWM3YjJmMGMzMTc0MzY1NmVjNDQ5ODdhYmViYmFjNWNmM2JjM2FlZDgwYjk3NDA1ZmJkMGRhNDgyNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlNDUzYjI4OWU1MDhhZWE0MDJkMjA4NjM2ZDcxMzc0MWRkYTIxYzQyMjVmODMxYjVlZjIwNjI2YzkzNTkzYjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZWY0NWUzM2FjNWI1MmFiNjRjMGY0ZGZlZjlhODBiMGM1NWIyNmI0YWEwMTRkMjIwMzQ0OTgyNDczN2Q1NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5ZTFiMzEwZjg5ZDE2YWIwNzhiZjFiY2MyNDk0OWFlNDA1ZWI2M2VhMjg4OWMzZTM1YWY0M2JmM2U2YTFjMGMifQ"
+          "resource": "repo://agent_service/src/agent_service/workflow_issue_processing.py#L285-L314",
+          "version": "repo-lines-v1:sha256:b9671b950052a87359049189bf9d531b4c78c01d7d211f6cded5a67f24ad842e:eyJzZWxlY3RlZExpbmVDb3VudCI6MzAsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6IjhkMTRiOTkxYjVkZWI1NmEwMjIxNjQ1Y2U5ZGE4ZWQwZjJhYTEyOGU2ZjNhZDlhNmU1YzI1ZjMxZGE5NmQ3M2MiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjU5MDlhNTNhNjE4ZDAyOGUxZDMwMDBjMGE3YWJjZWVjYmU1ZmIzN2Y0ZTUxMWVmZTQ2NjQzZmFkNmU2Njg3MmYiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6Ijk3ZGM2YzJkM2U5YTc1NzRhNmVlZmIxYjg1MDk1Y2VmZTQxMTExZWFlYjg4Zjg3ZjkyOTc0NDdmYTlhODdmOGEiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6ImM1YjdhZDlkY2UyNzE4YTgwM2ZhMGVjNjk5ZjRiMjkwMjExNzZjMWUxYTFiYWMzYTg2ZDc2ZDRjYjA5YzZkMjkifQ"
+        },
+        {
+          "resource": "repo://agent_service/src/agent_service/workflow_issue_processing.py#L352-L388",
+          "version": "repo-lines-v1:sha256:b3bbc9e0c2505271be2dc4054d82c9c8e00548fde14c9caacf73426c2514fefb:eyJzZWxlY3RlZExpbmVDb3VudCI6MzcsImZpcnN0U2VsZWN0ZWRMaW5lSGFzaCI6ImI5YWM2NWM3YjJmMGMzMTc0MzY1NmVjNDQ5ODdhYmViYmFjNWNmM2JjM2FlZDgwYjk3NDA1ZmJkMGRhNDgyNWYiLCJsYXN0U2VsZWN0ZWRMaW5lSGFzaCI6IjZlNDUzYjI4OWU1MDhhZWE0MDJkMjA4NjM2ZDcxMzc0MWRkYTIxYzQyMjVmODMxYjVlZjIwNjI2YzkzNTkzYjgiLCJwcmVjZWRpbmdDb250ZXh0TGluZUNvdW50IjozLCJwcmVjZWRpbmdDb250ZXh0SGFzaCI6ImE2ZWY0NWUzM2FjNWI1MmFiNjRjMGY0ZGZlZjlhODBiMGM1NWIyNmI0YWEwMTRkMjIwMzQ0OTgyNDczN2Q1NzIiLCJmb2xsb3dpbmdDb250ZXh0TGluZUNvdW50IjozLCJmb2xsb3dpbmdDb250ZXh0SGFzaCI6IjQ5ZTFiMzEwZjg5ZDE2YWIwNzhiZjFiY2MyNDk0OWFlNDA1ZWI2M2VhMjg4OWMzZTM1YWY0M2JmM2U2YTFjMGMifQ"
         }
       ]
     }
   ],
   "verification": {
     "by": "openwiki/0.5.1",
-    "at": "2026-09-14T06:27:21.319Z"
+    "at": "2026-09-22T17:10:06.227Z"
   }
 }

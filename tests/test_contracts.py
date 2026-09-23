@@ -357,6 +357,40 @@ def test_format_teams_answer_converts_notes_to_callout() -> None:
     assert "> 💡 **注意事項**：若您需要申請的是「VPN 國外連線」" in formatted
 
 
+def test_format_teams_answer_separates_inline_callout_from_citation() -> None:
+    raw = "可使用 AD 自助解鎖 [S1]。> 💡 **注意事項**：請確認正式入口。"
+
+    assert format_teams_answer(raw) == (
+        "可使用 AD 自助解鎖 [S1]。\n\n"
+        "> 💡 **注意事項**：請確認正式入口。"
+    )
+
+
+def test_format_teams_answer_separates_follow_up_action() -> None:
+    raw = (
+        "國泰員工入口網的密碼與 AD 並非同一組，其密碼連動為國泰金控網站帳密 [S1]。"
+        "若需修改密碼，請至國泰員工入口網站的「忘記密碼」功能進行操作 [S1]。"
+    )
+
+    assert format_teams_answer(raw) == (
+        "國泰員工入口網的密碼與 AD 並非同一組，其密碼連動為國泰金控網站帳密 [S1]。\n\n"
+        "若需修改密碼，請至國泰員工入口網站的「忘記密碼」功能進行操作 [S1]。"
+    )
+
+
+def test_format_teams_answer_expands_dense_vpn_howto() -> None:
+    raw = (
+        "若遇到三個月密碼到期，請插上實體網路線，使用 Ctrl + Alt + Delete "
+        "變更公司電腦開機密碼 [S1]。若您使用的是內網型筆電，請直接更改密碼，"
+        "不要前往金控入口網同步開機密碼 (AD) [S2]。"
+    )
+    formatted = format_teams_answer(raw)
+    assert "1. 請插上實體網路線" in formatted
+    assert "2. 使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]" in formatted
+    assert "不要前往金控入口網同步開機密碼 (AD) [S2]" in formatted
+    assert "\n\n" in formatted
+
+
 def test_format_teams_answer_auto_numbers_and_dedupes_citations() -> None:
     raw = (
         "問題：IT 權限申請 如何申請\n\n"
@@ -420,3 +454,40 @@ def test_format_teams_answer_unpacks_inline_numbered_steps() -> None:
     assert "\n2. 系統跳出設定視窗" in formatted
     assert "\n3. 選擇任一方式完成綁定" in formatted
 
+
+def test_format_teams_answer_linkifies_bare_https_urls() -> None:
+    unlock_url = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    raw = (
+        "問題：AD帳號解鎖\n\n"
+        "處理方式：\n"
+        f"請至 AD 自助解鎖專區：{unlock_url} [S1]。"
+    )
+    formatted = format_teams_answer(raw)
+
+    assert f"[{unlock_url}]({unlock_url})" in formatted
+    # Already-markdown links must not be double-wrapped.
+    assert format_teams_answer(f"請點 [{unlock_url}]({unlock_url})") == (
+        f"請點 [{unlock_url}]({unlock_url})"
+    )
+
+
+def test_format_teams_answer_repairs_code_span_and_broken_markdown_urls() -> None:
+    unlock_url = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    from teams_agent.formatting import extract_answer_urls
+
+    formatted = format_teams_answer(
+        f"AD 自助解鎖專區：`{unlock_url}`\n"
+        f"備用：[{unlock_url}]({unlock_url}`)"
+    )
+
+    assert f"[{unlock_url}]({unlock_url})" in formatted
+    assert f"`{unlock_url}`" not in formatted
+    assert f"({unlock_url}`)" not in formatted
+    assert extract_answer_urls(f"`{unlock_url}`") == [unlock_url]
+    assert extract_answer_urls(f"[{unlock_url}]({unlock_url}`)") == [unlock_url]

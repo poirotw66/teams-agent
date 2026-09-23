@@ -168,6 +168,14 @@ def _read_release_index(
     settings: PortalSettings,
     release: ReleaseRecord,
 ) -> dict[str, Any]:
+    return read_release_index_payload(settings, release)
+
+
+def read_release_index_payload(
+    settings: PortalSettings,
+    release: ReleaseRecord,
+) -> dict[str, Any]:
+    """Load ``index/chunks.json`` for a release from local artifacts or GCS."""
     local_path = settings.release_artifact_dir / release.release_id / INDEX_RELATIVE_PATH
     if local_path.is_file():
         payload = local_path.read_bytes()

@@ -137,6 +137,10 @@ def load_firestore_collection_env() -> dict[str, Any]:
         "config_collection": os.environ.get(
             "KNOWLEDGE_PORTAL_CONFIG_COLLECTION", "knowledge_portal_config"
         ),
+        "catalog_drafts_collection": os.environ.get(
+            "KNOWLEDGE_PORTAL_CATALOG_DRAFTS_COLLECTION",
+            "knowledge_catalog_drafts",
+        ),
     }
 
 
@@ -151,6 +155,9 @@ def load_workflow_feature_env(default_owner_unit_id: str) -> dict[str, Any]:
         ),
         "require_dual_approval": _truthy(
             os.environ.get("KNOWLEDGE_PORTAL_REQUIRE_DUAL_APPROVAL", "false")
+        ),
+        "require_approved_catalog_for_production": _truthy(
+            os.environ.get("KNOWLEDGE_PORTAL_REQUIRE_APPROVED_CATALOG", "false")
         ),
         "relaxed_workflow": _truthy(
             os.environ.get("KNOWLEDGE_PORTAL_RELAXED_WORKFLOW", "true")

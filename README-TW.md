@@ -378,7 +378,8 @@ curl http://localhost:3978/readyz
 `POST /api/messages` 由 Teams SDK 驗證 Bot Framework JWT，因此不能用普通 `curl`
 模擬完整 Bot Activity。本機若要在沒有憑證的情況下測試，可暫時設定
 `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true`——**僅限本機**，
-絕不可用於 Cloud Run。
+絕不可用於 Cloud Run。同一旗標也會讓本機瀏覽器直接開啟已簽章的來源
+URL（略過 SSO／Viewer Token 登入頁）；正式環境仍要求身分驗證。
 
 ### 本機 Log
 
@@ -834,7 +835,7 @@ BigQuery 或資料表時，讀這行 log 或改寫這個 handler 即可，不影
 | `CLIENT_ID` | — | Entra App registration 的 Application (client) ID；Teams SDK 直接讀取 |
 | `CLIENT_SECRET` | — | Client secret **Value**；只能放 `.env` 或 Secret Manager |
 | `TENANT_ID` | — | Entra Directory (tenant) ID（單一租戶 app 必填） |
-| `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | 略過 `/api/messages` 的 JWT 驗證；**僅限本機**，Cloud Run 絕不可設 |
+| `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | 略過 `/api/messages` 的 JWT 驗證，並允許本機直接開啟簽章來源 URL；**僅限本機**，Cloud Run 絕不可設 |
 | `PORT` | `3978` | HTTP 監聽埠；Cloud Run 會自動注入。無 `HOST` 設定——Teams SDK 的 `FastAPIAdapter` 固定綁 `0.0.0.0` |
 | `LOG_LEVEL` | `INFO` | 可暫時改 `DEBUG` 做本機除錯 |
 | `AGENT_MODE` | `echo` | `echo`（不呼叫外部 AI）或 `api`（呼叫 Agent Service） |

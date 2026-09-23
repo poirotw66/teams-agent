@@ -64,7 +64,7 @@ class HandoffRouteOps(HandoffCaseOps, HandoffTicketOps):
         if case is None:
             return {"handoff_handled": False, "ticket_intent": ticket_intent}
 
-        action = await self._decide_authorized_handoff_action(state, case)
+        raw_action, action = await self._decide_authorized_handoff_action(state, case)
         if case.status == HandoffStatus.DEMO_ACTIVE:
             return await self._route_demo_active_action(
                 state, case, action, requester_id
@@ -72,7 +72,12 @@ class HandoffRouteOps(HandoffCaseOps, HandoffTicketOps):
         if case.status not in _REVIEW_STATUSES:
             return {"handoff_handled": False, "handoff_case": case}
         return await self._route_review_action(
-            state, case, action, requester_id, ticket_intent
+            state,
+            case,
+            action,
+            requester_id,
+            ticket_intent,
+            raw_action=raw_action,
         )
 
     async def _route_protocol_close_if_needed(
@@ -137,20 +142,27 @@ class HandoffRouteOps(HandoffCaseOps, HandoffTicketOps):
 
     async def _decide_authorized_handoff_action(
         self, state: AgentState, case: HandoffCase
-    ) -> HandoffAction:
+    ) -> tuple[HandoffAction, HandoffAction]:
+        """Return ``(raw_router_action, authorized_action)``.
+
+        When policy rejects an explicit illegal router output, callers must
+        fail closed (re-offer / stay) instead of treating UNKNOWN as a
+        NEW_ISSUE escape hatch.
+        """
         request = state["request"]
-        action = await self.handoff_router.decide(
+        raw_action = await self.handoff_router.decide(
             message=request.message.text,
             case_status=case.status.value,
             case_summary=self._summary_text(case.summary),
             conversation_turns=self._handoff_conversation_turns(state["conversation"]),
             execution_context=state.get("execution_context"),
         )
-        return authorize_handoff_action(
+        authorized = authorize_handoff_action(
             case.status.value,
-            action,
+            raw_action,
             message=request.message.text,
         )
+        return raw_action, authorized
 
     async def _route_demo_active_action(
         self,
@@ -199,10 +211,24 @@ class HandoffRouteOps(HandoffCaseOps, HandoffTicketOps):
         action: HandoffAction,
         requester_id: str,
         ticket_intent: TicketIntent,
+        *,
+        raw_action: HandoffAction = HandoffAction.UNKNOWN,
     ) -> dict:
         if action is HandoffAction.UNKNOWN:
-            # A missing, failed, or illegal semantic action must not cancel an
-            # unresolved case or reinterpret the current turn as a new issue.
+            # Policy rejected an explicit illegal transition — fail closed.
+            policy_rejected = raw_action is not HandoffAction.UNKNOWN
+            if (
+                not policy_rejected
+                and self._unknown_should_resume_as_new_issue(state, ticket_intent)
+            ):
+                return await self._supersede_handoff_for_resume(
+                    state,
+                    case,
+                    requester_id=requester_id,
+                    ticket_intent=ticket_intent,
+                    resume_reason="NEW_ISSUE",
+                )
+            # Ambiguous / illegal / non-IT turns stay in review and re-offer.
             return {
                 "handoff_handled": True,
                 "handoff_case": case,
@@ -250,6 +276,19 @@ class HandoffRouteOps(HandoffCaseOps, HandoffTicketOps):
                 state, case, requester_id=requester_id
             )
         return {"handoff_handled": False, "handoff_case": case}
+
+    def _unknown_should_resume_as_new_issue(
+        self,
+        state: AgentState,
+        ticket_intent: TicketIntent,
+    ) -> bool:
+        """Escape stuck review when IT support is clear but the router is unsure."""
+        if ticket_intent is TicketIntent.CREATE:
+            return False
+        if self._is_standalone_human_escalation(state):
+            return False
+        decision = state.get("supervisor_decision")
+        return decision is not None and decision.intent == "IT_SUPPORT"
 
     async def _cancel_review_handoff(
         self, case: HandoffCase, requester_id: str

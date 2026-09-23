@@ -164,6 +164,8 @@ def build_knowledge_service(
     index: HybridIndex,
     model=None,
     release_id: str | None = None,
+    *,
+    models=None,
 ) -> KnowledgeService:
     """Single factory honoring ``settings.knowledge_service_mode`` (spec §8.2/§8.3).
 
@@ -189,4 +191,6 @@ def build_knowledge_service(
             max_images=settings.max_images,
             enforce_acl=settings.gemini_file_search_enforce_acl,
         )
-    return HybridKnowledgeService(settings, index, model, release_id=release_id)
+    return HybridKnowledgeService(
+        settings, index, model, release_id=release_id, models=models
+    )

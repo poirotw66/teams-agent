@@ -2,10 +2,40 @@
 
 from __future__ import annotations
 
+import re
+
 from .confirmation import TicketIntent
 from .contracts import Issue, PendingIssueContext
 from .supervisor import ConversationSupervisorDecision
 from .workflow_helpers import AgentState
+
+_ERROR_CODE_RE = re.compile(
+    r"\(\s*-\s*\d+\s*\)|(?<![a-z0-9])-\d{1,5}(?![a-z0-9])",
+    re.IGNORECASE,
+)
+_ERROR_PHRASE_TERMS = (
+    "錯誤",
+    "error",
+    "失敗",
+    "異常",
+    "permission denied",
+    "unable to establish",
+)
+_CATALOG_INTENT_MARKERS = (
+    "錯訊說明",
+    "錯誤碼清單",
+    "錯誤代碼清單",
+    "錯訊對照",
+    "錯誤碼對照",
+    "常見錯誤",
+    "不要只給",
+    "不要只提供",
+    "其他的錯誤碼",
+    "其他錯誤碼",
+    "還有哪些錯誤",
+)
+_CATALOG_DOC_MARKERS = ("說明", "清單", "對照", "文件", "有哪些")
+_CATALOG_ERROR_MARKERS = ("錯訊", "錯誤碼", "錯誤訊息", "錯誤代碼")
 
 
 def _compose_pending_description(pending: PendingIssueContext, detail: str) -> str:
@@ -30,15 +60,49 @@ def _missing_info_kind(question: str) -> str | None:
     return None
 
 
+def _has_forticlient_product_cue(text: str) -> bool:
+    normalized = text.casefold()
+    return any(
+        token in normalized
+        for token in ("forticlient", "orticlient", "fortinet")
+    ) or ("forti" in normalized and "client" in normalized)
+
+
+def _is_error_catalog_documentation_request(text: str) -> bool:
+    """True when the user wants an error-code catalog / doc, not personal triage."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    normalized = raw.casefold()
+    follow_up_catalog = any(
+        marker in raw
+        for marker in ("其他的錯誤碼", "其他錯誤碼", "還有哪些錯誤")
+    )
+    if follow_up_catalog:
+        return True
+    has_product = _has_forticlient_product_cue(raw)
+    if any(marker in raw for marker in _CATALOG_INTENT_MARKERS) and (
+        has_product
+        or "vpn" in normalized
+        or "vpn常見" in raw
+        or "一般 vpn" in normalized
+    ):
+        return True
+    if has_product and any(marker in raw for marker in _CATALOG_ERROR_MARKERS):
+        return any(marker in raw for marker in _CATALOG_DOC_MARKERS)
+    return False
+
+
 def _detail_satisfies_kind(text: str, kind: str) -> bool:
     normalized = text.strip().lower().rstrip("。.!！?？")
     if not normalized:
         return False
     if kind == "ERROR":
-        return bool(
-            any(term in normalized for term in ("錯誤", "error", "失敗", "異常"))
-            or any(character.isdigit() for character in normalized)
-        )
+        # Bare digits like "888" must not count; require a real error phrase or
+        # FortiClient-style signed / parenthesized code.
+        if any(term in normalized for term in _ERROR_PHRASE_TERMS):
+            return True
+        return bool(_ERROR_CODE_RE.search(normalized))
     if kind == "FEATURE":
         return any(
             term in normalized
@@ -91,6 +155,36 @@ def _answers_missing_info(text: str, questions: list[str]) -> bool:
     )
 
 
+def _promote_error_catalog_documentation_request(
+    issues: list[Issue],
+    latest_text: str,
+) -> list[Issue]:
+    """Force READY knowledge lookup for FortiClient error-catalog questions."""
+    if not _is_error_catalog_documentation_request(latest_text):
+        return issues
+    if len(issues) != 1:
+        return issues
+    current = issues[0]
+    if not current.isIT:
+        return issues
+    description = latest_text.strip()
+    route = current.route if current.route not in {"NOT_IT", ""} else "KNOWLEDGE"
+    if route == "FAQ":
+        route = "KNOWLEDGE"
+    return [
+        current.model_copy(
+            update={
+                "description": description,
+                "retrieval_query": description,
+                "readiness": "READY",
+                "missingInfo": [],
+                "route": route,
+                "faqKey": None,
+            }
+        )
+    ]
+
+
 def _complete_complementary_pending_issue(
     issues: list[Issue],
     pending_issues: list[PendingIssueContext],
@@ -107,6 +201,10 @@ def _complete_complementary_pending_issue(
     with a best-effort lookup.  Clearly non-IT turns never enter this path and
     explicit topic abandonment is handled separately.
     """
+    promoted = _promote_error_catalog_documentation_request(issues, latest_text)
+    if promoted is not issues and all(issue.readiness == "READY" for issue in promoted):
+        return promoted
+
     if (
         len(pending_issues) != 1
         or len(issues) != 1

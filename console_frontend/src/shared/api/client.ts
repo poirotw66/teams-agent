@@ -42,8 +42,21 @@ export async function apiClient<T>(
     let data: unknown = null;
     try {
       data = await response.json();
-      if (data && typeof data === 'object' && 'detail' in data) {
-        errorDetail = String((data as { detail: unknown }).detail);
+      if (data && typeof data === 'object') {
+        const payload = data as {
+          detail?: unknown;
+          error?: { message?: unknown; code?: unknown };
+          message?: unknown;
+        };
+        if (typeof payload.error?.message === 'string' && payload.error.message.trim()) {
+          errorDetail = payload.error.message;
+        } else if (typeof payload.detail === 'string' && payload.detail.trim()) {
+          errorDetail = payload.detail;
+        } else if (payload.detail != null) {
+          errorDetail = String(payload.detail);
+        } else if (typeof payload.message === 'string' && payload.message.trim()) {
+          errorDetail = payload.message;
+        }
       }
     } catch {
       // Non-JSON error response

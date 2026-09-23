@@ -9,6 +9,10 @@ from fastapi import FastAPI, HTTPException, Request
 from ..deps import sync_knowledge_to_active_pointer
 from ..knowledge_release import read_active_release_id
 from ..knowledge_release_control import FirestoreKnowledgeReleaseControl
+from ..knowledge_release_sync import (
+    KnowledgeReleaseSelectionMode,
+    resolve_selection_mode,
+)
 from ..release_artifacts import KnowledgeIndexArtifact
 from ..retrieval import HybridIndex
 from ..settings import RagSettings
@@ -97,11 +101,42 @@ async def _require_active_release_alignment(
     loaded_release_id = getattr(request.app.state, "knowledge_release_id", None)
     if settings.knowledge_release_store_mode == "GCS":
         artifact = getattr(request.app.state, "knowledge_index_artifact", None)
+        if not loaded_release_id or artifact is None:
+            raise HTTPException(
+                status_code=503,
+                detail="No verified local knowledge snapshot is loaded.",
+            )
+        selection = resolve_selection_mode(settings)
+        if selection is KnowledgeReleaseSelectionMode.LOCAL_SANDBOX:
+            return
+        if selection is KnowledgeReleaseSelectionMode.PINNED:
+            expected = settings.knowledge_active_release_id
+            if expected and expected != loaded_release_id:
+                raise HTTPException(
+                    status_code=503,
+                    detail="Loaded knowledge release does not match the pinned release.",
+                )
+            return
+        # FOLLOW_CLOUD: loaded must match the mirrored cloud-active snapshot when
+        # the control plane is reachable; otherwise keep last verified snapshot.
         control: FirestoreKnowledgeReleaseControl | None = getattr(
             request.app.state,
             "knowledge_release_control",
             None,
         )
+        syncer = getattr(request.app.state, "knowledge_release_syncer", None)
+        if syncer is not None:
+            status = syncer.status
+            if (
+                status.mirrored_release_id
+                and status.mirrored_release_id != loaded_release_id
+                and status.qa_snapshot_complete
+            ):
+                raise HTTPException(
+                    status_code=503,
+                    detail="Loaded GCS knowledge release is behind the mirrored snapshot.",
+                )
+            return
         if control is None:
             raise HTTPException(
                 status_code=503,
@@ -114,7 +149,7 @@ async def _require_active_release_alignment(
                 status_code=503,
                 detail="Knowledge release control plane is unavailable.",
             ) from error
-        if not loaded_release_id or artifact is None or expected_release_id != loaded_release_id:
+        if expected_release_id != loaded_release_id:
             raise HTTPException(
                 status_code=503,
                 detail="Loaded GCS knowledge release is not the active verified release.",

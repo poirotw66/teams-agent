@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,8 @@ from typing import Any
 from knowledge_core.eligibility import is_generation_metadata_eligible
 
 _FILE_SEARCH_MAX_CHUNK_TOKENS = 512
+_FILE_SEARCH_UPLOAD_WORKERS = 6
+_FILE_SEARCH_POLL_INTERVAL_SECONDS = 0.25
 
 
 @dataclass(frozen=True)
@@ -89,8 +92,13 @@ def synchronize_file_search_release(
     api_key: str,
     store_name: str | None = None,
     operation_timeout_seconds: float = 300.0,
+    max_workers: int = _FILE_SEARCH_UPLOAD_WORKERS,
 ) -> str:
-    """Reconcile one release-scoped store by deterministic chunk slug."""
+    """Reconcile one release-scoped store by deterministic chunk slug.
+
+    Unchanged chunks are skipped. Uploads that need work run concurrently so
+    formal publish is not serialized on one-at-a-time Gemini polling.
+    """
     from google import genai
     from google.genai import types
 
@@ -121,6 +129,8 @@ def synchronize_file_search_release(
         slug = str(getattr(document, "display_name", ""))
         remote_by_slug.setdefault(slug, []).append(document)
     expected_slugs = {entry.slug for entry in entries}
+
+    uploads: list[FileSearchReleaseEntry] = []
     for entry in entries:
         existing = remote_by_slug.get(entry.slug, [])
         if len(existing) == 1 and _remote_content_hash(existing[0]) == entry.content_hash:
@@ -130,25 +140,25 @@ def synchronize_file_search_release(
                 name=document.name,
                 config=types.DeleteDocumentConfig(force=True),
             )
-        metadata = _custom_metadata(types, entry)
-        operation = client.file_search_stores.upload_to_file_search_store(
-            file_search_store_name=store_name,
-            file=str(release_dir / "file-search" / entry.slug),
-            config=types.UploadToFileSearchStoreConfig(
-                display_name=entry.slug,
-                mime_type="text/plain",
-                custom_metadata=metadata,
-                chunking_config=types.ChunkingConfig(
-                    white_space_config=types.WhiteSpaceConfig(
-                        # Gemini caps this setting at 512. The canonical child
-                        # remains the uploaded document and source identity.
-                        max_tokens_per_chunk=_FILE_SEARCH_MAX_CHUNK_TOKENS,
-                        max_overlap_tokens=0,
-                    )
-                ),
-            ),
-        )
-        _await_operation(client, operation, timeout_seconds=operation_timeout_seconds)
+        uploads.append(entry)
+
+    if uploads:
+        worker_count = max(1, min(max_workers, len(uploads)))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [
+                executor.submit(
+                    _upload_file_search_entry,
+                    client,
+                    types,
+                    store_name=store_name,
+                    release_dir=release_dir,
+                    entry=entry,
+                    operation_timeout_seconds=operation_timeout_seconds,
+                )
+                for entry in uploads
+            ]
+            for future in as_completed(futures):
+                future.result()
 
     for slug, documents in remote_by_slug.items():
         if slug and slug not in expected_slugs:
@@ -158,6 +168,36 @@ def synchronize_file_search_release(
                     config=types.DeleteDocumentConfig(force=True),
                 )
     return store_name
+
+
+def _upload_file_search_entry(
+    client: Any,
+    types: Any,
+    *,
+    store_name: str,
+    release_dir: Path,
+    entry: FileSearchReleaseEntry,
+    operation_timeout_seconds: float,
+) -> None:
+    metadata = _custom_metadata(types, entry)
+    operation = client.file_search_stores.upload_to_file_search_store(
+        file_search_store_name=store_name,
+        file=str(release_dir / "file-search" / entry.slug),
+        config=types.UploadToFileSearchStoreConfig(
+            display_name=entry.slug,
+            mime_type="text/plain",
+            custom_metadata=metadata,
+            chunking_config=types.ChunkingConfig(
+                white_space_config=types.WhiteSpaceConfig(
+                    # Gemini caps this setting at 512. The canonical child
+                    # remains the uploaded document and source identity.
+                    max_tokens_per_chunk=_FILE_SEARCH_MAX_CHUNK_TOKENS,
+                    max_overlap_tokens=0,
+                )
+            ),
+        ),
+    )
+    _await_operation(client, operation, timeout_seconds=operation_timeout_seconds)
 
 
 def _custom_metadata(types: Any, entry: FileSearchReleaseEntry) -> list[Any]:
@@ -196,7 +236,7 @@ def _await_operation(client: Any, operation: Any, *, timeout_seconds: float) -> 
     while not operation.done:
         if time.monotonic() >= deadline:
             raise TimeoutError("Gemini File Search upload timed out.")
-        time.sleep(1)
+        time.sleep(_FILE_SEARCH_POLL_INTERVAL_SECONDS)
         operation = client.operations.get(operation)
     if operation.error:
         raise RuntimeError(f"Gemini File Search upload failed: {operation.error}")
@@ -217,6 +257,6 @@ def _optional(payload: dict[str, Any], key: str) -> str | None:
 def _remote_content_hash(document: Any) -> str | None:
     for metadata in getattr(document, "custom_metadata", ()) or ():
         if getattr(metadata, "key", None) == "content_hash":
-            value = str(getattr(metadata, "string_value", "") or "").strip()
-            return value or None
+            value = getattr(metadata, "string_value", None)
+            return str(value) if value is not None else None
     return None

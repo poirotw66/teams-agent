@@ -14,6 +14,7 @@ from operations_core.access import ActorContext
 from .capabilities import capability_for_portal_path, has_knowledge_capability
 from .client import KnowledgePortalClient
 from .errors import KnowledgeBridgeError, assert_allowlisted
+from .formal_write_gate import assert_formal_cloud_write_allowed
 
 
 def _correlation(x_correlation_id: str | None = Header(default=None)) -> str:
@@ -40,6 +41,7 @@ async def _handle_knowledge_proxy(
     *,
     client: KnowledgePortalClient,
     enabled: bool,
+    settings: Any | None = None,
 ) -> Response:
     _require_enabled(client, enabled)
 
@@ -67,6 +69,12 @@ async def _handle_knowledge_proxy(
             status_code=403,
             correlation_id=correlation_id,
             details={"requiredCapability": capability},
+        )
+    if settings is not None:
+        assert_formal_cloud_write_allowed(
+            settings=settings,
+            capability=capability,
+            correlation_id=correlation_id,
         )
 
     content_type = request.headers.get("content-type")
@@ -116,6 +124,7 @@ def build_knowledge_router(
     client: KnowledgePortalClient,
     current_actor: Callable[..., ActorContext],
     enabled: bool,
+    settings: Any | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["knowledge-bridge"])
 
@@ -125,7 +134,7 @@ def build_knowledge_router(
         correlation_id: str = Depends(_correlation),
     ) -> dict[str, Any]:
         _ = actor
-        return {
+        payload: dict[str, Any] = {
             "enabled": bool(enabled and client.configured),
             "namespace": "/api/knowledge",
             "correlationId": correlation_id,
@@ -134,6 +143,11 @@ def build_knowledge_router(
                 "Use this namespace for knowledge operations."
             ),
         }
+        if settings is not None:
+            from .formal_write_gate import evaluate_knowledge_workspace_gate
+
+            payload.update(evaluate_knowledge_workspace_gate(settings).to_public_dict())
+        return payload
 
     @router.get("/{full_path:path}", operation_id="knowledge_proxy_get")
     async def knowledge_proxy_get(
@@ -143,7 +157,13 @@ def build_knowledge_router(
         correlation_id: str = Depends(_correlation),
     ) -> Response:
         return await _handle_knowledge_proxy(
-            full_path, request, actor, correlation_id, client=client, enabled=enabled
+            full_path,
+            request,
+            actor,
+            correlation_id,
+            client=client,
+            enabled=enabled,
+            settings=settings,
         )
 
     @router.post("/{full_path:path}", operation_id="knowledge_proxy_post")
@@ -154,7 +174,13 @@ def build_knowledge_router(
         correlation_id: str = Depends(_correlation),
     ) -> Response:
         return await _handle_knowledge_proxy(
-            full_path, request, actor, correlation_id, client=client, enabled=enabled
+            full_path,
+            request,
+            actor,
+            correlation_id,
+            client=client,
+            enabled=enabled,
+            settings=settings,
         )
 
     @router.put("/{full_path:path}", operation_id="knowledge_proxy_put")
@@ -165,7 +191,13 @@ def build_knowledge_router(
         correlation_id: str = Depends(_correlation),
     ) -> Response:
         return await _handle_knowledge_proxy(
-            full_path, request, actor, correlation_id, client=client, enabled=enabled
+            full_path,
+            request,
+            actor,
+            correlation_id,
+            client=client,
+            enabled=enabled,
+            settings=settings,
         )
 
     @router.delete("/{full_path:path}", operation_id="knowledge_proxy_delete")
@@ -176,7 +208,13 @@ def build_knowledge_router(
         correlation_id: str = Depends(_correlation),
     ) -> Response:
         return await _handle_knowledge_proxy(
-            full_path, request, actor, correlation_id, client=client, enabled=enabled
+            full_path,
+            request,
+            actor,
+            correlation_id,
+            client=client,
+            enabled=enabled,
+            settings=settings,
         )
 
     return router

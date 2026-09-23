@@ -2,6 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Modal, Form, Input, Select, Typography, Alert, message, Space } from 'antd';
 import { FileDoneOutlined } from '@ant-design/icons';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
+import {
+  describeMutationError,
+  isFormValidationError,
+} from '../../../shared/api/mutationErrors';
 
 const { Text } = Typography;
 const { TextArea } = Input;
@@ -48,6 +52,10 @@ export const EscalateTicketModal: React.FC<EscalateTicketModalProps> = ({
   }, [open, initialData, form]);
 
   const handleSubmit = async () => {
+    if (submitting) {
+      return;
+    }
+
     try {
       const values = await form.validateFields();
       setSubmitting(true);
@@ -63,11 +71,16 @@ export const EscalateTicketModal: React.FC<EscalateTicketModalProps> = ({
         notes: values.notes,
       });
 
-      message.success(`已成功開立實體 IT 工單 [${ticket.ticket_number}] 並派工至「${values.assignedTeam}」！`);
+      message.success(
+        `已成功開立實體 IT 工單 [${ticket.ticket_number}] 並派工至「${values.assignedTeam}」`,
+      );
       onEscalated?.(ticket.ticket_number);
       onClose();
-    } catch {
-      // Form error
+    } catch (error) {
+      if (isFormValidationError(error)) {
+        return;
+      }
+      message.error(describeMutationError(error, '開立工單失敗，請稍後再試'));
     } finally {
       setSubmitting(false);
     }

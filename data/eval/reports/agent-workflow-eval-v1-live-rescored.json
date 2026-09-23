@@ -1,0 +1,97 @@
+{
+  "summary": {
+    "caseCount": 3.0,
+    "supervisorRouteAccuracy": 1.0,
+    "issueCountAccuracy": 1.0,
+    "issueRouteAccuracy": 1.0,
+    "answerAccuracy": 0.3333333333333333,
+    "citationPrecision": 0.0,
+    "citationRecall": 0.0,
+    "ticketFalseTriggerRate": 0.0,
+    "handoffFalseTriggerRate": 0.6666666666666666,
+    "llmCallsPerRequest": 1.3333333333333333,
+    "latencyMsP50": 3519.738332994166,
+    "latencyMsP95": 3519.738332994166,
+    "firstStageLatencyMsP50": 0.0,
+    "firstStageLatencyMsP95": 0.0,
+    "provenance": {
+      "commitSha": "d95bec3fbf4c58a613daaadcd45f117f4ec8eaa7",
+      "datasetPath": "../data/eval/agent_workflow_eval_v1.json",
+      "datasetHash": "6c253ac330ddb38c1a36a39b30888d18e687ec13d1797a9355a457ac6031ddac",
+      "freezeVersion": 1,
+      "releaseId": null,
+      "agentModel": "google_genai:gemini-3.8-flash",
+      "answerModel": "google_genai:gemini-3.1-flash-lite",
+      "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+      "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+      "hardAnswerModel": null,
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "escalationPolicy": "OFF",
+      "region": null,
+      "startedAt": "2026-09-21T06:28:28.350542+00:00",
+      "completedAt": "2026-09-21T06:28:36.854383+00:00"
+    }
+  },
+  "cases": [
+    {
+      "caseId": "workflow-v1-001",
+      "observedRoute": "IT_SUPPORT",
+      "issueCount": 1,
+      "answer": "目前無法從企業知識庫找到可確認的答案。請先確認以下案件摘要：\n\n問題：FortiClient 出現 -455 錯誤\n使用者需求：FortiClient 出現 -455 怎麼辦？\n對話重點：未提供\n已嘗試方式：尚未提供\n尚未解決原因：目前尚無可確認的解決方案\n期望結果：取得可執行的協助或後續處理\n\n請回覆「建立派工單」或「聯絡線上客服」；也可以回覆「繼續補充」或「取消」。",
+      "score": {
+        "case_id": "workflow-v1-001",
+        "supervisor_route_match": 1.0,
+        "issue_count_match": 1.0,
+        "issue_route_match": 1.0,
+        "answer_found_match": 0.0,
+        "citation_precision": 0.0,
+        "citation_recall": 0.0,
+        "ticket_false_trigger": 0.0,
+        "handoff_false_trigger": 1.0,
+        "llm_calls": 2,
+        "latency_ms": 3519.738332994166,
+        "first_stage_latency_ms": null
+      }
+    },
+    {
+      "caseId": "workflow-v1-002",
+      "observedRoute": "GREETING",
+      "issueCount": 0,
+      "answer": "你好！我是 IT 助手，有系統或設備問題都可以告訴我。",
+      "score": {
+        "case_id": "workflow-v1-002",
+        "supervisor_route_match": 1.0,
+        "issue_count_match": 1.0,
+        "issue_route_match": 1.0,
+        "answer_found_match": 1.0,
+        "citation_precision": null,
+        "citation_recall": null,
+        "ticket_false_trigger": 0.0,
+        "handoff_false_trigger": 0.0,
+        "llm_calls": 0,
+        "latency_ms": 3.6913340009050444,
+        "first_stage_latency_ms": null
+      }
+    },
+    {
+      "caseId": "workflow-v1-003",
+      "observedRoute": "IT_SUPPORT",
+      "issueCount": 1,
+      "answer": "目前無法從企業知識庫找到可確認的答案。請先確認以下案件摘要：\n\n問題：詢問若非 AD 密碼應至何處修改\n使用者需求：那密碼不是 AD 的話要去哪改？\n對話重點：未提供\n已嘗試方式：尚未提供\n尚未解決原因：目前尚無可確認的解決方案\n期望結果：取得可執行的協助或後續處理\n\n請回覆「建立派工單」或「聯絡線上客服」；也可以回覆「繼續補充」或「取消」。",
+      "score": {
+        "case_id": "workflow-v1-003",
+        "supervisor_route_match": 1.0,
+        "issue_count_match": 1.0,
+        "issue_route_match": 1.0,
+        "answer_found_match": 0.0,
+        "citation_precision": 0.0,
+        "citation_recall": 0.0,
+        "ticket_false_trigger": 0.0,
+        "handoff_false_trigger": 1.0,
+        "llm_calls": 2,
+        "latency_ms": 4314.485375012737,
+        "first_stage_latency_ms": null
+      }
+    }
+  ]
+}

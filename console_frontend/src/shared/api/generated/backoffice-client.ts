@@ -57,6 +57,7 @@ import type {
   FlagCandidateBody,
   ImportValidatePayload,
   ItTicketItem,
+  KnowledgeWorkspaceUpdateRequest,
   ManualDocumentItem,
   MaskingBody,
   ModelCandidateBody,
@@ -163,7 +164,7 @@ function toFormData(body: FormData | object | undefined): FormData | undefined {
   return form;
 }
 
-// Operations from ai_ops_backoffice OpenAPI (216 methods).
+// Operations from ai_ops_backoffice OpenAPI (223 methods).
 export const backofficeClient = {
   async acknowledge_alert_api_alerts__alert_id__acknowledge_post(args: {
     path: {
@@ -830,6 +831,11 @@ export const backofficeClient = {
     const body = args.body === undefined ? undefined : JSON.stringify(args.body);
     return apiClient<ItTicketItem>(url, { method: 'POST', body });
   },
+  async delete_knowledge_workspace_api_knowledge_workspace_delete(): Promise<Record<string, unknown>> {
+    const path = '/api/knowledge-workspace';
+    const url = path;
+    return apiClient<Record<string, unknown>>(url, { method: 'DELETE' });
+  },
   async delete_workbench_document_api_console_workbench_documents__document_id__delete(args: {
     path: {
       document_id: string;
@@ -1054,6 +1060,20 @@ export const backofficeClient = {
     const url = path;
     return apiClient<Record<string, unknown>>(url, { method: 'GET' });
   },
+  async get_console_agent_knowledge_mirror_document(args: {
+    path: {
+      document_id: string;
+    };
+}): Promise<Record<string, unknown>> {
+    const path = buildPath('/api/console/agent-knowledge/documents/{document_id}', args.path);
+    const url = path;
+    return apiClient<Record<string, unknown>>(url, { method: 'GET' });
+  },
+  async get_console_agent_knowledge_status(): Promise<Record<string, unknown>> {
+    const path = '/api/console/agent-knowledge/status';
+    const url = path;
+    return apiClient<Record<string, unknown>>(url, { method: 'GET' });
+  },
   async get_decision_api_evaluations_gate_decisions__decision_id__get(args: {
     path: {
       decision_id: string;
@@ -1122,6 +1142,11 @@ export const backofficeClient = {
     };
 }): Promise<Record<string, unknown>> {
     const path = buildPath('/api/evaluations/gate-policies/{policy_id}', args.path);
+    const url = path;
+    return apiClient<Record<string, unknown>>(url, { method: 'GET' });
+  },
+  async get_knowledge_workspace_api_knowledge_workspace_get(): Promise<Record<string, unknown>> {
+    const path = '/api/knowledge-workspace';
     const url = path;
     return apiClient<Record<string, unknown>>(url, { method: 'GET' });
   },
@@ -1413,14 +1438,31 @@ export const backofficeClient = {
     const url = path;
     return apiClient<unknown>(url, { method: 'PUT' });
   },
-  async knowledge_ui_knowledge_ui__get(): Promise<unknown> {
+  async knowledge_ui_knowledge_ui__get(args?: {
+    query?: {
+      path?: string;
+    };
+}): Promise<unknown> {
     const path = '/knowledge-ui/';
+    const url = `${path}${buildQuery(args?.query)}`;
+    return apiClient<unknown>(url, { method: 'GET' });
+  },
+  async knowledge_ui_knowledge_ui__path__get(args: {
+    path: {
+      path: string;
+    };
+}): Promise<unknown> {
+    const path = buildPath('/knowledge-ui/{path}', args.path);
     const url = path;
     return apiClient<unknown>(url, { method: 'GET' });
   },
-  async knowledge_ui_knowledge_ui_get(): Promise<unknown> {
+  async knowledge_ui_knowledge_ui_get(args?: {
+    query?: {
+      path?: string;
+    };
+}): Promise<unknown> {
     const path = '/knowledge-ui';
-    const url = path;
+    const url = `${path}${buildQuery(args?.query)}`;
     return apiClient<unknown>(url, { method: 'GET' });
   },
   async legacy_shell_legacy__get(): Promise<unknown> {
@@ -1707,6 +1749,11 @@ export const backofficeClient = {
     const url = path;
     return apiClient<PortalWorkbenchDtoCatalog>(url, { method: 'GET' });
   },
+  async post_console_agent_knowledge_sync(): Promise<Record<string, unknown>> {
+    const path = '/api/console/agent-knowledge/sync';
+    const url = path;
+    return apiClient<Record<string, unknown>>(url, { method: 'POST' });
+  },
   async preflight_run_api_evaluations_runs_preflight_post(args: {
     body: PreflightRunPayload;
 }): Promise<Record<string, unknown>> {
@@ -1731,6 +1778,14 @@ export const backofficeClient = {
     const path = '/api/admin/retention/purge';
     const url = path;
     return apiClient<Record<string, unknown>>(url, { method: 'POST' });
+  },
+  async put_knowledge_workspace_api_knowledge_workspace_put(args: {
+    body: KnowledgeWorkspaceUpdateRequest;
+}): Promise<Record<string, unknown>> {
+    const path = '/api/knowledge-workspace';
+    const url = path;
+    const body = args.body === undefined ? undefined : JSON.stringify(args.body);
+    return apiClient<Record<string, unknown>>(url, { method: 'PUT', body });
   },
   async reconciliation_costs_summary_api_admin_reconciliation_costs_summary_get(args?: {
     query?: {

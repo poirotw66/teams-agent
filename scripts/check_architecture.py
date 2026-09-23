@@ -973,6 +973,48 @@ def _apply_private_access_tighten(
     )
 
 
+def check_legacy_rag_agent_imports() -> list[Finding]:
+    """G1/G3 ratchet: chat routes must not import the legacy RagAgent.
+
+    Startup / model-control may still construct RagAgent during G1 observation.
+    Production request handlers and Teams adapter code must not reintroduce
+    ``RagAgent`` imports.
+    """
+    findings: list[Finding] = []
+    forbidden_roots = (
+        REPO_ROOT / "agent_service" / "src" / "agent_service" / "routers",
+        REPO_ROOT / "agent_service" / "src" / "agent_service" / "api.py",
+        REPO_ROOT / "src" / "teams_agent",
+    )
+    import_re = re.compile(
+        r"(?:from\s+(?:agent_service\.)?graph\s+import\s+[^\n]*\bRagAgent\b|"
+        r"import\s+agent_service\.graph\b|"
+        r"from\s+\.graph\s+import\s+[^\n]*\bRagAgent\b)"
+    )
+    for root in forbidden_roots:
+        paths: list[Path]
+        if root.is_file():
+            paths = [root]
+        elif root.is_dir():
+            paths = [path for path in root.rglob("*.py") if path.is_file()]
+        else:
+            continue
+        for path in paths:
+            try:
+                text = path.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            if import_re.search(text):
+                findings.append(
+                    Finding(
+                        "LEGACY_RAG_AGENT_IMPORT",
+                        f"{rel_path(path)} must not import RagAgent "
+                        "(use AgentWorkflow / KnowledgeBackendRouter)",
+                    )
+                )
+    return findings
+
+
 def run_checks(*, compare_ref: str | None = None) -> list[Finding]:
     missing = [
         path
@@ -1025,6 +1067,7 @@ def run_checks(*, compare_ref: str | None = None) -> list[Finding]:
     findings.extend(check_router_filesystem_io())
     findings.extend(check_allowed_cross_domain_edges())
     findings.extend(check_size_waivers())
+    findings.extend(check_legacy_rag_agent_imports())
 
     resolved_compare_ref = compare_ref or os.environ.get("ARCHITECTURE_COMPARE_REF")
     if resolved_compare_ref:

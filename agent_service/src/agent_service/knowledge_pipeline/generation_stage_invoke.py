@@ -119,6 +119,7 @@ async def invoke_initial_grounded_answer(
     chunk_content_by_id: dict[str, str],
     counter: LlmCallCounter,
     execution_context: ExecutionContext | None,
+    component: str = "knowledge_answer",
 ) -> tuple[StructuredKnowledgeAnswer, str]:
     async def _invoke_answer() -> StructuredKnowledgeAnswer:
         return await ainvoke_structured(
@@ -142,7 +143,7 @@ async def invoke_initial_grounded_answer(
 
     response = await host.invoke_llm(
         _invoke_answer,
-        component="knowledge_generate",
+        component=component,
         execution_context=execution_context,
         counter=counter,
     )

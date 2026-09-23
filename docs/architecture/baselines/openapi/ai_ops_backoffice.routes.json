@@ -1,5 +1,5 @@
 {
-  "routeCount": 216,
+  "routeCount": 223,
   "routes": [
     {
       "method": "GET",
@@ -307,6 +307,48 @@
       "method": "GET",
       "operationId": "capabilities_api_capabilities_get",
       "path": "/api/capabilities",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_console_agent_knowledge_mirror_document",
+      "path": "/api/console/agent-knowledge/documents/{document_id}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_console_agent_knowledge_status",
+      "path": "/api/console/agent-knowledge/status",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "POST",
+      "operationId": "post_console_agent_knowledge_sync",
+      "path": "/api/console/agent-knowledge/sync",
       "requestSchema": null,
       "responseSchemas": [
         "HTTPValidationError"
@@ -2470,6 +2512,48 @@
       "tags": []
     },
     {
+      "method": "DELETE",
+      "operationId": "delete_knowledge_workspace_api_knowledge_workspace_delete",
+      "path": "/api/knowledge-workspace",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_knowledge_workspace_api_knowledge_workspace_get",
+      "path": "/api/knowledge-workspace",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "PUT",
+      "operationId": "put_knowledge_workspace_api_knowledge_workspace_put",
+      "path": "/api/knowledge-workspace",
+      "requestSchema": "KnowledgeWorkspaceUpdateRequest",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
       "method": "GET",
       "operationId": "knowledge_bridge_status_api_knowledge_status_get",
       "path": "/api/knowledge/status",
@@ -3083,9 +3167,12 @@
       "operationId": "knowledge_ui_knowledge_ui_get",
       "path": "/knowledge-ui",
       "requestSchema": null,
-      "responseSchemas": [],
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
       "statusCodes": [
-        "200"
+        "200",
+        "422"
       ],
       "tags": []
     },
@@ -3094,9 +3181,26 @@
       "operationId": "knowledge_ui_knowledge_ui__get",
       "path": "/knowledge-ui/",
       "requestSchema": null,
-      "responseSchemas": [],
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
       "statusCodes": [
-        "200"
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "knowledge_ui_knowledge_ui__path__get",
+      "path": "/knowledge-ui/{path}",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
       ],
       "tags": []
     },

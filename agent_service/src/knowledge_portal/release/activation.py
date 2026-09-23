@@ -6,6 +6,7 @@ deactivate helpers so the service facade owns command orchestration only.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
@@ -51,6 +52,7 @@ class ReleaseBuilder(Protocol):
         previous_release_id: str | None,
         embedding_model: str | None = None,
         tenant_id: str | None = None,
+        previous_release: ReleaseRecord | None = None,
     ) -> ReleaseRecord:
         ...
 
@@ -222,20 +224,28 @@ async def build_deploying_candidate(
     published_versions: list[KnowledgeVersionRecord],
     release_id: str,
     previous_release_id: str | None,
+    previous_release: ReleaseRecord | None,
     embedding_model: str | None,
     correlation_id: str,
     audit: AuditFn,
     utc_now: UtcNow,
 ) -> ReleaseRecord:
-    """Build release artifacts and mark the candidate DEPLOYING."""
+    """Build release artifacts and mark the candidate DEPLOYING.
+
+    Heavy index / File Search / GCS work runs in a worker thread so the
+    shared asyncio event loop (in-process Portal + Backoffice) keeps
+    serving document-list and other requests during formal publish.
+    """
     try:
-        release = publisher.build_release(
+        release = await asyncio.to_thread(
+            publisher.build_release,
             release_id=release_id,
             published_versions=published_versions,
             created_by=actor.user_id,
             previous_release_id=previous_release_id,
             embedding_model=embedding_model,
             tenant_id=actor.tenant_id,
+            previous_release=previous_release,
         )
     except ReleaseBuildError as exc:
         await audit(
@@ -394,12 +404,16 @@ async def activate_release(
     """Build, gate, persist sources, activate pointer, reload, and settle."""
     previous = await store.get_active_release_id()
     previous_release_id = previous if isinstance(previous, str) else None
+    previous_release = (
+        await store.get_release(previous_release_id) if previous_release_id else None
+    )
     release = await build_deploying_candidate(
         publisher=publisher,
         actor=actor,
         published_versions=published_versions,
         release_id=release_id,
         previous_release_id=previous_release_id,
+        previous_release=previous_release,
         embedding_model=embedding_model,
         correlation_id=correlation_id,
         audit=audit,

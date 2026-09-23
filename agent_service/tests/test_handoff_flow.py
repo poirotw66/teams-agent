@@ -200,6 +200,37 @@ def test_deterministic_summary_has_every_required_section() -> None:
     assert "期望結果：" in rendered
 
 
+def test_handoff_offer_shows_only_known_details() -> None:
+    draft = deterministic_summary(
+        current_message="海南系統無法開啟",
+        issue_descriptions=["海南系統無法開啟"],
+    )
+
+    message = offer_message(draft)
+
+    assert "**請確認你的問題**\n\n- 海南系統無法開啟" in message
+    assert "使用者需求：" not in message
+    assert "未提供" not in message
+    assert "尚未提供" not in message
+    assert "- **建立派工單** 或 **聯絡線上客服**" in message
+    assert "- **繼續補充**" in message
+
+
+def test_handoff_offer_keeps_supplied_case_details() -> None:
+    draft = deterministic_summary(
+        current_message="海南系統無法開啟，顯示錯誤 E42",
+        issue_descriptions=["海南系統無法開啟"],
+        conversation_highlights=["錯誤碼 E42"],
+        attempted_solutions=["已重新開機"],
+    )
+
+    message = offer_message(draft)
+
+    assert "- 補充說明：海南系統無法開啟，顯示錯誤 E42" in message
+    assert "- 其他線索：錯誤碼 E42" in message
+    assert "- 已嘗試：已重新開機" in message
+
+
 def test_deterministic_summary_redacts_common_credentials() -> None:
     summary = deterministic_summary(
         current_message="VPN 密碼：SuperSecret123 API_KEY=abc-123 Bearer ey.secret.token",

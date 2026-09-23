@@ -1,17 +1,7 @@
 from dataclasses import dataclass
-from os import environ
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from .settings_env import build_rag_settings_kwargs
-
-load_dotenv()
-
-# Normalize dotenv values that may retain trailing CR on Windows-edited files.
-for _key, _value in list(environ.items()):
-    if "\r" in _value:
-        environ[_key] = _value.replace("\r", "")
 
 
 @dataclass(frozen=True)
@@ -22,6 +12,12 @@ class RagSettings:
     model: str | None = None
     agent_model: str | None = None
     embedding_model: str | None = None
+    # Role-specific RAG models. Absent values inherit per resolve_rag_model_ids().
+    rag_answer_model: str | None = None
+    rag_relevance_model: str | None = None
+    rag_rewrite_model: str | None = None
+    rag_hard_answer_model: str | None = None
+    rag_answer_escalation_policy: str = "OFF"
     top_k: int = 4
     min_score: float = 0.08
     max_rewrites: int = 1
@@ -45,7 +41,14 @@ class RagSettings:
     # PoC: one structured call for route + issues (docs/0919-arch.md).
     # Keep off until Golden Eval Accuracy / P95 / Cost comparison is reviewed.
     turn_planner_enabled: bool = False
+    # OFF|CONTEXTUAL|ALL. When unset, TURN_PLANNER_ENABLED maps false->OFF, true->ALL.
+    turn_planner_mode: str = "OFF"
     max_llm_calls_per_request: int = 6
+    # Request-local provider concurrency (Phase 2 budgeting). Embedding excluded.
+    max_concurrent_llm_calls_per_request: int = 2
+    # Wall-clock budget for one agent request (extractor + retrieve + generate).
+    # Keep aligned with upstream adapter / Cloud Run timeouts (typically ~90s).
+    request_deadline_seconds: float = 90.0
     max_retrieval_rewrites: int = 1
     skip_relevance_llm_on_high_confidence: bool = True
     enable_adaptive_query_tiers: bool = True
@@ -155,6 +158,8 @@ class RagSettings:
     knowledge_release_gcs_prefix: str = "knowledge-releases"
     knowledge_release_tenant_id: str = "default"
     knowledge_release_cache_dir: Path | None = None
+    knowledge_release_sync_interval_seconds: int = 300
+    knowledge_release_selection_mode: str | None = None
     knowledge_release_firestore_project: str | None = None
     knowledge_release_firestore_database: str | None = None
     knowledge_release_firestore_config_collection: str = "knowledge_portal_config"

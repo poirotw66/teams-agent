@@ -3,8 +3,11 @@ from os import environ
 
 import uvicorn
 
+from agent_service.runtime_dotenv import load_runtime_dotenv
+
 
 def main() -> None:
+    load_runtime_dotenv()
     logging.basicConfig(
         level=environ.get("LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",

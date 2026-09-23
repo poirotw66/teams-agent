@@ -33,12 +33,15 @@ class IssueProcessingWorkflowMixin(IssueKnowledgeOps, IssueTicketOps):
         counter = state["llm_call_counter"]
         it_issues = state.get("it_issues", [])
         ticket_intent = state.get("ticket_intent", TicketIntent.NONE)
-
         lock = asyncio.Lock()
         ticket_created = {"done": False}
+        denied_issue_ids = self._issues_denied_by_llm_budget(state, it_issues)
 
         async def handle(issue: Issue) -> IssueResult:
             try:
+                denied = self._budget_denied_result(issue, denied_issue_ids, correlation_id)
+                if denied is not None:
+                    return denied
                 if state.get("force_ticket_offer", False):
                     if issue.readiness == "NEED_MORE_INFO":
                         return IssueResult(
@@ -70,15 +73,53 @@ class IssueProcessingWorkflowMixin(IssueKnowledgeOps, IssueTicketOps):
                     type(exc).__name__,
                     correlation_id,
                 )
+                from .provider_status import PROVIDER_BUSY
+                from .retrieval_embeddings import is_transient_embedding_error
+
+                terminal_reason = PROVIDER_BUSY if is_transient_embedding_error(exc) else None
                 return IssueResult(
                     issueId=issue.id,
                     resultType="FAILED",
                     error=f"{type(exc).__name__}: {exc}"[:300],
+                    terminalReason=terminal_reason,
                 )
 
         gathered = await asyncio.gather(
             *(handle(issue) for issue in it_issues), return_exceptions=True
         )
+        return {"issue_results": self._collect_issue_outcomes(it_issues, gathered, correlation_id)}
+
+    @staticmethod
+    def _budget_denied_result(
+        issue: Issue,
+        denied_issue_ids: set[int],
+        correlation_id: str,
+    ) -> IssueResult | None:
+        if issue.id not in denied_issue_ids:
+            return None
+        from .observability import METRIC_LLM_BUDGET_DENIED, record_metric_counter
+
+        record_metric_counter(
+            METRIC_LLM_BUDGET_DENIED,
+            attributes={"component": "knowledge_answer"},
+        )
+        logger.info(
+            "agent_llm_budget_denied_total issue_id=%s correlation_id=%s",
+            issue.id,
+            correlation_id,
+        )
+        return IssueResult(
+            issueId=issue.id,
+            resultType="NO_KNOWLEDGE",
+            terminalReason="LLM_BUDGET_EXCEEDED",
+        )
+
+    @staticmethod
+    def _collect_issue_outcomes(
+        it_issues: list[Issue],
+        gathered: list[object],
+        correlation_id: str,
+    ) -> list[IssueResult]:
         issue_results: list[IssueResult] = []
         for issue, outcome in zip(it_issues, gathered, strict=True):
             if isinstance(outcome, BaseException):
@@ -89,16 +130,113 @@ class IssueProcessingWorkflowMixin(IssueKnowledgeOps, IssueTicketOps):
                     type(outcome).__name__,
                     correlation_id,
                 )
+                from .provider_status import PROVIDER_BUSY
+                from .retrieval_embeddings import is_transient_embedding_error
+
+                terminal_reason = (
+                    PROVIDER_BUSY if is_transient_embedding_error(outcome) else None
+                )
                 issue_results.append(
                     IssueResult(
                         issueId=issue.id,
                         resultType="FAILED",
                         error=type(outcome).__name__[:300],
+                        terminalReason=terminal_reason,
                     )
                 )
             else:
-                issue_results.append(outcome)
-        return {"issue_results": issue_results}
+                issue_results.append(outcome)  # type: ignore[arg-type]
+        return issue_results
+
+    @staticmethod
+    def _record_issue_budget_plan(
+        execution_context: ExecutionContext,
+        budget: object,
+    ) -> None:
+        issue_budgets = getattr(budget, "issue_budgets", ()) or ()
+        for item in issue_budgets:
+            mapping = (
+                ("knowledge_answer", item.answer_slots),
+                ("knowledge_relevance", item.relevance_slots),
+                ("knowledge_rewrite", item.rewrite_slots),
+                ("knowledge_answer_escalation", item.escalation_slots),
+            )
+            for component, slots in mapping:
+                if slots:
+                    execution_context.record_budget_event(
+                        kind="planned",
+                        component=component,
+                        slots=slots,
+                        issue_id=item.issue_id,
+                    )
+        for issue_id in getattr(budget, "unallocated_issue_ids", ()) or ():
+            execution_context.record_budget_event(
+                kind="denied",
+                component="knowledge_answer",
+                slots=1,
+                issue_id=int(issue_id),
+            )
+        remaining = int(getattr(budget, "remaining_capacity", 0) or 0)
+        if remaining > 0:
+            execution_context.record_budget_event(
+                kind="unused",
+                component="request",
+                slots=remaining,
+            )
+
+    def _issues_denied_by_llm_budget(
+        self,
+        state: AgentState,
+        issues: list[Issue],
+    ) -> set[int]:
+        """Reserve answer slots before concurrent issue processing."""
+        from .knowledge_pipeline.query_tier import classify_query_tier
+        from .knowledge_pipeline.retrieval_state import RetrievalState
+        from .llm_budget_plan import PlannedIssue, plan_request_llm_budget
+
+        execution_context = state.get("execution_context")
+        already_used = (
+            int(execution_context.llm_calls.count) if execution_context is not None else 0
+        )
+        escalation_enabled = str(
+            getattr(self.settings, "rag_answer_escalation_policy", "OFF") or "OFF"
+        ).upper() not in {"", "OFF"}
+        planned_issues: list[PlannedIssue] = []
+        for issue in issues:
+            if issue.route != "KNOWLEDGE" or issue.readiness != "READY":
+                continue
+            query = str(issue.retrieval_query or issue.description or "")
+            provisional = classify_query_tier(
+                RetrievalState(
+                    raw_user_utterance=query,
+                    resolved_issue_query=query,
+                    search_query=query,
+                ),
+                min_score=float(getattr(self.settings, "min_score", 0.0) or 0.0),
+                max_retrieval_rewrites=int(
+                    getattr(self.settings, "max_retrieval_rewrites", 0) or 0
+                ),
+            )
+            tier = str(provisional.tier.value)
+            planned_issues.append(
+                PlannedIssue(
+                    issue_id=issue.id,
+                    query_tier=tier if tier in {"trivial", "standard", "hard"} else "standard",
+                    needs_answer=True,
+                    allow_relevance=tier != "trivial",
+                    allow_rewrite=tier == "hard"
+                    and int(getattr(self.settings, "max_retrieval_rewrites", 0) or 0) > 0,
+                    allow_escalation=escalation_enabled and tier == "hard",
+                )
+            )
+        budget = plan_request_llm_budget(
+            total_limit=int(self.settings.max_llm_calls_per_request),
+            already_used=already_used,
+            issues=tuple(planned_issues),
+        )
+        if execution_context is not None:
+            self._record_issue_budget_plan(execution_context, budget)
+        return set(budget.unallocated_issue_ids)
 
     async def _handle_faq_route(
         self,

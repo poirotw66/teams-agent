@@ -1,13 +1,10 @@
-"""Versioned global security policies with independent provenance.
+"""Security-policy ID recognition and display stripping helpers.
 
-Knowledge citations ([S#]) must only ground enterprise document facts.
-System-wide security rules use [POLICY-SEC-*] markers and POLICY_ADVISORY
-citations so judges can verify policy groundedness without falsely attributing
-rules to retrieved documents.
-
-The policy catalog and marker matching live in ``operations_core.security_policies``.
-This module re-exports that surface and adds Agent-only Citation / advisory
-builders plus answer sanitization helpers.
+POLICY-SEC synthetic overlays are outside the knowledge-base answer scope.
+Answers must never mint [POLICY-SEC-*] markers or POLICY_ADVISORY citations.
+This module still recognizes known policy IDs so hallucinated markers and
+legacy claim ids can be stripped, and so display filters can drop leftover
+overlay citations.
 """
 
 from __future__ import annotations
@@ -27,6 +24,16 @@ from .contracts import Citation, GroundedClaim, PolicyAdvisory
 
 POLICY_SOURCE_TYPE = "POLICY_ADVISORY"
 POLICY_VERSION = "v1"
+
+_SECURITY_POLICY_ADVISORY_BLOCK_RE = re.compile(
+    r"(?:\n\s*)?>\s*⚠️?\s*\*\*系統資安政策提醒\*\*[^\n]*(?:\n(?!\n)[^\n]*)*",
+)
+_SECURITY_POLICY_ADVISORY_LINE_RE = re.compile(
+    r"(?m)^[^\n]*系統資安政策提醒[^\n]*\n?",
+)
+_POLICY_SENTENCE_WITH_MARKER_RE = re.compile(
+    r"[^。！？\n]*\[POLICY-SEC-\d{3}\][^。！？\n]*[。！？]?",
+)
 
 __all__ = [
     "ANSWER_PROMPT_SECURITY_RULES",
@@ -53,54 +60,20 @@ __all__ = [
     "strip_unknown_policy_markers",
 ]
 
+# Retained only so older fixtures / display tests can construct overlay samples
+# that must be stripped; never inject into answers.
 PROXY_ADVISORY_TEXT = (
     "> ⚠️ **系統資安政策提醒** [POLICY-SEC-003]：此操作涉及安全性、Proxy 或憑證設定變更。"
     "若該裝置是否受企業政策管轄狀態未明，執行前應先向權責單位或 IT 支援窗口確認，"
     "切勿擅自變更或停用安全防護設定。"
 )
 
-# Topics that legitimately activate POLICY-SEC-003 (keep in sync with answer sanitize).
 SEC003_APPLICABLE_SCOPE_RE = re.compile(
     r"(?:Proxy|代理伺服器|憑證設定|變更憑證|忽略憑證|繞過憑證|關閉\s*Proxy|停用\s*Proxy|"
     r"安全性區域|受保護模式|信任的網站|安全等級|"
     r"簽章無效|即使簽章無效|忽略簽章|繞過簽章|憑證錯誤)",
     re.IGNORECASE,
 )
-
-# Bare SEC-003 reminders that must keep the policy ID alongside the wording.
-_BARE_SEC003_REMINDER_RE = re.compile(
-    r"(?P<clause>"
-    r"(?:此外[，,]?\s*)?"
-    r"(?:進行任何)?安全性設定變更前[^。\n]{0,40}向權責單位確認"
-    r"|變更(?:前|安全性設定前)[^。\n]{0,40}向權責單位確認"
-    r"|變更安全性設定前[^。\n]{0,40}確認"
-    r"|(?:請先|請務必|建議)?(?:向|洽詢)權責單位確認[^。\n]{0,24}"
-    r")(?P<tail>\s*[。.]?)(?!\s*\[POLICY-SEC-003\])",
-    re.IGNORECASE,
-)
-
-
-def ensure_policy_text_and_id_paired(answer: str) -> str:
-    """Attach policy IDs when in-scope advisory wording lacks a marker.
-
-    Only pairs reminders when the answer already discusses SEC-003 topics
-    (Proxy / certificate / invalid signature). Generic hedges alone must not
-    mint a POLICY-SEC-003 citation.
-    """
-    if not answer or "[POLICY-SEC-003]" in answer:
-        return answer
-    if not SEC003_APPLICABLE_SCOPE_RE.search(answer):
-        return answer
-
-    def _attach(match: re.Match[str]) -> str:
-        clause = match.group("clause").rstrip("。. ")
-        tail = match.group("tail") or "。"
-        if not tail.strip():
-            tail = "。"
-        return f"{clause} [POLICY-SEC-003]{tail}"
-
-    return _BARE_SEC003_REMINDER_RE.sub(_attach, answer)
-
 
 _VISUAL_SECURITY_CONTROL_RE = re.compile(
     r"即使簽章無效|簽章無效也允許|可見「?即使簽章無效",
@@ -137,11 +110,17 @@ _VISUAL_SECURITY_INVENTORY_CAVEAT = (
 )
 
 
+def ensure_policy_text_and_id_paired(answer: str) -> str:
+    """No-op: POLICY overlays are out of knowledge scope and must not be minted."""
+    return answer
+
+
 def ensure_visual_security_inventory_caveats(answer: str) -> str:
     """Keep visual inventory of risky security controls from becoming enablement advice.
 
     Applies when the answer discusses invalid-signature allow controls. Softens
     normative「應為已勾選」wording and appends missing must-answer caveats.
+    Does not mint POLICY-SEC markers.
     """
     if not answer or not _VISUAL_SECURITY_CONTROL_RE.search(answer):
         return answer
@@ -158,61 +137,30 @@ def ensure_visual_security_inventory_caveats(answer: str) -> str:
 
 
 def build_answer_prompt_security_rules() -> str:
-    """Derive prompt Rule 10 from SECURITY_POLICIES so text cannot drift from bodies."""
-    policy_bullets = "\n".join(
-        f"      - [{policy.policy_id}] {policy.title}：{policy.summary}"
-        for policy in SECURITY_POLICIES.values()
+    """Compatibility stub: POLICY overlays are banned from the answer path."""
+    return (
+        "10. 嚴禁輸出 [POLICY-SEC-*] 或系統資安政策 overlay；"
+        "回答只能引用已授權知識內容的 [S#] 標記。"
     )
-    return f"""\
-10. 嚴格遵守資安與敏感資訊原則（全域安全底線，優先於所有情境；必須使用獨立政策標記，不可標成 [S#]）：
-    - 知識文件事實只能使用 [S1]、[S2] 等知識來源標記。
-    - 全域資安規則只能使用下方已定義政策標記，嚴禁把政策內容歸因到知識文件來源：
-{policy_bullets}
-    - 適用範圍鎖定：僅可引用各政策 summary／body 已涵蓋的事項；不得自行延伸政策適用範圍。
-      - 資料能否提交、畫面敏感資訊、資料最小化 → 只可用 [POLICY-SEC-001]。
-      - 登入密碼／憑證密碼／動態驗證碼 → 只可用 [POLICY-SEC-002]；不得寫成「任何密碼／所有密碼」。
-      - 會議密碼、借用申請表單欄位中的會議用密碼不是 POLICY-SEC-002 禁止對象；不得用政策否定來源要求填寫的會議密碼。
-      - Proxy／安全性區域／憑證設定變更前確認 → 只可用 [POLICY-SEC-003]。
-      - 嚴禁把「資料能否提交」「正式網址查詢」「一般通報流程」標成 [POLICY-SEC-003]。
-      - 嚴禁把「測試連結／佔位網址／非正式連結」標成 [POLICY-SEC-001] 或任何 POLICY-SEC-*。
-    - 當問題問「某來源有無規定 X」時：先說明「該來源沒有規定」，再獨立標示「但系統安全政策要求…… [POLICY-SEC-xxx]」（xxx 必須是上方已定義且真正適用的政策）。
-    - 若授權知識來源中已出現完整網址，即使看起來像測試／佔位連結（test、example、pages.dev），仍應如實引用並標 [S#]，必要時可附「來源為測試／占位連結」提醒；僅當來源未提供任何網址、或回答自行編造網址時，才改提醒洽詢 IT 支援窗口或至公司正式入口。此提醒不是安全政策，嚴禁標成 [POLICY-SEC-001]、[POLICY-SEC-002] 或 [POLICY-SEC-003]。
-    - 不得在回答中直接暴露內部 IP 位址（如 10.x.x.x、172.16-31.x.x、192.168.x.x）或內部伺服器主機路徑，應以系統名稱或公槽資料夾等功能名稱代稱。
-    - 全域最高性：上述已定義政策高於所有個別小節規範。
-"""
 
 
 ANSWER_PROMPT_SECURITY_RULES = build_answer_prompt_security_rules()
 
 
 def strip_unknown_policy_markers(text: str) -> str:
-    """Remove unknown [POLICY-SEC-*] markers without failing the whole answer."""
-
-    def _replace(match: re.Match[str]) -> str:
-        policy_id = match.group(1)
-        return match.group(0) if is_policy_id(policy_id) else ""
-
-    return POLICY_MARKER_RE.sub(_replace, text)
-
-
-_SECURITY_POLICY_ADVISORY_BLOCK_RE = re.compile(
-    r"(?:\n\s*)?>\s*⚠️?\s*\*\*系統資安政策提醒\*\*[^\n]*(?:\n(?!\n)[^\n]*)*",
-)
-_SECURITY_POLICY_ADVISORY_LINE_RE = re.compile(
-    r"(?m)^[^\n]*系統資安政策提醒[^\n]*\n?",
-)
+    """Remove every [POLICY-SEC-*] marker from model output."""
+    if not text:
+        return text
+    return POLICY_MARKER_RE.sub("", text)
 
 
 def strip_policy_overlay_for_display(answer: str) -> str:
-    """Remove policy IDs and system-policy callouts from user-facing text.
-
-    Knowledge steps and ordinary confirmation wording are kept. Internal
-    generation, sanitize, claims, and evaluation keep full POLICY markers.
-    """
+    """Remove policy IDs and system-policy callouts from user-facing text."""
     if not answer:
         return answer
     text = _SECURITY_POLICY_ADVISORY_BLOCK_RE.sub("", answer)
     text = _SECURITY_POLICY_ADVISORY_LINE_RE.sub("", text)
+    text = _POLICY_SENTENCE_WITH_MARKER_RE.sub("", text)
     text = POLICY_MARKER_RE.sub("", text)
     text = re.sub(r"[ \t]+([。．.，,！!？?])", r"\1", text)
     text = re.sub(r"[ \t]{2,}", " ", text)
@@ -235,6 +183,7 @@ def filter_display_citations(citations: list[Citation]) -> list[Citation]:
 
 
 def citation_for_policy(policy_id: str, *, include_evidence: bool = True) -> Citation:
+    """Build a POLICY_ADVISORY citation (test / filter fixtures only)."""
     if policy_id not in SECURITY_POLICIES:
         raise KeyError(f"Unknown security policy id: {policy_id}")
     policy = SECURITY_POLICIES[policy_id]
@@ -263,33 +212,22 @@ def citations_for_policy_ids(
 
 
 def advisories_from_text(text: str) -> list[PolicyAdvisory]:
-    """Build advisories for known policy markers only; ignore unknown IDs."""
-    advisories: list[PolicyAdvisory] = []
-    for policy_id in known_policy_ids_in_text(text):
-        policy = SECURITY_POLICIES[policy_id]
-        advisories.append(
-            PolicyAdvisory(
-                text=policy.summary,
-                policyIds=[policy_id],
-            )
-        )
-    return advisories
+    """Compatibility no-op: POLICY overlays are out of knowledge scope."""
+    del text
+    return []
 
 
 def split_claims_by_provenance(
     claims: list[GroundedClaim],
 ) -> tuple[list[GroundedClaim], list[PolicyAdvisory]]:
-    """Split mixed claim chunkIds into knowledge claims and policy advisories."""
+    """Keep knowledge claims only; drop POLICY-SEC claim ids."""
     knowledge_claims: list[GroundedClaim] = []
-    policy_advisories: list[PolicyAdvisory] = []
     for claim in claims:
-        policy_ids = [chunk_id for chunk_id in claim.chunkIds if is_policy_id(chunk_id)]
-        # Drop unknown POLICY-SEC-* ids rather than treating them as knowledge chunks.
         knowledge_ids = [
-            chunk_id for chunk_id in claim.chunkIds if not chunk_id.startswith("POLICY-SEC-")
+            chunk_id
+            for chunk_id in claim.chunkIds
+            if not chunk_id.startswith("POLICY-SEC-")
         ]
         if knowledge_ids:
             knowledge_claims.append(claim.model_copy(update={"chunkIds": knowledge_ids}))
-        if policy_ids:
-            policy_advisories.append(PolicyAdvisory(text=claim.text, policyIds=policy_ids))
-    return knowledge_claims, policy_advisories
+    return knowledge_claims, []

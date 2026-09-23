@@ -15,6 +15,7 @@ KNOWLEDGE_CAPABILITIES = frozenset(
         "knowledge.test",
         "knowledge.submit",
         "knowledge.review",
+        "knowledge.catalog.approve",
         "knowledge.publish",
         "knowledge.unpublish",
         "knowledge.rollback",
@@ -38,6 +39,7 @@ _EDITOR = frozenset(
 _MANAGER = _EDITOR | frozenset(
     {
         "knowledge.review",
+        "knowledge.catalog.approve",
         "knowledge.publish",
         "knowledge.unpublish",
         "knowledge.rollback",
@@ -147,6 +149,16 @@ def capability_for_portal_path(method: str, relative_path: str) -> str:
     if path.startswith("reviews/") and path.endswith("/decision") and method == "POST":
         return "knowledge.review"
     if path == "reviews/pending" and method == "GET":
+        return "knowledge.review"
+    if path == "catalog" and method == "GET":
+        return "knowledge.read"
+    if path == "catalog/draft" and method == "PUT":
+        return "knowledge.edit"
+    if path == "catalog/submit-review" and method == "POST":
+        return "knowledge.submit"
+    if path == "catalog/approve" and method == "POST":
+        return "knowledge.catalog.approve"
+    if path == "catalog/reject" and method == "POST":
         return "knowledge.review"
     if path == "releases/rollback" and method == "POST":
         return "knowledge.rollback"

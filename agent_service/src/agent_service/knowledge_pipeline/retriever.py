@@ -154,5 +154,9 @@ def accumulate_stage_timings(
     timings: dict[str, float],
 ) -> None:
     for key, value in timings.items():
+        if key == "embeddingDegraded":
+            # Sticky flag across facet / rewrite searches: any degraded embed wins.
+            stage_timings_ms[key] = max(stage_timings_ms.get(key, 0.0), value)
+            continue
         # Sum of work across parallel facet searches; wall clock is retrievalMs.
         stage_timings_ms[key] = round(stage_timings_ms.get(key, 0.0) + value, 1)

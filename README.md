@@ -385,7 +385,9 @@ Expected results:
 `POST /api/messages` is JWT-verified by the Teams SDK, so ordinary `curl` cannot
 simulate a full Bot Activity. For local testing without credentials, you may temporarily set
 `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true`—**local only**;
-never use it on Cloud Run.
+never use it on Cloud Run. The same flag also lets a local browser open signed
+source URLs without the SSO / Viewer Token login page; production still requires
+viewer authentication.
 
 ### Local logs
 
@@ -838,7 +840,7 @@ Each service reads its own `.env` and does **not** share one config file; locall
 | `CLIENT_ID` | — | Entra App registration Application (client) ID; read directly by Teams SDK |
 | `CLIENT_SECRET` | — | Client secret **Value**; only in `.env` or Secret Manager |
 | `TENANT_ID` | — | Entra Directory (tenant) ID (required for single-tenant apps) |
-| `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | Skip JWT verification on `/api/messages`; **local only**—never set on Cloud Run |
+| `DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS` | `false` | Skip JWT verification on `/api/messages` and allow opening signed source URLs without login; **local only**—never set on Cloud Run |
 | `PORT` | `3978` | HTTP listen port; Cloud Run injects automatically. No `HOST` setting—Teams SDK `FastAPIAdapter` always binds `0.0.0.0` |
 | `LOG_LEVEL` | `INFO` | Temporarily set `DEBUG` for local debugging |
 | `AGENT_MODE` | `echo` | `echo` (no external AI) or `api` (call Agent Service) |

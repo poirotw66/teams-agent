@@ -28,8 +28,9 @@ interface ChunkInspectorModalProps {
   document: ManualDocumentItem | null;
   onClose: () => void;
   onTestQuery: (query: string) => void;
-  onDeleteDoc: (docId: string, title: string) => Promise<void>;
+  onDeleteDoc?: (docId: string, title: string) => Promise<void>;
   isDeleting?: boolean;
+  readOnly?: boolean;
 }
 
 export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
@@ -39,6 +40,7 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
   onTestQuery,
   onDeleteDoc,
   isDeleting = false,
+  readOnly = false,
 }) => {
   const [inspectDoc, setInspectDoc] = useState<ManualDocumentItem | null>(
     document,
@@ -50,8 +52,18 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
   const [isRechunking, setIsRechunking] = useState(false);
   const [currentChunkPage, setCurrentChunkPage] = useState(1);
   const [chunkPageSize, setChunkPageSize] = useState(5);
-  const hasChunkIssues = Boolean(
-    inspectDoc?.chunks?.some((chunk) => chunk.quality_issues?.length),
+  const hasBlockingChunkIssues = Boolean(
+    inspectDoc?.chunks?.some((chunk) =>
+      (chunk.quality_issues || []).some(
+        (issue) => issue === "HEADING_ONLY" || issue === "DUPLICATE",
+      ),
+    ),
+  );
+  const hasShortWarnings = Boolean(
+    (inspectDoc?.quality?.shortChunkCount || 0) > 0 ||
+      inspectDoc?.chunks?.some((chunk) =>
+        (chunk.quality_issues || []).includes("SHORT"),
+      ),
   );
   const filteredChunks = useMemo(() => {
     const normalizedSearch = chunkSearchText.trim().toLowerCase();
@@ -88,7 +100,7 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
   }, [chunkPageSize, currentChunkPage, filteredChunks.length]);
 
   const handleProfileChange = async (profile: ChunkingProfile) => {
-    if (!inspectDoc) return;
+    if (!inspectDoc || readOnly) return;
     setIsRechunking(true);
     try {
       const preview = await workbenchStore.previewDocument(inspectDoc, profile);
@@ -139,7 +151,9 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
           <Space>
             <EyeOutlined style={{ color: "#5B5FC7", fontSize: 18 }} />
             <Text strong style={{ fontSize: "16px" }}>
-              切分段落檢視器 (Chunk Inspector) - {inspectDoc?.title}
+              {readOnly
+                ? `雲端正式鏡像段落預覽 - ${inspectDoc?.title}`
+                : `切分段落檢視器 (Chunk Inspector) - ${inspectDoc?.title}`}
             </Text>
           </Space>
         </div>
@@ -147,7 +161,7 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
       open={open}
       onCancel={onClose}
       footer={[
-        inspectDoc && (
+        !readOnly && inspectDoc && onDeleteDoc ? (
           <Popconfirm
             key="delete-modal"
             title="確定要刪除此手冊文件嗎？"
@@ -172,14 +186,14 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
               刪除此手冊
             </Button>
           </Popconfirm>
-        ),
-        inspectDoc && (
+        ) : null,
+        !readOnly && inspectDoc ? (
           <DocumentGovernanceActions
             key="governance-actions"
             document={inspectDoc}
             onComplete={onClose}
           />
-        ),
+        ) : null,
         <Button key="close" onClick={onClose}>
           關閉
         </Button>,
@@ -187,24 +201,45 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
       width={840}
       style={{ top: 24 }}
     >
-      {inspectDoc?.quality && (
+      {inspectDoc?.quality && !readOnly && (
         <Alert
           type={inspectDoc.quality.acceptable ? "success" : "warning"}
           showIcon
           message={
             inspectDoc.quality.acceptable
-              ? "候選段落通過 deterministic 品質檢查"
-              : "候選段落仍有阻擋發布的品質問題"
+              ? hasShortWarnings
+                ? "可送審：過短段落僅為警告"
+                : "候選段落通過 deterministic 品質檢查"
+              : "候選段落仍有阻擋送審的品質問題"
           }
-          description={`原文覆蓋 ${(inspectDoc.quality.coverageRatio * 100).toFixed(1)}% · 過短 ${inspectDoc.quality.shortChunkCount} · 純標題 ${inspectDoc.quality.headingOnlyCount} · 孤立媒體 ${inspectDoc.quality.orphanMediaCount} · 重複 ${inspectDoc.quality.duplicateChunkCount}${inspectDoc.quality.acceptable ? "" : hasChunkIssues ? "。有問題的段落已在下方以橘色框線標示。" : "。此問題屬文件層級，請檢查原文覆蓋率或媒體內容。"}`}
+          description={`原文覆蓋 ${(inspectDoc.quality.coverageRatio * 100).toFixed(1)}% · 過短 ${inspectDoc.quality.shortChunkCount} · 純標題 ${inspectDoc.quality.headingOnlyCount} · 孤立媒體 ${inspectDoc.quality.orphanMediaCount} · 重複 ${inspectDoc.quality.duplicateChunkCount}${
+            inspectDoc.quality.acceptable
+              ? hasShortWarnings
+                ? "。過短段落已自動合併仍不足時僅標示警告，不阻擋送審。"
+                : ""
+              : hasBlockingChunkIssues
+                ? "。有問題的段落已在下方以橘色框線標示。"
+                : "。此問題屬文件層級，請檢查原文覆蓋率或媒體內容。"
+          }`}
           style={{ marginBottom: 16 }}
         />
       )}
+
+      {readOnly ? (
+        <Alert
+          type="info"
+          showIcon
+          message="這是雲端正式 release 已發布切分，與 Playground Agent 同一份 GCS 鏡像。"
+          description="不可重切、刪除或送審。要改內容請在雲端正式工作區發布新 release，再按「立即同步」。"
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
 
       <ChunkInspectorToolbar
         document={inspectDoc}
         isRechunking={isRechunking}
         chunkSearchText={chunkSearchText}
+        readOnly={readOnly}
         onProfileChange={handleProfileChange}
         onSearchChange={(value) => {
           setChunkSearchText(value);

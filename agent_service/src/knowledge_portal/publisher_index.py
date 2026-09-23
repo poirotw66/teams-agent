@@ -124,7 +124,14 @@ def build_release_index_from_sources(
     selected_embedding: str | None,
     settings: PortalSettings,
     index_path: Path,
+    previous_release: object | None = None,
 ) -> str | None:
+    from .incremental_embeddings import (
+        apply_reused_embeddings,
+        index_setting_fingerprint,
+        load_previous_release_index_payload,
+    )
+    from .models import ReleaseRecord
     from .publisher_finalize import ReleaseBuildError
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -170,9 +177,25 @@ def build_release_index_from_sources(
         )
         if not chunks:
             raise ReleaseBuildError("Release build produced zero searchable segments.")
+
+        previous = previous_release if isinstance(previous_release, ReleaseRecord) else None
+        fingerprint = index_setting_fingerprint(
+            chunk_size=settings.chunk_size,
+            chunk_overlap=settings.chunk_overlap,
+            embedding_model=selected_embedding,
+        )
+        previous_payload = load_previous_release_index_payload(settings, previous)
+        apply_reused_embeddings(
+            chunks,
+            previous_payload=previous_payload,
+            selected_embedding=selected_embedding,
+            previous_release=previous,
+            new_fingerprint=fingerprint,
+        )
+
         index = get_hybrid_index_factory().create(chunks, selected_embedding)
         if selected_embedding:
-            index.add_embeddings()
+            index.add_embeddings(only_missing=True)
         index.save(index_path)
         write_parent_artifact(release_dir, chunks)
         write_file_search_artifact(
@@ -192,6 +215,7 @@ def materialize_release_index(
     bundled_index_path: Path | None,
     embedding_model: str | None,
     settings: PortalSettings,
+    previous_release: object | None = None,
 ) -> tuple[Path, str | None, str | None]:
     """Return (index_path, selected_embedding, file_search_store)."""
     index_path = release_dir / "index" / "chunks.json"
@@ -224,6 +248,7 @@ def materialize_release_index(
             selected_embedding=selected_embedding,
             settings=settings,
             index_path=index_path,
+            previous_release=previous_release,
         )
     return index_path, selected_embedding, file_search_store
 

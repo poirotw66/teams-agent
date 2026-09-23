@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Row, Col, Typography, Tabs } from 'antd';
 import {
+  CloudOutlined,
   FileTextOutlined,
   ThunderboltOutlined,
   QuestionCircleOutlined,
@@ -10,6 +11,10 @@ import { ManualDocsManager } from '../components/ManualDocsManager';
 import { FaqManager } from '../components/FaqManager';
 import { KnowledgeGapsManager } from '../components/KnowledgeGapsManager';
 import { PlaygroundSimulator } from '../components/PlaygroundSimulator';
+import { CloudFormalMirrorDocs } from '../components/CloudFormalMirrorDocs';
+import { KnowledgeWorkspaceBanner } from '../components/KnowledgeWorkspaceBanner';
+import { KnowledgeSyncLagBanner } from '../components/KnowledgeSyncLagBanner';
+import { FormalPublishProgressBanner } from '../components/FormalPublishProgressBanner';
 import { QuickFaqDrawer, QuickFaqInitialData } from '../../dashboard/components/QuickFaqDrawer';
 import { workbenchStore } from '../../../shared/api/workbenchStore';
 import { WorkbenchLoadErrorBanner } from '../../../shared/ui/WorkbenchLoadErrorBanner';
@@ -25,7 +30,7 @@ export const KnowledgePage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const categoryParam = searchParams.get('category');
 
-  const [activeTab, setActiveTab] = useState<string>('docs');
+  const [activeTab, setActiveTab] = useState<string>('cloud-mirror');
   const [documents, setDocuments] = useState<ManualDocumentItem[]>(workbenchStore.getDocuments());
   const [faqs, setFaqs] = useState<FaqItem[]>(workbenchStore.getFaqs());
   const [gaps, setGaps] = useState<KnowledgeGapItem[]>(workbenchStore.getKnowledgeGaps());
@@ -35,6 +40,7 @@ export const KnowledgePage: React.FC = () => {
   const [quickFaqData, setQuickFaqData] = useState<QuickFaqInitialData | null>(null);
 
   useEffect(() => {
+    void workbenchStore.ensureDomains(['documents', 'faqs', 'overview']);
     const unsubscribe = workbenchStore.subscribe(() => {
       setDocuments(workbenchStore.getDocuments());
       setFaqs(workbenchStore.getFaqs());
@@ -54,11 +60,21 @@ export const KnowledgePage: React.FC = () => {
 
   const tabItems = [
     {
+      key: 'cloud-mirror',
+      label: (
+        <span>
+          <CloudOutlined style={{ marginRight: 6 }} />
+          雲端正式鏡像
+        </span>
+      ),
+      children: <CloudFormalMirrorDocs onTestQuery={handleTestQuery} />,
+    },
+    {
       key: 'docs',
       label: (
         <span>
           <FileTextOutlined style={{ marginRight: 6 }} />
-          操作手冊與文件 ({documents.length})
+          本機測試工作區 ({documents.length})
         </span>
       ),
       children: (
@@ -105,19 +121,24 @@ export const KnowledgePage: React.FC = () => {
 
   return (
     <div>
-      <WorkbenchLoadErrorBanner />
+      <WorkbenchLoadErrorBanner domains={['documents', 'faqs', 'overview']} />
+      <KnowledgeWorkspaceBanner />
+      <KnowledgeSyncLagBanner />
+      <FormalPublishProgressBanner documents={documents} />
       <div style={{ marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>
           知識庫與手冊中心
         </Title>
         <Text type="secondary" style={{ fontSize: '13px' }}>
-          PDF/Word 手冊拖曳上傳 · 自動汰換舊版本 · 30秒 FAQ 快修 · 右側即時測試演練
+          「雲端正式鏡像」才是與雲端 active 同一份資料。本機測試工作區仍是獨立
+          FILE sandbox，上傳不會回寫雲端。右側試問讀的是本機 sandbox 關鍵字，不是
+          Agent GCS。
         </Text>
       </div>
 
-      <Row gutter={16} style={{ height: '760px' }}>
-        {/* Left: Document & FAQ Managers (62%) */}
-        <Col xs={24} lg={15} style={{ height: '100%', overflowY: 'auto' }}>
+      <Row gutter={[16, 16]} style={{ minHeight: 'min(70vh, 720px)' }}>
+        {/* Left: Document & FAQ Managers */}
+        <Col xs={24} lg={15} style={{ minHeight: 320, overflowY: 'auto' }}>
           <Tabs
             activeKey={activeTab}
             onChange={setActiveTab}
@@ -127,8 +148,8 @@ export const KnowledgePage: React.FC = () => {
           />
         </Col>
 
-        {/* Right: Live Playground Simulator (38%) */}
-        <Col xs={24} lg={9} style={{ height: '100%' }}>
+        {/* Right: Live Playground Simulator */}
+        <Col xs={24} lg={9} style={{ minHeight: 320 }}>
           <PlaygroundSimulator initialQuery={playgroundQuery} />
         </Col>
       </Row>

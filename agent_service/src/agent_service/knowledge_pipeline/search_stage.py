@@ -67,6 +67,16 @@ async def prepare_retrieval_state(
     state.stage_timings_ms["retrievalMs"] = round(
         (time.perf_counter() - retrieve_started) * 1000, 1
     )
+    from agent_service.observability import (
+        METRIC_RETRIEVAL_LATENCY_MS,
+        record_metric_histogram,
+    )
+
+    record_metric_histogram(
+        METRIC_RETRIEVAL_LATENCY_MS,
+        state.stage_timings_ms["retrievalMs"],
+        attributes={"component": "retrieval"},
+    )
     return state
 
 
@@ -91,6 +101,18 @@ async def generate_if_relevant(
         + (time.perf_counter() - relevance_started) * 1000,
         1,
     )
+    from agent_service.observability import (
+        METRIC_GENERATION_LATENCY_MS,
+        METRIC_RELEVANCE_LATENCY_MS,
+        METRIC_TOTAL_LATENCY_MS,
+        record_metric_histogram,
+    )
+
+    record_metric_histogram(
+        METRIC_RELEVANCE_LATENCY_MS,
+        state.stage_timings_ms["relevanceMs"],
+        attributes={"component": "relevance"},
+    )
     if not is_relevant:
         return None
     generate_started = time.perf_counter()
@@ -106,6 +128,16 @@ async def generate_if_relevant(
     )
     state.stage_timings_ms["totalMs"] = round(
         (time.perf_counter() - total_started) * 1000, 1
+    )
+    record_metric_histogram(
+        METRIC_GENERATION_LATENCY_MS,
+        state.stage_timings_ms["generateMs"],
+        attributes={"component": "generation"},
+    )
+    record_metric_histogram(
+        METRIC_TOTAL_LATENCY_MS,
+        state.stage_timings_ms["totalMs"],
+        attributes={"component": "knowledge"},
     )
     fallback_path = "GENERATED_ANSWER" if result.found else "SAFE_NO_ANSWER"
     return with_trace(
@@ -143,8 +175,23 @@ async def rewrite_or_budget_limit(
                 ),
                 state,
             )
+    rewrite_started = time.perf_counter()
     state = await rewrite(
         state, counter, execution_context=execution_context, model=model
+    )
+    rewrite_ms = (time.perf_counter() - rewrite_started) * 1000
+    state.stage_timings_ms["rewriteMs"] = round(
+        state.stage_timings_ms.get("rewriteMs", 0.0) + rewrite_ms, 1
+    )
+    from agent_service.observability import (
+        METRIC_REWRITE_LATENCY_MS,
+        record_metric_histogram,
+    )
+
+    record_metric_histogram(
+        METRIC_REWRITE_LATENCY_MS,
+        rewrite_ms,
+        attributes={"component": "rewrite"},
     )
     state = await retrieve(state, groups)
     return None, state
@@ -279,6 +326,27 @@ async def run_search_with_limits(
     return None
 
 
+def _terminal_no_evidence_result(
+    *,
+    state: RetrievalState,
+    execution_context: ExecutionContext | None,
+    with_trace: Callable[..., KnowledgeResult],
+    no_answer: Callable[[], KnowledgeResult],
+) -> KnowledgeResult:
+    from agent_service.provider_status import PROVIDER_BUSY
+
+    # Dense retrieval unavailable: empty sparse hits may be a false miss.
+    degraded = float(state.stage_timings_ms.get("embeddingDegraded", 0.0) or 0.0)
+    terminal_reason = PROVIDER_BUSY if degraded > 0.0 else "NO_RELEVANT_EVIDENCE"
+    return with_trace(
+        no_answer(),
+        state,
+        execution_context=execution_context,
+        fallback_path="NO_RELEVANT_EVIDENCE",
+        terminal_reason=terminal_reason,
+    )
+
+
 async def run_search_loop(
     *,
     query: str,
@@ -347,12 +415,11 @@ async def run_search_loop(
     if hit is not None:
         return hit
     set_llm_count(counter.count)
-    return with_trace(
-        no_answer(),
-        state,
+    return _terminal_no_evidence_result(
+        state=state,
         execution_context=execution_context,
-        fallback_path="NO_RELEVANT_EVIDENCE",
-        terminal_reason="NO_RELEVANT_EVIDENCE",
+        with_trace=with_trace,
+        no_answer=no_answer,
     )
 
 

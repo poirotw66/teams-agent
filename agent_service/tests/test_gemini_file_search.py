@@ -264,6 +264,91 @@ async def test_images_deduplicated_order_stable_and_capped():
 
 
 @pytest.mark.asyncio
+async def test_citations_deduplicated_by_document_when_multiple_grounding_chunks():
+    chunks = [
+        make_chunk_record(
+            "c1",
+            "AD 帳號與系統解鎖 FAQ",
+            "sources/AD帳號與系統解鎖FAQ.md",
+            document_id="doc-ad",
+        ),
+        make_chunk_record(
+            "c2",
+            "AD 帳號與系統解鎖 FAQ",
+            "sources/AD帳號與系統解鎖FAQ.md",
+            document_id="doc-ad",
+        ),
+    ]
+    registry = FileSearchDocumentRegistry.from_chunks(chunks)
+    slug = FileSearchDocumentRegistry.slug_for("sources/AD帳號與系統解鎖FAQ.md")
+    service = GeminiFileSearchKnowledgeService(
+        api_key="key",
+        file_search_store="fileSearchStores/x",
+        registry=registry,
+    )
+    response = make_response(
+        text="請至 AD 自助解鎖專區。",
+        grounding_chunks=[
+            make_chunk(make_context(title=slug, text="chunk-a")),
+            make_chunk(make_context(title=slug, text="chunk-b")),
+        ],
+    )
+    install_fake_client(service, response)
+
+    result = await service.search("ad解鎖", UserContext(groups=[]))
+
+    assert len(result.sources) == 1
+    assert result.sources[0].title == "AD 帳號與系統解鎖 FAQ"
+
+
+@pytest.mark.asyncio
+async def test_file_search_repairs_code_span_and_broken_markdown_urls():
+    unlock = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    service = GeminiFileSearchKnowledgeService(
+        api_key="key", file_search_store="fileSearchStores/x"
+    )
+    response = make_response(
+        text=(
+            f"AD 自助解鎖專區：`{unlock}`\n"
+            f"或點 [{unlock}]({unlock}`)"
+        ),
+        grounding_chunks=[make_chunk(make_context(title="ad-unlock.md"))],
+    )
+    install_fake_client(service, response)
+
+    result = await service.search("ad解鎖", UserContext(groups=[]))
+
+    assert f"[{unlock}]({unlock})" in result.answer
+    assert f"`{unlock}`" not in result.answer
+    assert f"({unlock}`)" not in result.answer
+
+
+@pytest.mark.asyncio
+async def test_legacy_ad_unlock_url_is_rewritten_to_canonical():
+    legacy = "https://xxxxx.pages.dev/Sorry.Only.For.TEST"
+    canonical = (
+        "https://teams-ai-ops-backoffice-jt7pjdeeoa-de.a.run.app"
+        "/static/demo/ad-unlock/index.html"
+    )
+    service = GeminiFileSearchKnowledgeService(
+        api_key="key", file_search_store="fileSearchStores/x"
+    )
+    response = make_response(
+        text=f"請至 AD 自助解鎖專區：{legacy}",
+        grounding_chunks=[make_chunk(make_context(title="ADFAQ.md"))],
+    )
+    install_fake_client(service, response)
+
+    result = await service.search("ad解鎖", UserContext(groups=[]))
+
+    assert canonical in result.answer
+    assert legacy not in result.answer
+
+
+@pytest.mark.asyncio
 async def test_legacy_xiaozhou_grounding_uses_canonical_dazhou_name():
     service = GeminiFileSearchKnowledgeService(
         api_key="key", file_search_store="fileSearchStores/x"

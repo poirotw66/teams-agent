@@ -46,6 +46,8 @@ from .knowledge_pipeline.document_selection import (
     canonical_version_results,
     inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
+    inject_same_doc_discrimination_evidence,
+    inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
 from .knowledge_pipeline.generation_host import _HybridGenerationHost
@@ -60,7 +62,6 @@ from .knowledge_pipeline.relevance_stage import (
 from .knowledge_pipeline.retrieval_stage import run_retrieve
 from .knowledge_pipeline.retrieval_state import RetrievalState
 from .knowledge_pipeline.search_stage import run_search_loop
-from .knowledge_pipeline.trace import attach_retrieval_trace
 from .llm_call_counter import LlmCallCounter
 from .rag_rollout import RagServingDecision
 from .reranker import NoopReranker, Reranker, build_default_reranker
@@ -85,11 +86,17 @@ class HybridKnowledgeService:
         model: BaseChatModel | None = None,
         release_id: str | None = None,
         *,
+        models: Any | None = None,
         reranker: Reranker | None = None,
     ) -> None:
+        from .rag_models import RagModelBundle
+
         self.settings = settings
         self.index = index
-        self.model = model
+        if models is None:
+            models = RagModelBundle.from_single_model(model)
+        self.models = models
+        self.model = models.answer if models.answer is not None else model
         self.release_id = release_id
         self.last_llm_call_count = 0
         self._retrieval_cache: OrderedDict[tuple[Any, ...], list[SearchResult]] = OrderedDict()
@@ -172,23 +179,14 @@ class HybridKnowledgeService:
         fallback_path: str,
         terminal_reason: str | None,
     ) -> KnowledgeResult:
-        selected_backend = (
-            execution_context.selected_knowledge_backend
-            if execution_context is not None
-            else "HYBRID"
-        )
-        return attach_retrieval_trace(
+        from .knowledge_pipeline.evidence_trace import attach_hybrid_result_trace
+
+        return attach_hybrid_result_trace(  # type: ignore[return-value]
             result,
-            raw_user_utterance=state.raw_user_utterance,
-            resolved_issue_query=state.resolved_issue_query,
-            search_query=state.search_query,
-            facet_queries=state.facet_queries,
-            selected_backend=selected_backend,
-            attempts=state.trace_attempts,
-            stage_timings_ms=state.stage_timings_ms,
+            state,
+            execution_context=execution_context,
             fallback_path=fallback_path,
             terminal_reason=terminal_reason,
-            query_tier=state.query_tier,
         )
 
     async def _retrieve(
@@ -240,7 +238,21 @@ class HybridKnowledgeService:
             groups=groups,
             environment=environment,
         )
-        return inject_employee_portal_password_evidence(
+        boosted = inject_employee_portal_password_evidence(
+            query,
+            boosted,
+            index_chunks=self.index.chunks,
+            groups=groups,
+            environment=environment,
+        )
+        boosted = inject_vpn_password_expiry_howto(
+            query,
+            boosted,
+            index_chunks=self.index.chunks,
+            groups=groups,
+            environment=environment,
+        )
+        return inject_same_doc_discrimination_evidence(
             query,
             boosted,
             index_chunks=self.index.chunks,
@@ -295,7 +307,11 @@ class HybridKnowledgeService:
             skip_relevance_llm_on_high_confidence=getattr(
                 self.settings, "skip_relevance_llm_on_high_confidence", True
             ),
-            answer_model=self.model if model is None else model,
+            answer_model=(
+                self.models.relevance
+                if model is None
+                else model
+            ),
             invoke_llm=self._invoke_llm,
             counter=counter,
             execution_context=execution_context,
@@ -309,7 +325,7 @@ class HybridKnowledgeService:
         execution_context: ExecutionContext | None = None,
         model: BaseChatModel | None = None,
     ) -> _RetrievalState:
-        answer_model = self.model if model is None else model
+        answer_model = self.models.rewrite if model is None else model
         if answer_model is None:
             raise RuntimeError("rewrite requires a chat model")
         return await rewrite_search_query(
@@ -412,7 +428,7 @@ class HybridKnowledgeService:
             state,
             counter,
             execution_context=execution_context,
-            model=self.model if model is None else model,
+            model=self.models.answer if model is None else model,
             include_retrieval_evidence=include_retrieval_evidence,
         )
 

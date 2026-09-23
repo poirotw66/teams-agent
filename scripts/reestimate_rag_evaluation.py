@@ -161,6 +161,13 @@ async def evaluate_row(
 
 
 async def main() -> None:
+    from pathlib import Path
+
+    from agent_service.eval_credentials import apply_eval_gemini_credentials
+
+    apply_eval_gemini_credentials(
+        dotenv_path=Path(__file__).resolve().parents[1] / "agent_service" / ".env"
+    )
     settings = RagSettings.from_env()
     index = HybridIndex.load(settings.index_path, settings.embedding_model)
     agent = RagAgent(settings, index)

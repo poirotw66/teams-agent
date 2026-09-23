@@ -60,9 +60,10 @@ def load_release(
 ) -> ReleaseLoad | None:
     if not SAFE_RELEASE_ID.fullmatch(release_id):
         return None
-    release_root = (releases_dir / release_id).resolve()
+    releases_root = releases_dir.expanduser().resolve()
+    release_root = (releases_root / release_id).resolve()
     try:
-        release_root.relative_to(releases_dir)
+        release_root.relative_to(releases_root)
     except ValueError:
         return None
     index_path = release_root / "index" / "chunks.json"

@@ -101,6 +101,45 @@ def _format_steps_and_citations(text: str) -> str:
 
 
 
+def _expand_conditional_howto_paragraph(paragraph: str) -> str:
+    """Expand『若…，請A，使用B…[S1]』into a short lead-in plus numbered steps."""
+    stripped = (paragraph or "").strip()
+    if not stripped or "\n" in stripped:
+        return paragraph
+
+    cite = ""
+    body = stripped
+    cite_match = re.search(r"(\s*\[S\d+\][。.]?)\s*$", stripped)
+    if cite_match:
+        cite = cite_match.group(1).strip()
+        body = stripped[: cite_match.start()].rstrip("。．. ")
+
+    match = re.match(r"^(若|如果)(.+?)，(請.+)$", body)
+    if not match:
+        return paragraph
+
+    lead = f"{match.group(1)}{match.group(2)}".strip()
+    rest = match.group(3).strip()
+    parts = [
+        part.strip()
+        for part in re.split(r"，(?=(?:請|使用|不要|勿|並請))", rest)
+        if part.strip()
+    ]
+    if len(parts) < 2:
+        return paragraph
+
+    lines = [f"{lead}，請依下列步驟處理：", ""]
+    for index, part in enumerate(parts, start=1):
+        step = part.rstrip("。．. ")
+        if index == len(parts) and cite:
+            marker = re.search(r"\[S\d+\]", cite)
+            suffix = f" {marker.group(0)}" if marker else ""
+            lines.append(f"{index}. {step}{suffix}")
+        else:
+            lines.append(f"{index}. {step}")
+    return "\n".join(lines)
+
+
 def format_teams_answer(answer: str) -> str:
     """Format raw agent answer for optimal Microsoft Teams Markdown rendering.
 
@@ -109,11 +148,30 @@ def format_teams_answer(answer: str) -> str:
       Teams Adaptive Card Markdown does not collapse headings into the text.
     - Formats special notes or remarks as blockquote callouts (`> 💡 **注意事項**：...`).
     - Ensures sequential steps are numbered cleanly without citation repetition spam.
+    - Turns bare http(s) URLs into markdown links so TextBlocks can render them
+      as hyperlinks where the host supports markdown links.
     """
     if not answer or not answer.strip():
         return answer
 
     text = answer.strip()
+
+    # Models occasionally join a callout to the preceding citation or sentence.
+    # Keep it as a separate paragraph in both Teams and Playground cards.
+    text = re.sub(r"(?<!\n)([。.!?！？]|\[S\d+\])\s*(>\s*💡)", r"\1\n\n\2", text)
+
+    # Keep a follow-up action / new condition distinct from the prior sentence.
+    text = re.sub(r"(?<=[。！？])[ \t]*(?=若|如果)", "\n\n", text)
+
+    # Expand dense『若…，請A，使用B』how-to paragraphs into numbered steps.
+    blocks = re.split(r"\n{2,}", text)
+    text = "\n\n".join(_expand_conditional_howto_paragraph(block) for block in blocks)
+    text = re.sub(
+        r"(?<!\*)(Ctrl\s*\+\s*Alt\s*\+\s*Delete)(?!\*)",
+        r"**\1**",
+        text,
+        flags=re.IGNORECASE,
+    )
 
     # 1. Bold "問題：" header
     text = re.sub(r"(?m)^(?<!\*\*)問題：\s*([^\n]+)", r"**問題：** \1", text)
@@ -142,9 +200,91 @@ def format_teams_answer(answer: str) -> str:
     # 5. Format step lists and clean citation repetition
     text = _format_steps_and_citations(text)
 
+    # 6. Make bare https:// URLs clickable in Adaptive Card / Teams markdown.
+    text = linkify_bare_urls(text)
+
     # Clean up any excessive newlines (more than 2 consecutive newlines)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\((https?://[^)\s]+)\)")
+_BROKEN_MARKDOWN_LINK_RE = re.compile(
+    r"\[([^\]]*)\]\s*[（(]\s*`*(https?://[^)\s`（）]+)`*\s*[）)]",
+    re.IGNORECASE,
+)
+_CODE_SPAN_URL_RE = re.compile(r"`(https?://[^`\s]+)`")
+_BARE_URL_RE = re.compile(r"(?<![\(\[\"'<=`])(https?://[^\s<>\]）】」』\"'`]+)")
+_TRAILING_URL_PUNCT_RE = re.compile(r"[.,;:!?，。；：！？、`]+$")
+
+
+def linkify_bare_urls(text: str) -> str:
+    """Wrap bare http(s) URLs as markdown links without re-linking existing ones.
+
+    Also repairs common model/FAQ failures before linkifying:
+    - ``[label](https://x`)`` / fullwidth parentheses around the href
+    - code-span URLs `` `https://...` `` from source markdown
+    """
+    if not text or "http" not in text:
+        return text
+
+    repaired = _BROKEN_MARKDOWN_LINK_RE.sub(r"[\1](\2)", text)
+    repaired = _CODE_SPAN_URL_RE.sub(r"\1", repaired)
+
+    protected: list[str] = []
+
+    def _protect(match: re.Match[str]) -> str:
+        protected.append(match.group(0))
+        return f"\x00MDLINK{len(protected) - 1}\x00"
+
+    staged = _MARKDOWN_LINK_RE.sub(_protect, repaired)
+
+    def _linkify(match: re.Match[str]) -> str:
+        raw = match.group(1)
+        trailing = ""
+        url = raw.strip("`")
+        punct = _TRAILING_URL_PUNCT_RE.search(url)
+        if punct:
+            trailing = punct.group(0).rstrip("`")
+            url = url[: punct.start()]
+        if not url:
+            return raw
+        return f"[{url}]({url}){trailing}"
+
+    linked = _BARE_URL_RE.sub(_linkify, staged)
+    for index, original in enumerate(protected):
+        linked = linked.replace(f"\x00MDLINK{index}\x00", original)
+    return linked
+
+
+def extract_answer_urls(text: str) -> list[str]:
+    """Return unique bare or markdown http(s) URLs from answer text (order preserved)."""
+    if not text or "http" not in text:
+        return []
+    repaired = _BROKEN_MARKDOWN_LINK_RE.sub(r"[\1](\2)", text)
+    repaired = _CODE_SPAN_URL_RE.sub(r"\1", repaired)
+    found: list[str] = []
+    seen: set[str] = set()
+    for match in _MARKDOWN_LINK_RE.finditer(repaired):
+        url = match.group(2).rstrip("`")
+        if url and url not in seen:
+            seen.add(url)
+            found.append(url)
+    for match in _BARE_URL_RE.finditer(_MARKDOWN_LINK_RE.sub("", repaired)):
+        url = _TRAILING_URL_PUNCT_RE.sub("", match.group(1)).rstrip("`")
+        if url and url not in seen:
+            seen.add(url)
+            found.append(url)
+    return found
+
+
+def open_url_action_title(url: str) -> str:
+    """Short Adaptive Card Action.OpenUrl title for an answer-body URL."""
+    lowered = url.lower()
+    if "ad-unlock" in lowered or "sorry.only.for.test" in lowered:
+        return "開啟 AD 自助解鎖專區"
+    host = re.sub(r"^https?://", "", url).split("/", 1)[0]
+    return f"開啟連結（{host}）" if host else "開啟連結"
 
 
 _POLICY_MARKER_DISPLAY_RE = re.compile(r"\[POLICY-SEC-\d{3}\]")
@@ -154,7 +294,12 @@ _SECURITY_POLICY_ADVISORY_LINE_RE = re.compile(
 
 
 def _strip_policy_overlay_for_display(answer: str) -> str:
-    """Hide system security-policy markers/callouts from chat text."""
+    """Hide system security-policy markers/callouts from chat text.
+
+    Strip advisory callout lines and ``[POLICY-SEC-NNN]`` markers only.
+    Keep surrounding user-facing sentence text (for example confirmation
+    guidance that happens to include a marker).
+    """
     if not answer:
         return answer
     text = _SECURITY_POLICY_ADVISORY_LINE_RE.sub("", answer)
@@ -206,7 +351,10 @@ def format_agent_response(response: AgentResponse) -> str:
 
 
 __all__ = [
+    "extract_answer_urls",
     "format_agent_response",
     "format_teams_answer",
     "format_turn_cost_line",
+    "linkify_bare_urls",
+    "open_url_action_title",
 ]

@@ -55,7 +55,7 @@ def test_per_call_usage_keeps_models_separate_and_summary_is_not_top_level_metri
         usage_source="PROVIDER",
     )
     google = collector.record(
-        component="knowledge_generate",
+        component="knowledge_answer",
         status="SUCCESS",
         latency_ms=23.0,
         model="gemini-2.5-flash",
@@ -80,7 +80,7 @@ def test_per_call_usage_keeps_models_separate_and_summary_is_not_top_level_metri
 
     assert [(call["model"], call["provider"], call["component"]) for call in calls] == [
         ("gpt-4o-mini", "openai", "issue_extract"),
-        ("gemini-2.5-flash", "google", "knowledge_generate"),
+        ("gemini-2.5-flash", "google", "knowledge_answer"),
     ]
     assert sum(call["estimatedCostUsd"] for call in calls) == total_cost
     assert "estimatedCostUsd" not in request_payload

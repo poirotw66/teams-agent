@@ -1,5 +1,5 @@
 {
-  "schemaCount": 18,
+  "schemaCount": 21,
   "schemas": [
     {
       "name": "Body_import_docx_api_documents_import_docx_post",
@@ -46,6 +46,44 @@
       "properties": [
         "release_id",
         "sources_dir"
+      ],
+      "required": [],
+      "type": "object"
+    },
+    {
+      "name": "CatalogDraftUpsertRequest",
+      "properties": [
+        "services",
+        "tenantId"
+      ],
+      "required": [
+        "services"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CatalogServiceRow",
+      "properties": [
+        "aclGroups",
+        "aliases",
+        "documentId",
+        "officialName",
+        "ownerUnitId",
+        "serviceId",
+        "sourcePath",
+        "versionId"
+      ],
+      "required": [
+        "documentId",
+        "serviceId"
+      ],
+      "type": "object"
+    },
+    {
+      "name": "CatalogTransitionRequest",
+      "properties": [
+        "reason",
+        "tenantId"
       ],
       "required": [],
       "type": "object"
