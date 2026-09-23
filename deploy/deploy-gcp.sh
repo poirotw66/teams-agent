@@ -19,8 +19,8 @@ ADAPTER_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:latest"
 GOOGLE_API_SECRET="teams-agent-google-api-key"
 BOT_CLIENT_SECRET="teams-agent-bot-client-secret"
 ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
-BACKOFFICE_SERVICE="${GCP_BACKOFFICE_API_SERVICE:-teams-ai-ops-backoffice}"
-BACKOFFICE_WORKER_SERVICE="${GCP_BACKOFFICE_WORKER_SERVICE:-teams-ai-ops-backoffice-worker}"
+export BACKOFFICE_SERVICE="${GCP_BACKOFFICE_API_SERVICE:-teams-ai-ops-backoffice}"
+export BACKOFFICE_WORKER_SERVICE="${GCP_BACKOFFICE_WORKER_SERVICE:-teams-ai-ops-backoffice-worker}"
 BACKOFFICE_TOKEN_SECRET="${GCP_BACKOFFICE_TOKEN_SECRET:-teams-ai-ops-backoffice-token}"
 SOURCE_DELEGATION_SECRET="${GCP_SOURCE_DELEGATION_SECRET:-teams-agent-knowledge-delegation-secret}"
 VIEWER_MEMBERSHIP_BUCKET="${GCP_VIEWER_MEMBERSHIP_BUCKET:-${PROJECT_ID}-viewer-memberships}"
@@ -149,7 +149,7 @@ grant_bucket_role() {
 
 cd "${PROJECT_DIR}"
 
-# shellcheck source=lib/source-api-wiring.sh
+# shellcheck disable=SC1091
 source "${PROJECT_DIR}/deploy/lib/source-api-wiring.sh"
 
 command -v gcloud >/dev/null 2>&1 || fail "找不到 gcloud CLI"

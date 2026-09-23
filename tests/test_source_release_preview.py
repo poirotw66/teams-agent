@@ -4,11 +4,12 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from knowledge_core.source_identity import make_source_ref_id
-from teams_agent.settings import AgentSettings
-from teams_agent.source_release_preview import (
+
+from citation_asset_gateway.source_release_preview import (
     citation_source_ref_id,
     resolve_release_citation_preview,
 )
+from teams_agent.settings import AgentSettings
 
 
 def _settings(tmp_path: Path) -> AgentSettings:
@@ -45,7 +46,7 @@ def test_resolve_release_citation_preview_matches_chunk(tmp_path: Path) -> None:
         '{"chunks":[{"title":"大州系統","document_id":"dazhou","version_id":"v1",'
         '"chunk_id":"chunk-1","source_path":"sources/dazhou.md",'
         '"content":"Open IE options."}]}'
-    ).encode("utf-8")
+    ).encode()
 
     iterator = MagicMock()
     iterator.prefixes = ["knowledge-releases/tenants/default/releases/release-1/"]

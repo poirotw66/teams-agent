@@ -21,7 +21,7 @@ ENTRA_TENANT_ID="${AI_OPS_ENTRA_TENANT_ID:-${ENTRA_TENANT_ID:-}}"
 ENTRA_CLIENT_ID="${AI_OPS_ENTRA_CLIENT_ID:-${ENTRA_CLIENT_ID:-}}"
 ARTIFACT_GCS_BUCKET="${AI_OPS_ARTIFACT_GCS_BUCKET:-${PROJECT_ID}-backoffice-originals}"
 EXPORT_GCS_BUCKET="${AI_OPS_EXPORT_GCS_BUCKET:-${PROJECT_ID}-backoffice-exports}"
-ADAPTER_SERVICE="${GCP_ADAPTER_SERVICE:-teams-agent-adapter}"
+export ADAPTER_SERVICE="${GCP_ADAPTER_SERVICE:-teams-agent-adapter}"
 BACKOFFICE_TOKEN_SECRET="${GCP_BACKOFFICE_TOKEN_SECRET:-teams-ai-ops-backoffice-token}"
 SOURCE_DELEGATION_SECRET="${GCP_SOURCE_DELEGATION_SECRET:-teams-agent-knowledge-delegation-secret}"
 BACKOFFICE_TOKEN_SEED="${AI_OPS_BACKOFFICE_TOKEN:-${SERVICE_TOKEN:-}}"
@@ -38,7 +38,7 @@ fail() {
   exit 1
 }
 
-# shellcheck source=lib/source-api-wiring.sh
+# shellcheck disable=SC1091
 source "${PROJECT_DIR}/deploy/lib/source-api-wiring.sh"
 
 command -v gcloud >/dev/null 2>&1 || fail "gcloud CLI is required."
