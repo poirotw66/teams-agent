@@ -6,6 +6,8 @@ import {
   SYNC_ALIGNED_MESSAGE,
   SYNC_BEHIND_MESSAGE,
   SYNC_COMPLETED_MESSAGE,
+  fetchMirrorDocumentPreview,
+  mirrorPreviewToManualDocument,
   syncLocalKnowledgeMirror,
   syncOutcomeToastLevel,
 } from './syncLocalKnowledgeMirror';
@@ -118,6 +120,36 @@ describe('syncLocalKnowledgeMirror', () => {
       message: 'forbidden',
     });
     expect(syncOutcomeToastLevel(outcome)).toBe('error');
+  });
+
+  it('loads a GCS mirror document preview for the chunk inspector', async () => {
+    apiClient.mockResolvedValue({
+      documentId: 'doc-web',
+      title: '樹精靈 WEB-登入異常',
+      releaseId: 'release-cloud',
+      versionId: 'ver-web-1',
+      sourcePath: 'sources/doc-web.md',
+      chunkCount: 1,
+      chunks: [
+        {
+          id: 'chk-web-1',
+          title: '樹精靈 WEB-登入異常',
+          content: '# 樹精靈 WEB',
+          content_preview: '# 樹精靈 WEB',
+        },
+      ],
+    });
+
+    const preview = await fetchMirrorDocumentPreview('doc-web');
+    const document = mirrorPreviewToManualDocument(preview);
+
+    expect(apiClient).toHaveBeenCalledWith(
+      '/api/console/agent-knowledge/documents/doc-web',
+    );
+    expect(document.status).toBe('LIVE');
+    expect(document.category).toBe('雲端正式鏡像');
+    expect(document.chunk_count).toBe(1);
+    expect(document.chunks?.[0]?.id).toBe('chk-web-1');
   });
 
   it('keeps publish success copy distinct from Sync Now', () => {

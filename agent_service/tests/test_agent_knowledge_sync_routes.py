@@ -89,6 +89,26 @@ def test_sync_route_proxies_post() -> None:
     assert mocked.await_args.kwargs["path"] == "/admin/knowledge-sync"
 
 
+def test_mirror_document_route_proxies_preview() -> None:
+    app = _app()
+    client = TestClient(app)
+    upstream = {
+        "documentId": "doc-web",
+        "chunkCount": 1,
+        "chunks": [{"id": "chk-1", "content_preview": "hello"}],
+    }
+    with patch(
+        "ai_ops_backoffice.routers.agent_knowledge_sync_routes._call_agent",
+        new=AsyncMock(return_value=upstream),
+    ) as mocked:
+        response = client.get("/api/console/agent-knowledge/documents/doc-web")
+    assert response.status_code == 200
+    assert response.json()["documentId"] == "doc-web"
+    assert mocked.await_args.kwargs["path"] == (
+        "/admin/knowledge-mirror-documents/doc-web"
+    )
+
+
 def test_legacy_agent_status_alias_still_works() -> None:
     app = _app()
     client = TestClient(app)

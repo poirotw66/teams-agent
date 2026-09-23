@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Row, Col, Typography, Tabs } from 'antd';
 import {
+  CloudOutlined,
   FileTextOutlined,
   ThunderboltOutlined,
   QuestionCircleOutlined,
@@ -10,6 +11,7 @@ import { ManualDocsManager } from '../components/ManualDocsManager';
 import { FaqManager } from '../components/FaqManager';
 import { KnowledgeGapsManager } from '../components/KnowledgeGapsManager';
 import { PlaygroundSimulator } from '../components/PlaygroundSimulator';
+import { CloudFormalMirrorDocs } from '../components/CloudFormalMirrorDocs';
 import { KnowledgeWorkspaceBanner } from '../components/KnowledgeWorkspaceBanner';
 import { KnowledgeSyncLagBanner } from '../components/KnowledgeSyncLagBanner';
 import { FormalPublishProgressBanner } from '../components/FormalPublishProgressBanner';
@@ -28,7 +30,7 @@ export const KnowledgePage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const categoryParam = searchParams.get('category');
 
-  const [activeTab, setActiveTab] = useState<string>('docs');
+  const [activeTab, setActiveTab] = useState<string>('cloud-mirror');
   const [documents, setDocuments] = useState<ManualDocumentItem[]>(workbenchStore.getDocuments());
   const [faqs, setFaqs] = useState<FaqItem[]>(workbenchStore.getFaqs());
   const [gaps, setGaps] = useState<KnowledgeGapItem[]>(workbenchStore.getKnowledgeGaps());
@@ -58,11 +60,21 @@ export const KnowledgePage: React.FC = () => {
 
   const tabItems = [
     {
+      key: 'cloud-mirror',
+      label: (
+        <span>
+          <CloudOutlined style={{ marginRight: 6 }} />
+          雲端正式鏡像
+        </span>
+      ),
+      children: <CloudFormalMirrorDocs onTestQuery={handleTestQuery} />,
+    },
+    {
       key: 'docs',
       label: (
         <span>
           <FileTextOutlined style={{ marginRight: 6 }} />
-          操作手冊與文件 ({documents.length})
+          本機測試工作區 ({documents.length})
         </span>
       ),
       children: (
@@ -118,7 +130,9 @@ export const KnowledgePage: React.FC = () => {
           知識庫與手冊中心
         </Title>
         <Text type="secondary" style={{ fontSize: '13px' }}>
-          PDF/Word 手冊上傳 · FAQ 快修 · 右側即時測試演練
+          「雲端正式鏡像」才是與雲端 active 同一份資料。本機測試工作區仍是獨立
+          FILE sandbox，上傳不會回寫雲端。右側試問讀的是本機 sandbox 關鍵字，不是
+          Agent GCS。
         </Text>
       </div>
 

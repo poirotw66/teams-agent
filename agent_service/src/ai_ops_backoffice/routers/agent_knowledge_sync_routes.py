@@ -7,6 +7,7 @@ import logging
 import os
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
@@ -26,6 +27,7 @@ def register_agent_knowledge_sync_routes(
     Preferred console paths:
     - ``GET  /api/console/agent-knowledge/status``
     - ``POST /api/console/agent-knowledge/sync``
+    - ``GET  /api/console/agent-knowledge/documents/{document_id}``
 
     Legacy aliases (same handlers):
     - ``GET  /api/agent/knowledge-status``
@@ -48,6 +50,17 @@ def register_agent_knowledge_sync_routes(
             path="/admin/knowledge-sync",
         )
 
+    async def _document(
+        document_id: str,
+        actor: Any = Depends(current_actor),
+    ) -> dict[str, object]:
+        require_capability(actor, "ops.knowledge.read")
+        return await _call_agent(
+            resolved_settings,
+            method="GET",
+            path=f"/admin/knowledge-mirror-documents/{quote(document_id, safe='')}",
+        )
+
     app.get(
         "/api/console/agent-knowledge/status",
         operation_id="get_console_agent_knowledge_status",
@@ -56,6 +69,10 @@ def register_agent_knowledge_sync_routes(
         "/api/console/agent-knowledge/sync",
         operation_id="post_console_agent_knowledge_sync",
     )(_sync)
+    app.get(
+        "/api/console/agent-knowledge/documents/{document_id}",
+        operation_id="get_console_agent_knowledge_mirror_document",
+    )(_document)
     # Legacy aliases kept for compatibility; excluded from OpenAPI to avoid
     # duplicate operationIds with the canonical console paths.
     app.get("/api/agent/knowledge-status", include_in_schema=False)(_status)

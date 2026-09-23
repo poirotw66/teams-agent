@@ -28,8 +28,9 @@ interface ChunkInspectorModalProps {
   document: ManualDocumentItem | null;
   onClose: () => void;
   onTestQuery: (query: string) => void;
-  onDeleteDoc: (docId: string, title: string) => Promise<void>;
+  onDeleteDoc?: (docId: string, title: string) => Promise<void>;
   isDeleting?: boolean;
+  readOnly?: boolean;
 }
 
 export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
@@ -39,6 +40,7 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
   onTestQuery,
   onDeleteDoc,
   isDeleting = false,
+  readOnly = false,
 }) => {
   const [inspectDoc, setInspectDoc] = useState<ManualDocumentItem | null>(
     document,
@@ -98,7 +100,7 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
   }, [chunkPageSize, currentChunkPage, filteredChunks.length]);
 
   const handleProfileChange = async (profile: ChunkingProfile) => {
-    if (!inspectDoc) return;
+    if (!inspectDoc || readOnly) return;
     setIsRechunking(true);
     try {
       const preview = await workbenchStore.previewDocument(inspectDoc, profile);
@@ -149,7 +151,9 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
           <Space>
             <EyeOutlined style={{ color: "#5B5FC7", fontSize: 18 }} />
             <Text strong style={{ fontSize: "16px" }}>
-              切分段落檢視器 (Chunk Inspector) - {inspectDoc?.title}
+              {readOnly
+                ? `雲端正式鏡像段落預覽 - ${inspectDoc?.title}`
+                : `切分段落檢視器 (Chunk Inspector) - ${inspectDoc?.title}`}
             </Text>
           </Space>
         </div>
@@ -157,7 +161,7 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
       open={open}
       onCancel={onClose}
       footer={[
-        inspectDoc && (
+        !readOnly && inspectDoc && onDeleteDoc ? (
           <Popconfirm
             key="delete-modal"
             title="確定要刪除此手冊文件嗎？"
@@ -182,14 +186,14 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
               刪除此手冊
             </Button>
           </Popconfirm>
-        ),
-        inspectDoc && (
+        ) : null,
+        !readOnly && inspectDoc ? (
           <DocumentGovernanceActions
             key="governance-actions"
             document={inspectDoc}
             onComplete={onClose}
           />
-        ),
+        ) : null,
         <Button key="close" onClick={onClose}>
           關閉
         </Button>,
@@ -197,7 +201,7 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
       width={840}
       style={{ top: 24 }}
     >
-      {inspectDoc?.quality && (
+      {inspectDoc?.quality && !readOnly && (
         <Alert
           type={inspectDoc.quality.acceptable ? "success" : "warning"}
           showIcon
@@ -221,10 +225,21 @@ export const ChunkInspectorModal: React.FC<ChunkInspectorModalProps> = ({
         />
       )}
 
+      {readOnly ? (
+        <Alert
+          type="info"
+          showIcon
+          message="這是雲端正式 release 已發布切分，與 Playground Agent 同一份 GCS 鏡像。"
+          description="不可重切、刪除或送審。要改內容請在雲端正式工作區發布新 release，再按「立即同步」。"
+          style={{ marginBottom: 16 }}
+        />
+      ) : null}
+
       <ChunkInspectorToolbar
         document={inspectDoc}
         isRechunking={isRechunking}
         chunkSearchText={chunkSearchText}
+        readOnly={readOnly}
         onProfileChange={handleProfileChange}
         onSearchChange={(value) => {
           setChunkSearchText(value);

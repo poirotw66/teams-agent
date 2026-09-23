@@ -224,6 +224,7 @@ async def test_knowledge_status_aligned_only_when_all_match(tmp_path: Path) -> N
     assert sync["mirroredReleaseId"] == "release-1"
     assert sync["loadedReleaseId"] == "release-1"
     assert sync["alignedWithCloud"] is True
+    assert sync.get("documents") == []
 
     request.app.state.knowledge_release_id = "release-stale"
     payload = await _build_knowledge_status(request, settings)
@@ -231,6 +232,55 @@ async def test_knowledge_status_aligned_only_when_all_match(tmp_path: Path) -> N
     assert isinstance(sync, dict)
     assert sync["loadedReleaseId"] == "release-stale"
     assert sync["alignedWithCloud"] is False
+
+
+@pytest.mark.asyncio
+async def test_knowledge_status_lists_mirrored_release_documents(
+    tmp_path: Path,
+) -> None:
+    cache_dir = tmp_path / "knowledge_cache"
+    _write_mirror(cache_dir, tenant_id="default", release_id="release-1")
+    settings = RagSettings(
+        data_dir=tmp_path,
+        index_path=tmp_path / "chunks.json",
+        knowledge_release_store_mode="GCS",
+        knowledge_release_gcs_bucket="bucket",
+        knowledge_release_cache_dir=cache_dir,
+        knowledge_release_tenant_id="default",
+    )
+    syncer = KnowledgeReleaseSyncer(settings)
+    with syncer._lock:
+        syncer._status.cloud_active_release_id = "release-1"
+        syncer._status.mirrored_release_id = "release-1"
+        syncer._status.loaded_release_id = "release-1"
+        syncer._status.sync_state = KnowledgeSyncState.IN_SYNC
+        syncer._status.runtime_inventory_complete = True
+        syncer._status.behind_cloud = False
+        syncer._status.selection_mode = KnowledgeReleaseSelectionMode.FOLLOW_CLOUD
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                knowledge_release_syncer=syncer,
+                knowledge_release_id="release-1",
+                knowledge_index_source="gcs_mirror",
+                knowledge_index_path=tmp_path / "index.json",
+                index=MagicMock(chunks=[1]),
+            )
+        )
+    )
+    payload = await _build_knowledge_status(request, settings)
+    sync = payload["sync"]
+    assert isinstance(sync, dict)
+    assert sync["documents"] == [
+        {
+            "documentId": "doc-a",
+            "title": "Doc A",
+            "versionId": "v1",
+            "sourcePath": "sources/doc-a.md",
+            "contentState": None,
+        }
+    ]
 
 
 @pytest.mark.asyncio

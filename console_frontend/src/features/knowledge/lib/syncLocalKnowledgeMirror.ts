@@ -1,6 +1,21 @@
 /** Shared Sync Now helper for the Console-connected Agent mirror. */
 
 import { apiClient, ApiError } from '../../../shared/api/client';
+import type { ManualChunkItem, ManualDocumentItem } from '../../../shared/api/types';
+
+export type KnowledgeMirrorDocument = {
+  documentId?: string | null;
+  title?: string | null;
+  versionId?: string | null;
+  sourcePath?: string | null;
+  contentState?: string | null;
+};
+
+export type KnowledgeMirrorDocumentPreview = KnowledgeMirrorDocument & {
+  releaseId?: string | null;
+  chunkCount?: number;
+  chunks?: ManualChunkItem[];
+};
 
 export type KnowledgeSyncStatus = {
   cloudActiveReleaseId?: string | null;
@@ -19,6 +34,7 @@ export type KnowledgeSyncStatus = {
   matchesCloudProduction?: boolean;
   detail?: string | null;
   lastError?: string | null;
+  documents?: KnowledgeMirrorDocument[];
 };
 
 export type SyncLocalKnowledgeMirrorOutcome =
@@ -123,4 +139,32 @@ export function syncOutcomeToastLevel(
     case 'failed':
       return 'error';
   }
+}
+
+export async function fetchMirrorDocumentPreview(
+  documentId: string,
+): Promise<KnowledgeMirrorDocumentPreview> {
+  return apiClient<KnowledgeMirrorDocumentPreview>(
+    `/api/console/agent-knowledge/documents/${encodeURIComponent(documentId)}`,
+  );
+}
+
+/** Adapt a GCS mirror preview to the shared Chunk Inspector document shape. */
+export function mirrorPreviewToManualDocument(
+  preview: KnowledgeMirrorDocumentPreview,
+): ManualDocumentItem {
+  const chunks = preview.chunks || [];
+  return {
+    id: preview.documentId || '',
+    title: preview.title || preview.documentId || '雲端正式鏡像文件',
+    file_name: preview.sourcePath || 'gcs-mirror',
+    category: '雲端正式鏡像',
+    status: 'LIVE',
+    chunk_count: preview.chunkCount ?? chunks.length,
+    chunks,
+    version: preview.versionId || preview.releaseId || 'ACTIVE',
+    version_id: preview.versionId,
+    updated_at: '',
+    updated_by: '',
+  };
 }

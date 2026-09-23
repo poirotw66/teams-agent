@@ -1,12 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Space, Tag, Typography, message } from 'antd';
 import { SyncOutlined } from '@ant-design/icons';
+import { useGetIdentity } from '@refinedev/core';
 import { apiClient, ApiError } from '../../../shared/api/client';
+import { notifyKnowledgeMirrorUpdated } from '../lib/knowledgeMirrorEvents';
 import {
   KnowledgeSyncStatus,
   syncLocalKnowledgeMirror,
   syncOutcomeToastLevel,
 } from '../lib/syncLocalKnowledgeMirror';
+
+type KnowledgeIdentity = {
+  knowledgeWorkspaceMode?: string;
+};
 
 const { Text } = Typography;
 
@@ -25,9 +31,15 @@ function releaseLabel(value?: string | null): string {
  * or the QA snapshot is incomplete — never claims formal parity.
  *
  * When behind / not aligned, offers 「立即同步」 (Console-connected Agent Sync Now).
- * Cloud Run formal chat uses Portal reload-knowledge, not this button.
+ * Local workspace (default start.sh Console) always shows the button so operators
+ * can pull GCS without opening Releases. Cloud formal Console keeps the button
+ * hidden while already aligned — Portal reload-knowledge owns that path.
  */
 export const KnowledgeSyncLagBanner: React.FC = () => {
+  const { data: identity } = useGetIdentity<KnowledgeIdentity>();
+  const isLocalWorkspace =
+    String(identity?.knowledgeWorkspaceMode || 'LOCAL_SANDBOX').toUpperCase() !==
+    'CLOUD_FORMAL';
   const [status, setStatus] = useState<KnowledgeStatusResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -80,6 +92,7 @@ export const KnowledgeSyncLagBanner: React.FC = () => {
         }));
       }
       await load();
+      notifyKnowledgeMirrorUpdated();
     } finally {
       setSyncing(false);
     }
@@ -120,7 +133,29 @@ export const KnowledgeSyncLagBanner: React.FC = () => {
 
   const sync = status?.sync;
   if (!sync) {
-    return null;
+    if (!isLocalWorkspace) {
+      return null;
+    }
+    return (
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message={
+          <Space wrap>
+            <Tag color="blue">GCS 鏡像</Tag>
+            <span>從雲端正式 release 同步到本機 Playground</span>
+            {syncNowButton}
+          </Space>
+        }
+        description={
+          <Text type="secondary">
+            本機問答讀的是已驗證快照，不是雲端即時庫。按「立即同步」拉取
+            Firestore active + GCS QA artifacts。
+          </Text>
+        }
+      />
+    );
   }
 
   const aligned =
@@ -144,7 +179,8 @@ export const KnowledgeSyncLagBanner: React.FC = () => {
         message={
           <Space wrap>
             <Tag color="green">IN_SYNC</Tag>
-            <span>目前與雲端正式知識版本一致</span>
+            <span>Playground Agent 已與雲端 active 同一版</span>
+            {isLocalWorkspace ? syncNowButton : null}
           </Space>
         }
         description={
@@ -152,6 +188,9 @@ export const KnowledgeSyncLagBanner: React.FC = () => {
             雲端 {releaseLabel(sync.cloudActiveReleaseId)} ／ 鏡像{' '}
             {releaseLabel(sync.mirroredReleaseId)} ／ 此 Console 所連 Agent{' '}
             {releaseLabel(sync.loadedReleaseId || status?.currentReleaseId)}
+            {isLocalWorkspace
+              ? '。這只代表 GCS 鏡像／問答索引，不是「本機測試工作區」文件表。要比對雲端目錄請看「雲端正式鏡像」。'
+              : ''}
           </Text>
         }
       />
@@ -159,7 +198,9 @@ export const KnowledgeSyncLagBanner: React.FC = () => {
   }
 
   if (!behind && !sync.lastError && sync.syncState === 'IN_SYNC') {
-    return null;
+    if (!isLocalWorkspace) {
+      return null;
+    }
   }
 
   return (

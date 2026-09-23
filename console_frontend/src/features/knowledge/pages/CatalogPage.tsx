@@ -29,6 +29,7 @@ import {
   saveCatalogDraft,
   submitCatalogReview,
 } from '../../../shared/api/workbench/catalogApi';
+import { CloudFormalMirrorDocs } from '../components/CloudFormalMirrorDocs';
 import { KnowledgeWorkspaceBanner } from '../components/KnowledgeWorkspaceBanner';
 import { KnowledgeSyncLagBanner } from '../components/KnowledgeSyncLagBanner';
 
@@ -234,6 +235,13 @@ export const CatalogPage: React.FC = () => {
           企業服務目錄
         </Title>
         <Text type="secondary">
+          下方草稿是本機 FILE Portal 的目錄工作區，不會因為 IN_SYNC 自動變成雲端
+          catalog。要比對雲端已發布目錄，請看「雲端正式鏡像」。
+        </Text>
+      </div>
+      <CloudFormalMirrorDocs />
+      <div>
+        <Text type="secondary">
           企業服務目錄與文件發布分開治理：編輯 → 送審 →「核准目錄」（不可自審；
           不等於文件／Release 發布）後，下一次知識 Release finalize 會寫入不可變的
           catalog/service_catalog.json。
@@ -245,7 +253,7 @@ export const CatalogPage: React.FC = () => {
       <Card
         title={
           <Space>
-            <span>目錄草稿</span>
+            <span>本機目錄草稿</span>
             <Tag color={statusColor(status)}>{status}</Tag>
             {updatedBy ? <Text type="secondary">更新者：{updatedBy}</Text> : null}
             {updatedAt ? <Text type="secondary">{updatedAt}</Text> : null}

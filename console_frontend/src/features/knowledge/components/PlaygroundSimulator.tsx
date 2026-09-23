@@ -63,7 +63,7 @@ export const PlaygroundSimulator: React.FC<PlaygroundSimulatorProps> = ({ initia
         <Space>
           <RobotOutlined style={{ color: '#5B5FC7' }} />
           <Text strong style={{ fontSize: '14px' }}>
-            即時 AI 問答模擬測試 (Playground)
+            本機 sandbox 關鍵字試問
           </Text>
         </Space>
       }
@@ -79,7 +79,8 @@ export const PlaygroundSimulator: React.FC<PlaygroundSimulatorProps> = ({ initia
     >
       <div style={{ marginBottom: 12 }}>
         <Text type="secondary" style={{ fontSize: '12px' }}>
-          在左側修改或上傳後，在此輸入口語測試驗證 AI 命中效果，確認滿意再生效。
+          此側欄搜的是本機 FILE sandbox／FAQ，不是雲端正式 RAG。要驗 GCS
+          鏡像請用獨立 Playground 或先看「雲端正式鏡像」清單。
         </Text>
       </div>
 

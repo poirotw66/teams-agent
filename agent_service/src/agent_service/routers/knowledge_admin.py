@@ -11,6 +11,11 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from ..contracts import KnowledgeBackendUpdate, ReloadKnowledgeRequest
 from ..deps import sync_knowledge_to_active_pointer
 from ..knowledge_backends import KnowledgeBackendRouter
+from ..knowledge_mirror_inventory import (
+    MirrorDocumentNotFound,
+    attach_mirror_documents,
+    preview_mirrored_document,
+)
 from ..knowledge_release import read_active_release_id
 from ..knowledge_release_control import FirestoreKnowledgeReleaseControl
 from ..retrieval import HybridIndex
@@ -70,12 +75,16 @@ async def _build_knowledge_status(
             == current_id
             and not sync_status.get("behindCloud")
         )
-        sync_status = {
-            **sync_status,
-            "loadedReleaseId": current_id,
-            "alignedWithCloud": aligned,
-            "matchesCloudProduction": aligned,
-        }
+        sync_status = attach_mirror_documents(
+            {
+                **sync_status,
+                "loadedReleaseId": current_id,
+                "alignedWithCloud": aligned,
+                "matchesCloudProduction": aligned,
+            },
+            settings=resolved_settings,
+            release_id=str(current_id) if current_id else None,
+        )
         syncer = getattr(request.app.state, "knowledge_release_syncer", None)
         if syncer is not None and current_id != syncer.status.loaded_release_id:
             syncer.set_loaded_release_id(current_id)
@@ -171,7 +180,34 @@ def register_knowledge_admin_routes(
         )
         public["alignedWithCloud"] = aligned
         public["matchesCloudProduction"] = aligned
-        return public
+        return attach_mirror_documents(
+            public,
+            settings=resolved_settings,
+            release_id=str(loaded_id) if loaded_id else None,
+        )
+
+    @app.get(
+        "/admin/knowledge-mirror-documents/{document_id}",
+        dependencies=[Depends(authorize)],
+    )
+    async def get_knowledge_mirror_document(
+        document_id: str,
+        request: Request,
+    ) -> dict[str, object]:
+        loaded_id = getattr(request.app.state, "knowledge_release_id", None)
+        try:
+            return await asyncio.to_thread(
+                preview_mirrored_document,
+                settings=resolved_settings,
+                release_id=str(loaded_id) if loaded_id else None,
+                document_id=document_id,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except MirrorDocumentNotFound as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        except FileNotFoundError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
 
     @app.post(
         "/admin/reload-knowledge",
