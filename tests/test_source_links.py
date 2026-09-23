@@ -444,6 +444,26 @@ def test_format_agent_response_uses_enriched_url() -> None:
     assert "[Doc](https://example.com/doc)" in format_agent_response(response)
 
 
+def test_format_agent_response_prefers_original_url() -> None:
+    response = AgentResponse(
+        answer="請參考來源 [S1]。",
+        traceId="t",
+        citations=[
+            Citation(
+                title="大州系統_功能無法點選",
+                url="https://bot.example.com/rag-sources/dazhou.md",
+                originalUrl="https://bot.example.com/rag-originals/src-1",
+            )
+        ],
+    )
+    formatted = format_agent_response(response)
+    assert (
+        "- [S1] [大州系統_功能無法點選](https://bot.example.com/rag-originals/src-1)"
+        in formatted
+    )
+    assert "rag-sources/dazhou.md" not in formatted
+
+
 def test_sign_source_access_binds_subject(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     sig_a = sign_source_access(

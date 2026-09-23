@@ -27,14 +27,24 @@ The script:
 1. Enables required APIs.
 2. Creates Artifact Registry and two service accounts.
 3. Copies local secret values into Secret Manager without printing them.
+   Source API secrets (`teams-ai-ops-backoffice-token`,
+   `teams-agent-knowledge-delegation-secret`) are created with a random
+   value only when missing; existing versions are not rotated.
 4. Ensures the private knowledge-release GCS bucket and grants Agent plus
    Adapter `objectViewer`. A missing local `data/index/chunks.json` is
    expected; the Agent image does not bake a laptop index.
 5. Builds both Linux images in Cloud Build.
 6. Deploys the private Agent with `KNOWLEDGE_RELEASE_STORE_MODE=GCS` and
    grants only the Adapter `run.invoker`.
-7. Deploys the public Teams Adapter.
+7. Deploys the public Teams Adapter. The first revision may set the full
+   env and secret list. Later image updates use `--update-env-vars` /
+   `--update-secrets` so `SOURCE_API_*`, `TEAMS_CITATION_OPEN_ACTIONS`,
+   `BOT_PUBLIC_BASE_URL`, and existing secret mounts are not wiped.
 8. Configures the Adapter Cloud Run URL for signed RAG images.
+9. If Backoffice is already deployed, wires Adapter Source API (token,
+   delegation secret, `SOURCE_API_BASE_URL`, `run.invoker`). If Backoffice
+   is not there yet, the script warns and leaves wiring to
+   `deploy-backoffice.sh`.
 
 After deployment, set the bot's Endpoint address in the Teams Developer
 Portal (https://dev.teams.microsoft.com, Tools -> Bot management) to:
@@ -78,6 +88,22 @@ gcloud secrets versions access latest \
   --project=itr-aimasteryhub-lab
 ```
 
+When the project blocks `allUsers` on Cloud Run, put Playground and Console
+behind a global HTTP load balancer instead of opening `*.run.app`:
+
+```bash
+export GCP_PROJECT_ID=your-project-id
+./deploy/setup-public-lb.sh
+```
+
+The script keeps Cloud Run ingress on `internal-and-cloud-load-balancing` and
+disables invoker IAM, so the browser uses the load balancer IP. Playground
+APIs (`/api/knowledge-backend`, `/api/new-conversation`) stay on Playground;
+other `/api/*` paths go to Console. The Adapter stays on its `*.run.app`
+URL; invoker IAM is also disabled there so Playground can forward Bot JWT.
+HTTP cannot complete Entra SPA login, so Console is switched to HEADER test
+auth (`/console-v2/login`). HTTPS and a domain are required to restore Entra.
+
 This is intended only for short-lived acceptance testing. Delete the Cloud Run
 service after UAT, and rotate or destroy the shared password secret if the test
 environment is deployed again.
@@ -111,11 +137,19 @@ to the service account that needs them:
 | `teams-agent-google-api-key` | Agent SA | `GOOGLE_API_KEY` |
 | `teams-agent-bot-client-secret` | Adapter SA | `CLIENT_SECRET` |
 | `teams-agent-asset-signing-key` | Adapter SA | `RAG_ASSET_SIGNING_KEY` |
+| `teams-ai-ops-backoffice-token` | Adapter SA + Backoffice SA | Adapter `SOURCE_API_TOKEN` / Backoffice `AI_OPS_BACKOFFICE_TOKEN` |
+| `teams-agent-knowledge-delegation-secret` | Adapter SA + Backoffice SA | Adapter `SOURCE_DELEGATION_SECRET` / Backoffice `AI_OPS_SOURCE_DELEGATION_SECRET` |
+
+The two Source API secrets are created if missing (random value; never
+printed). They are not rotated on later deploys. Override names with
+`GCP_BACKOFFICE_TOKEN_SECRET` and `GCP_SOURCE_DELEGATION_SECRET`.
 
 Adapter citation delivery also needs:
 
 | Setting | Bound to | Purpose |
 |---|---|---|
+| `TEAMS_CITATION_OPEN_ACTIONS=true` | Adapter | Show citation open actions on Adaptive Cards |
+| `SOURCE_API_BASE_URL` | Adapter | Backoffice URL for citation preview delivery; set when Backoffice is wired |
 | `RAG_SOURCE_DIR=/app/data` | Adapter | Markdown under `data/sources/` baked into the image |
 | `VIEWER_MEMBERSHIP_BACKEND=gcs` | Adapter | Share viewer sessions across Cloud Run instances |
 | `VIEWER_MEMBERSHIP_GCS_BUCKET` | Adapter SA (`roles/storage.objectAdmin`) | Default `${PROJECT_ID}-viewer-memberships` |
@@ -433,3 +467,15 @@ docker compose -f deploy/docker-compose.console.yml up --build
 ```bash
 ./deploy/deploy-backoffice.sh
 ```
+
+New projects typically run `deploy-gcp.sh` first (Adapter), then Playground
+or Console, then this script. `deploy-gcp.sh` skips Source API wiring when
+Backoffice is missing and prints a warning. `deploy-backoffice.sh` always
+re-runs Adapter wiring afterwards (`SOURCE_API_TOKEN`,
+`SOURCE_DELEGATION_SECRET`, `SOURCE_API_BASE_URL`, Backoffice
+`run.invoker`). Shared helper: [`lib/source-api-wiring.sh`](./lib/source-api-wiring.sh).
+
+Backoffice `AI_OPS_BACKOFFICE_TOKEN` and `AI_OPS_SOURCE_DELEGATION_SECRET`
+are mounted from Secret Manager. Subsequent Backoffice image updates do
+not use a full `--set-env-vars` replace, so later keys such as
+`KNOWLEDGE_PORTAL_PUBLIC_URL` are preserved.

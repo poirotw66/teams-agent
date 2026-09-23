@@ -19,6 +19,9 @@ ADAPTER_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:latest"
 GOOGLE_API_SECRET="teams-agent-google-api-key"
 BOT_CLIENT_SECRET="teams-agent-bot-client-secret"
 ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
+BACKOFFICE_SERVICE="${GCP_BACKOFFICE_API_SERVICE:-teams-ai-ops-backoffice}"
+BACKOFFICE_WORKER_SERVICE="${GCP_BACKOFFICE_WORKER_SERVICE:-teams-ai-ops-backoffice-worker}"
+BACKOFFICE_TOKEN_SECRET="${GCP_BACKOFFICE_TOKEN_SECRET:-teams-ai-ops-backoffice-token}"
 SOURCE_DELEGATION_SECRET="${GCP_SOURCE_DELEGATION_SECRET:-teams-agent-knowledge-delegation-secret}"
 VIEWER_MEMBERSHIP_BUCKET="${GCP_VIEWER_MEMBERSHIP_BUCKET:-${PROJECT_ID}-viewer-memberships}"
 KNOWLEDGE_RELEASE_BUCKET="${KNOWLEDGE_RELEASE_GCS_BUCKET:-${GCP_KNOWLEDGE_RELEASE_BUCKET:-${PROJECT_ID}-knowledge-releases}}"
@@ -143,6 +146,9 @@ grant_bucket_role() {
 }
 
 cd "${PROJECT_DIR}"
+
+# shellcheck source=lib/source-api-wiring.sh
+source "${PROJECT_DIR}/deploy/lib/source-api-wiring.sh"
 
 command -v gcloud >/dev/null 2>&1 || fail "找不到 gcloud CLI"
 gcloud auth list --filter=status:ACTIVE --format='value(account)' \
@@ -276,6 +282,10 @@ for secret in "${BOT_CLIENT_SECRET}" "${ASSET_SIGNING_SECRET}"; do
     --project="${PROJECT_ID}" >/dev/null
 done
 
+log "確認 Source API secrets（既有值不輪替）"
+ensure_source_api_secrets
+grant_source_api_secret_access "${ADAPTER_SA}"
+
 log "確認 Knowledge Release GCS bucket（映像不打包 data/index）"
 ensure_private_bucket "${KNOWLEDGE_RELEASE_BUCKET}"
 grant_bucket_role \
@@ -362,9 +372,15 @@ gcloud builds submit . \
   --substitutions="_IMAGE=${ADAPTER_IMAGE}" \
   --project="${PROJECT_ID}"
 
+ADAPTER_ENV_VARS="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CLIENT_ID=${BOT_CLIENT_ID},TENANT_ID=${BOT_TENANT_ID},TEAMS_INBOUND_AUTH_MODE=both,RAG_SOURCE_DIR=/app/data,RAG_ASSET_DIR=/app/data/sources/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000,RAG_ASSET_GCS_BUCKET=${KNOWLEDGE_RELEASE_BUCKET},RAG_ASSET_GCS_PREFIX=${KNOWLEDGE_RELEASE_PREFIX},RAG_ASSET_GCS_TENANT_ID=${KNOWLEDGE_RELEASE_TENANT_ID},VIEWER_MEMBERSHIP_BACKEND=gcs,VIEWER_MEMBERSHIP_GCS_BUCKET=${VIEWER_MEMBERSHIP_BUCKET},TEAMS_CITATION_OPEN_ACTIONS=true"
+ADAPTER_SECRETS="CLIENT_SECRET=${BOT_CLIENT_SECRET}:latest,RAG_ASSET_SIGNING_KEY=${ASSET_SIGNING_SECRET}:latest,SOURCE_API_TOKEN=${BACKOFFICE_TOKEN_SECRET}:latest,SOURCE_DELEGATION_SECRET=${SOURCE_DELEGATION_SECRET}:latest"
+
 log "部署 public Teams Adapter"
-gcloud run deploy "${ADAPTER_SERVICE}" \
-  --image="${ADAPTER_IMAGE}" \
+deploy_cloud_run_preserving_runtime \
+  "${ADAPTER_SERVICE}" \
+  "${ADAPTER_IMAGE}" \
+  "${ADAPTER_ENV_VARS}" \
+  "${ADAPTER_SECRETS}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
   --platform=managed \
@@ -377,9 +393,7 @@ gcloud run deploy "${ADAPTER_SERVICE}" \
   --concurrency=40 \
   --timeout=90 \
   --min=0 \
-  --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,AGENT_MODE=api,AGENT_API_URL=${AGENT_URL}/agent/chat,AGENT_API_AUTH_MODE=google_id_token,AGENT_API_AUDIENCE=${AGENT_URL},AGENT_API_TIMEOUT_SECONDS=30,CLIENT_ID=${BOT_CLIENT_ID},TENANT_ID=${BOT_TENANT_ID},TEAMS_INBOUND_AUTH_MODE=both,RAG_SOURCE_DIR=/app/data,RAG_ASSET_DIR=/app/data/sources/assets,RAG_ASSET_URL_TTL_SECONDS=3600,RAG_ASSET_MAX_DIMENSION=1024,RAG_ASSET_MAX_BYTES=1000000,RAG_ASSET_GCS_BUCKET=${KNOWLEDGE_RELEASE_BUCKET},RAG_ASSET_GCS_PREFIX=${KNOWLEDGE_RELEASE_PREFIX},RAG_ASSET_GCS_TENANT_ID=${KNOWLEDGE_RELEASE_TENANT_ID},VIEWER_MEMBERSHIP_BACKEND=gcs,VIEWER_MEMBERSHIP_GCS_BUCKET=${VIEWER_MEMBERSHIP_BUCKET}" \
-  --set-secrets="CLIENT_SECRET=${BOT_CLIENT_SECRET}:latest,RAG_ASSET_SIGNING_KEY=${ASSET_SIGNING_SECRET}:latest"
+  --max=3
 
 ADAPTER_URL="$(gcloud run services describe "${ADAPTER_SERVICE}" \
   --region="${REGION}" \
@@ -390,40 +404,12 @@ log "設定 Adapter public image base URL"
 gcloud run services update "${ADAPTER_SERVICE}" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
-  --update-env-vars="BOT_PUBLIC_BASE_URL=${ADAPTER_URL}" >/dev/null
+  --update-env-vars="BOT_PUBLIC_BASE_URL=${ADAPTER_URL},TEAMS_CITATION_OPEN_ACTIONS=true" >/dev/null
 
-# Wire Adapter → Backoffice original-source delivery when Backoffice is present.
-BACKOFFICE_SERVICE="${GCP_BACKOFFICE_API_SERVICE:-teams-ai-ops-backoffice}"
-BACKOFFICE_TOKEN_SECRET="${GCP_BACKOFFICE_TOKEN_SECRET:-teams-ai-ops-backoffice-token}"
-if gcloud run services describe "${BACKOFFICE_SERVICE}" \
-  --region="${REGION}" \
-  --project="${PROJECT_ID}" >/dev/null 2>&1; then
-  BACKOFFICE_URL="$(gcloud run services describe "${BACKOFFICE_SERVICE}" \
-    --region="${REGION}" \
-    --project="${PROJECT_ID}" \
-    --format='value(status.url)')"
-  log "偵測到 ${BACKOFFICE_SERVICE}，接上 Adapter Source API（原檔 S2S）"
-  gcloud run services add-iam-policy-binding "${BACKOFFICE_SERVICE}" \
-    --region="${REGION}" \
-    --project="${PROJECT_ID}" \
-    --member="serviceAccount:${ADAPTER_SA}" \
-    --role=roles/run.invoker >/dev/null
-  gcloud secrets add-iam-policy-binding "${SOURCE_DELEGATION_SECRET}" \
-    --member="serviceAccount:${ADAPTER_SA}" \
-    --role=roles/secretmanager.secretAccessor \
-    --project="${PROJECT_ID}" >/dev/null
-  UPDATE_SECRETS="SOURCE_API_TOKEN=${BACKOFFICE_TOKEN_SECRET}:latest,SOURCE_DELEGATION_SECRET=${SOURCE_DELEGATION_SECRET}:latest"
-  if ! gcloud secrets describe "${BACKOFFICE_TOKEN_SECRET}" \
-    --project="${PROJECT_ID}" >/dev/null 2>&1; then
-    log "警告：缺少 secret ${BACKOFFICE_TOKEN_SECRET}；略過 SOURCE_API_TOKEN 掛載"
-    UPDATE_SECRETS="SOURCE_DELEGATION_SECRET=${SOURCE_DELEGATION_SECRET}:latest"
-  fi
-  gcloud run services update "${ADAPTER_SERVICE}" \
-    --region="${REGION}" \
-    --project="${PROJECT_ID}" \
-    --update-env-vars="SOURCE_API_BASE_URL=${BACKOFFICE_URL},SOURCE_API_TIMEOUT_SECONDS=20" \
-    --update-secrets="${UPDATE_SECRETS}" >/dev/null
-fi
+# Adapter is deployed before Playground/Console/Backoffice on new projects.
+# If Backoffice is not up yet, skip wiring and warn; deploy-backoffice.sh
+# always re-runs Adapter Source API wiring afterwards.
+ensure_source_api_wiring
 
 # If the optional mock ticket UAT service is already deployed, re-wire it.
 # deploy-gcp intentionally starts the Agent with TICKET_SERVICE_MODE=DISABLED;

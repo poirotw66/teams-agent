@@ -54,8 +54,9 @@ class AgentSettings:
     source_api_token: str | None = None
     source_delegation_secret: str | None = None
     source_api_timeout_seconds: float = 20.0
-    # Temporary kill-switch for Adaptive Card "開啟原始檔案 / 查看引用段落" buttons.
-    citation_open_actions_enabled: bool = False
+    # Adaptive Card "開啟原始檔案 / 查看引用段落" buttons. Playground does not
+    # make markdown source links clickable, so these stay on by default.
+    citation_open_actions_enabled: bool = True
 
     @classmethod
     def from_env(cls) -> "AgentSettings":

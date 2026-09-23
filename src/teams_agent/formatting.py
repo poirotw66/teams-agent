@@ -317,6 +317,24 @@ def _is_policy_advisory_citation(citation: Citation) -> bool:
     return bool(re.search(r"POLICY-SEC-\d{3}", citation.title or ""))
 
 
+def citation_display_url(citation: Citation) -> str | None:
+    """Prefer the original-file URL when both delivery links exist."""
+    for candidate in (citation.originalUrl, citation.url):
+        if candidate and candidate.strip():
+            return candidate.strip()
+    return None
+
+
+def _format_source_line(
+    citation: Citation, *, index: int, has_citations_in_answer: bool
+) -> str:
+    prefix = f"[S{index}] " if has_citations_in_answer else ""
+    href = citation_display_url(citation)
+    if href:
+        return f"- {prefix}[{citation.title}]({href})"
+    return f"- {prefix}{citation.title}"
+
+
 def format_agent_response(response: AgentResponse) -> str:
     formatted_answer = format_teams_answer(
         _strip_policy_overlay_for_display(response.answer)
@@ -330,16 +348,10 @@ def format_agent_response(response: AgentResponse) -> str:
     if display_citations:
         has_citations_in_answer = bool(re.search(r"\[S\d+\]", formatted_answer))
         sources = "\n".join(
-            (
-                f"- [S{index}] [{citation.title}]({citation.url})"
-                if citation.url
-                else f"- [S{index}] {citation.title}"
-            )
-            if has_citations_in_answer
-            else (
-                f"- [{citation.title}]({citation.url})"
-                if citation.url
-                else f"- {citation.title}"
+            _format_source_line(
+                citation,
+                index=index,
+                has_citations_in_answer=has_citations_in_answer,
             )
             for index, citation in enumerate(display_citations, start=1)
         )
@@ -351,6 +363,7 @@ def format_agent_response(response: AgentResponse) -> str:
 
 
 __all__ = [
+    "citation_display_url",
     "extract_answer_urls",
     "format_agent_response",
     "format_teams_answer",

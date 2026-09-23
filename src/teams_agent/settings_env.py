@@ -115,7 +115,7 @@ def _load_identity_and_source_env(*, asset_signing_key: str | None) -> dict:
         ),
         "source_api_timeout_seconds": source_api_timeout,
         "citation_open_actions_enabled": (
-            environ.get("TEAMS_CITATION_OPEN_ACTIONS", "false").strip().lower()
+            environ.get("TEAMS_CITATION_OPEN_ACTIONS", "true").strip().lower()
             in _TRUE_VALUES
         ),
     }

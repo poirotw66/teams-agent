@@ -58,7 +58,11 @@ def _google_identity_token(audience: str) -> str | None:
     try:
         return fetch_id_token(GoogleAuthRequest(), audience)
     except Exception:
-        logger.debug("Unable to mint Google ID token for Source API", exc_info=True)
+        logger.warning(
+            "Unable to mint Google ID token for Source API audience=%s",
+            audience,
+            exc_info=True,
+        )
         return None
 
 
@@ -109,6 +113,11 @@ async def fetch_source_preview(
                 raise SourceApiError("Source API preview exceeded the size limit.")
             if response.status >= 400:
                 detail = body[:200].decode("utf-8", errors="replace")
+                logger.warning(
+                    "source_api_preview_http_error status=%s detail=%s",
+                    response.status,
+                    detail,
+                )
                 raise SourceApiError(
                     f"Source API returned HTTP {response.status}: {detail}",
                     status=response.status,

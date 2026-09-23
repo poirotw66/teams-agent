@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -210,6 +210,57 @@ def test_rag_citation_route_renders_governed_preview(tmp_path: Path) -> None:
     assert response.headers["content-security-policy"].startswith("default-src")
     assert preview_client.await_args.kwargs["tenant_id"] == "default"
     assert preview_client.await_args.kwargs["groups"] == ("grp_public",)
+
+
+def test_rag_citation_route_falls_back_to_release_store_when_source_api_404s(
+    tmp_path: Path,
+) -> None:
+    settings = AgentSettings(
+        **{
+            **_settings(tmp_path).__dict__,
+            "asset_gcs_bucket": "knowledge-bucket",
+            "asset_gcs_prefix": "knowledge-releases",
+        }
+    )
+    store = InMemoryViewerMembershipStore()
+    url = build_citation_preview_url(
+        "src-preview-fallback",
+        settings,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+    preview = MagicMock()
+    preview.title = "大州系統"
+    preview.release_id = "release-1"
+    preview.source_path = "sources/dazhou.md"
+    preview.excerpt = "請調整安全性設定。"
+
+    with (
+        patch(
+            "citation_asset_gateway.source_route_streaming.fetch_source_preview",
+            new=AsyncMock(side_effect=SourceApiError("missing", status=404)),
+        ),
+        patch(
+            "citation_asset_gateway.source_route_streaming.resolve_release_citation_preview",
+            return_value=preview,
+        ),
+        patch(
+            "citation_asset_gateway.source_route_streaming.fetch_release_source_document",
+            return_value="# 大州系統\n\n請調整安全性設定。",
+        ),
+    ):
+        parsed = urlparse(url)
+        response = TestClient(app).get(
+            f"{parsed.path}?{parsed.query}",
+            headers={"Accept": "text/html"},
+        )
+
+    assert response.status_code == 200
+    assert "大州系統" in response.text
+    assert "請調整安全性設定" in response.text
 
 
 def test_rag_citation_route_renders_complete_release_document(

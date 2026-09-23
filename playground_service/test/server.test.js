@@ -11,7 +11,7 @@ const {
   verifySession,
   injectPlaygroundEvaluation,
 } = require("../server");
-const { rewriteAdapterAssetUrls } = require("../lib/source-proxy");
+const { linkifyMarkdownHtml, rewriteAdapterAssetUrls } = require("../lib/source-proxy");
 
 function listen(server) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server.address().port)));
@@ -393,6 +393,15 @@ test("adapter proxy injects playgroundSessionId for logical conversation reset",
     await close(upstream);
     await close(adapter);
   }
+});
+
+test("converts leftover markdown source links into anchors", () => {
+  const html = linkifyMarkdownHtml(
+    "<li>[S1] [大州系統_功能無法點選](https://adapter.example/rag-originals/src-1?signature=xyz)</li>",
+    (url) => url.replace("https://adapter.example", ""),
+  );
+  assert.match(html, /<a href="\/rag-originals\/src-1\?signature=xyz"/);
+  assert.match(html, />大州系統_功能無法點選<\/a>/);
 });
 
 test("rewrites adapter source links to the current page and leaves images on the adapter", () => {

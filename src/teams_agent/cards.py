@@ -137,8 +137,8 @@ def _source_open_actions(
     opens. Prefer original-file actions when present; keep citation-paragraph
     actions as a secondary path.
 
-    Controlled by ``TEAMS_CITATION_OPEN_ACTIONS`` (default off while originals
-    delivery is being stabilized for local historical releases).
+    Controlled by ``TEAMS_CITATION_OPEN_ACTIONS`` (default on; Playground
+    otherwise shows source titles as plain text).
     """
 
     if not enabled:

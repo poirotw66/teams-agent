@@ -598,7 +598,7 @@ start_background bash -c "
   export RAG_SOURCE_DIR=\"\$1/data\"
   export DANGEROUSLY_ALLOW_UNAUTHENTICATED_REQUESTS=true
   export PLAYGROUND_TEST_USER_EMAIL=\"\$4\"
-  export TEAMS_CITATION_OPEN_ACTIONS=\"\${TEAMS_CITATION_OPEN_ACTIONS:-false}\"
+  export TEAMS_CITATION_OPEN_ACTIONS=\"\${TEAMS_CITATION_OPEN_ACTIONS:-true}\"
   if [[ -n \"\${SOURCE_API_BASE_URL:-}\" ]]; then
     export SOURCE_API_BASE_URL
     export SOURCE_API_TOKEN

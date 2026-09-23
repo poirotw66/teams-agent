@@ -31,6 +31,10 @@ from .source_route_payloads import (
     fallback_preview_markdown,
     preview_evidence,
 )
+from .source_release_preview import (
+    release_preview_payload,
+    resolve_release_citation_preview,
+)
 from .source_storage import (
     SourceDocumentUnavailable,
     fetch_release_source_document,
@@ -135,10 +139,43 @@ async def handle_source_preview(
             return redirect
         raise HTTPException(status_code=403, detail=str(error)) from error
     except SourceApiError as error:
-        status = error.status if error.status in {403, 404} else 502
-        raise HTTPException(status_code=status, detail="Source preview unavailable.") from error
+        payload = _release_preview_fallback(settings, source_ref_id, viewer, error)
+        if payload is None:
+            status = error.status if error.status in {403, 404} else 502
+            raise HTTPException(
+                status_code=status, detail="Source preview unavailable."
+            ) from error
 
     return await _render_citation_preview(source_ref_id, settings, viewer, payload)
+
+
+def _release_preview_fallback(
+    settings: CitationGatewaySettings,
+    source_ref_id: str,
+    viewer: CitationViewerContext,
+    error: SourceApiError,
+) -> dict[str, object] | None:
+    logger.warning(
+        "source_preview_source_api_failed source_ref_id=%s status=%s error=%s",
+        source_ref_id,
+        error.status,
+        error,
+    )
+    if error.status in {401, 403}:
+        return None
+    tenant_id = (
+        citation_source_tenant_id("playground", viewer.tenant_id)
+        or settings.asset_gcs_tenant_id
+        or "default"
+    )
+    preview = resolve_release_citation_preview(
+        settings,
+        source_ref_id=source_ref_id,
+        tenant_id=str(tenant_id),
+    )
+    if preview is None:
+        return None
+    return release_preview_payload(preview)
 
 
 async def _render_citation_preview(
