@@ -414,7 +414,8 @@ gcloud run services update "${ADAPTER_SERVICE}" \
 # Adapter is deployed before Playground/Console/Backoffice on new projects.
 # If Backoffice is not up yet, skip wiring and warn; deploy-backoffice.sh
 # always re-runs Adapter Source API wiring afterwards.
-ensure_source_api_wiring
+# Empty seeds: create secrets if missing, never rotate, never forward script argv.
+ensure_source_api_wiring "" ""
 
 # If the optional mock ticket UAT service is already deployed, re-wire it.
 # deploy-gcp intentionally starts the Agent with TICKET_SERVICE_MODE=DISABLED;

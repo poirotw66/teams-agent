@@ -1,15 +1,33 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-from knowledge_core.source_identity import make_source_ref_id
 
 from citation_asset_gateway.source_release_preview import (
     citation_source_ref_id,
     resolve_release_citation_preview,
 )
 from teams_agent.settings import AgentSettings
+
+
+def _stable_source_ref_id(
+    *,
+    release_id: str | None,
+    document_id: str | None,
+    version_id: str | None,
+    chunk_id: str | None,
+    source_path: str | None,
+) -> str | None:
+    """Same SHA-256 prefix as knowledge_core.source_identity.make_source_ref_id."""
+
+    if not chunk_id and not source_path:
+        return None
+    payload = "\x1f".join(
+        str(value or "")
+        for value in (release_id, document_id, version_id, chunk_id, source_path)
+    )
+    return f"src-{hashlib.sha256(payload.encode('utf-8')).hexdigest()[:24]}"
 
 
 def _settings(tmp_path: Path) -> AgentSettings:
@@ -22,7 +40,7 @@ def _settings(tmp_path: Path) -> AgentSettings:
     )
 
 
-def test_citation_source_ref_id_matches_knowledge_core() -> None:
+def test_citation_source_ref_id_matches_stable_hash() -> None:
     kwargs = {
         "release_id": "release-94829b57e0e3",
         "document_id": "dazhou",
@@ -30,11 +48,11 @@ def test_citation_source_ref_id_matches_knowledge_core() -> None:
         "chunk_id": "chunk-1",
         "source_path": "sources/大州系統_功能無法點選.md",
     }
-    assert citation_source_ref_id(**kwargs) == make_source_ref_id(**kwargs)
+    assert citation_source_ref_id(**kwargs) == _stable_source_ref_id(**kwargs)
 
 
 def test_resolve_release_citation_preview_matches_chunk(tmp_path: Path) -> None:
-    source_ref = make_source_ref_id(
+    source_ref = citation_source_ref_id(
         release_id="release-1",
         document_id="dazhou",
         version_id="v1",
