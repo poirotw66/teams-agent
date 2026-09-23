@@ -166,7 +166,9 @@ production) — never pass these as plain `--set-env-vars`:
 ## New Agent Service env vars (this phase)
 
 `deploy-gcp.sh` sets `KNOWLEDGE_SERVICE_MODE=HYBRID`,
-`KNOWLEDGE_RELEASE_STORE_MODE=GCS`, `KNOWLEDGE_RELEASE_GCS_BUCKET`,
+`KNOWLEDGE_RELEASE_SELECTION_MODE=FOLLOW_CLOUD` (so
+`KNOWLEDGE_ACTIVE_RELEASE_ID` is only a startup fallback and does not
+imply PINNED), `KNOWLEDGE_RELEASE_STORE_MODE=GCS`, `KNOWLEDGE_RELEASE_GCS_BUCKET`,
 `TICKET_SERVICE_MODE=DISABLED`, `CONVERSATION_REPOSITORY_MODE=FIRESTORE`,
 `CONVERSATION_FIRESTORE_COLLECTION=conversations` and
 `HANDOFF_REPOSITORY_MODE=FIRESTORE`, `HANDOFF_FIRESTORE_COLLECTION=handoffs`,
@@ -479,3 +481,12 @@ Backoffice `AI_OPS_BACKOFFICE_TOKEN` and `AI_OPS_SOURCE_DELEGATION_SECRET`
 are mounted from Secret Manager. Subsequent Backoffice image updates do
 not use a full `--set-env-vars` replace, so later keys such as
 `KNOWLEDGE_PORTAL_PUBLIC_URL` are preserved.
+
+Cloud Backoffice uses a remote Knowledge Portal (`AI_OPS_KNOWLEDGE_IN_PROCESS=false`)
+and labels the Console as `AI_OPS_CONSOLE_SURFACE=CLOUD`. The write path
+stays `AI_OPS_KNOWLEDGE_WORKSPACE_MODE=LOCAL_SANDBOX` so upload / delete /
+publish are not newly 403'd. When `teams-knowledge-portal` already exists,
+the script writes `KNOWLEDGE_PORTAL_PUBLIC_URL`,
+`KNOWLEDGE_PORTAL_INTERNAL_URL`, and `KNOWLEDGE_PORTAL_UPSTREAM_AUTH_MODE=GOOGLE_ID_TOKEN`
+via `--update-env-vars`. If Portal is not deployed yet, it warns and does
+not pretend an in-process Portal is available.

@@ -29,6 +29,19 @@ def test_cloud_deploy_loads_knowledge_releases_from_gcs() -> None:
     assert "KNOWLEDGE_RELEASE_FIRESTORE_PROJECT=${PROJECT_ID}" in script
 
 
+def test_cloud_agent_follows_cloud_release_explicitly() -> None:
+    script = _script()
+
+    assert (
+        'KNOWLEDGE_RELEASE_SELECTION_MODE="${KNOWLEDGE_RELEASE_SELECTION_MODE:-FOLLOW_CLOUD}"'
+        in script
+    )
+    assert "KNOWLEDGE_RELEASE_SELECTION_MODE=${KNOWLEDGE_RELEASE_SELECTION_MODE}" in script
+    assert "KNOWLEDGE_ACTIVE_RELEASE_ID=${KNOWLEDGE_ACTIVE_RELEASE_ID}" in script
+    assert "does not" in script
+    assert "infer PINNED" in script
+
+
 def test_cloud_deploy_grants_agent_read_access_to_release_bucket() -> None:
     script = _script()
 

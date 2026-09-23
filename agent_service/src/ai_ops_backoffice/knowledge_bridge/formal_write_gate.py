@@ -58,6 +58,16 @@ class KnowledgeWorkspaceGate:
         }
 
 
+def resolve_console_surface(settings: Any) -> str:
+    """Return CLOUD or LOCAL for Console copy. Never changes the write gate."""
+    explicit = str(getattr(settings, "console_surface", None) or "").strip().upper()
+    if explicit in {"CLOUD", "LOCAL"}:
+        return explicit
+    if not bool(getattr(settings, "knowledge_in_process", True)):
+        return "CLOUD"
+    return "LOCAL"
+
+
 def resolve_knowledge_workspace_mode(settings: Any) -> str:
     explicit = str(getattr(settings, "knowledge_workspace_mode", None) or "").strip().upper()
     if explicit in {_WORKSPACE_LOCAL, _WORKSPACE_CLOUD}:
@@ -250,6 +260,7 @@ __all__ = [
     "formal_identity_ready",
     "humanize_block_reasons",
     "load_persisted_knowledge_workspace_mode",
+    "resolve_console_surface",
     "resolve_knowledge_workspace_mode",
     "resolve_knowledge_workspace_mode_source",
 ]

@@ -4,6 +4,8 @@ import { apiClient } from '../client';
 
 export type KnowledgeWorkspacePayload = {
   knowledgeWorkspaceMode: string;
+  knowledgeInProcess?: boolean;
+  consoleSurface?: string;
   cloudFormalWritesAllowed: boolean;
   cloudFormalWriteBlockReasons?: string[];
   cloudFormalWriteBlockReasonLabels?: string[];

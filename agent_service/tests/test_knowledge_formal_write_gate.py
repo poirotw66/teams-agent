@@ -16,6 +16,7 @@ from ai_ops_backoffice.knowledge_bridge.formal_write_gate import (
     assert_formal_cloud_write_allowed,
     evaluate_knowledge_workspace_gate,
     filter_knowledge_capabilities_for_workspace,
+    resolve_console_surface,
     resolve_knowledge_workspace_mode,
 )
 from ai_ops_backoffice.settings import BackofficeSettings
@@ -62,6 +63,21 @@ def test_default_in_process_workspace_is_local_sandbox(tmp_path: Path) -> None:
     gate = evaluate_knowledge_workspace_gate(settings)
     assert gate.workspace_mode == "LOCAL_SANDBOX"
     assert gate.cloud_formal_writes_allowed is False
+
+
+def test_console_surface_follows_in_process_unless_explicit(tmp_path: Path) -> None:
+    local = _settings(tmp_path, knowledge_in_process=True)
+    assert resolve_console_surface(local) == "LOCAL"
+    remote = _settings(tmp_path, knowledge_in_process=False)
+    assert resolve_console_surface(remote) == "CLOUD"
+    explicit_cloud = _settings(
+        tmp_path,
+        knowledge_in_process=True,
+        console_surface="CLOUD",
+        knowledge_workspace_mode="LOCAL_SANDBOX",
+    )
+    assert resolve_console_surface(explicit_cloud) == "CLOUD"
+    assert resolve_knowledge_workspace_mode(explicit_cloud) == "LOCAL_SANDBOX"
 
 
 def test_remote_portal_defaults_to_cloud_formal_and_blocks_header_auth(
@@ -162,6 +178,36 @@ def test_capabilities_endpoint_exposes_workspace_banner_fields(tmp_path: Path) -
     assert payload["knowledgeWorkspaceSwitchAllowed"] is True
     assert payload["authMode"] == "HEADER"
     assert payload["relaxedWorkflow"] is True
+    assert payload["knowledgeInProcess"] is True
+    assert payload["consoleSurface"] == "LOCAL"
+
+
+def test_capabilities_exposes_cloud_surface_without_cloud_formal_workspace(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(
+        tmp_path,
+        knowledge_in_process=False,
+        console_surface="CLOUD",
+        knowledge_workspace_mode="LOCAL_SANDBOX",
+    )
+    app = create_app(settings)
+    client = TestClient(app)
+    response = client.get(
+        "/api/capabilities",
+        headers={
+            "X-Backoffice-User-Id": "u1",
+            "X-Backoffice-User-Name": "User",
+            "X-Backoffice-Role": "SYSTEM_ADMIN",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["knowledgeInProcess"] is False
+    assert payload["consoleSurface"] == "CLOUD"
+    assert payload["knowledgeWorkspaceMode"] == "LOCAL_SANDBOX"
+    assert payload["cloudFormalWritesAllowed"] is False
+    assert "knowledge.publish" in payload["knowledgeCapabilities"]
 
 
 def test_knowledge_workspace_switch_does_not_unlock_formal_writes(

@@ -61,6 +61,19 @@ def test_deploy_gcp_keeps_citation_flag_and_rewires_when_possible() -> None:
     assert "--set-env-vars=" not in script.split("部署 public Teams Adapter", 1)[1]
 
 
+def test_deploy_backoffice_uses_remote_portal_without_locking_writes() -> None:
+    script = _read(DEPLOY_BACKOFFICE)
+    assert "AI_OPS_KNOWLEDGE_IN_PROCESS=false" in script
+    assert "AI_OPS_CONSOLE_SURFACE=CLOUD" in script
+    assert "AI_OPS_KNOWLEDGE_WORKSPACE_MODE=LOCAL_SANDBOX" in script
+    assert "AI_OPS_KNOWLEDGE_WORKSPACE_MODE=CLOUD_FORMAL" not in script
+    assert "KNOWLEDGE_PORTAL_PUBLIC_URL=" in script
+    assert "KNOWLEDGE_PORTAL_INTERNAL_URL=" in script
+    assert "KNOWLEDGE_PORTAL_UPSTREAM_AUTH_MODE=GOOGLE_ID_TOKEN" in script
+    assert "不會假裝本機 in-process Portal" in script
+    assert "wire_backoffice_remote_portal" in script
+
+
 def test_deploy_backoffice_always_rewires_adapter() -> None:
     script = _read(DEPLOY_BACKOFFICE)
     assert "ensure_source_api_secrets" in script
