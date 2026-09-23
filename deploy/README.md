@@ -27,10 +27,14 @@ The script:
 1. Enables required APIs.
 2. Creates Artifact Registry and two service accounts.
 3. Copies local secret values into Secret Manager without printing them.
-4. Builds both Linux images in Cloud Build.
-5. Deploys the private Agent and grants only the Adapter `run.invoker`.
-6. Deploys the public Teams Adapter.
-7. Configures the Adapter Cloud Run URL for signed RAG images.
+4. Ensures the private knowledge-release GCS bucket and grants Agent plus
+   Adapter `objectViewer`. A missing local `data/index/chunks.json` is
+   expected; the Agent image does not bake a laptop index.
+5. Builds both Linux images in Cloud Build.
+6. Deploys the private Agent with `KNOWLEDGE_RELEASE_STORE_MODE=GCS` and
+   grants only the Adapter `run.invoker`.
+7. Deploys the public Teams Adapter.
+8. Configures the Adapter Cloud Run URL for signed RAG images.
 
 After deployment, set the bot's Endpoint address in the Teams Developer
 Portal (https://dev.teams.microsoft.com, Tools -> Bot management) to:
@@ -128,6 +132,7 @@ production) — never pass these as plain `--set-env-vars`:
 ## New Agent Service env vars (this phase)
 
 `deploy-gcp.sh` sets `KNOWLEDGE_SERVICE_MODE=HYBRID`,
+`KNOWLEDGE_RELEASE_STORE_MODE=GCS`, `KNOWLEDGE_RELEASE_GCS_BUCKET`,
 `TICKET_SERVICE_MODE=DISABLED`, `CONVERSATION_REPOSITORY_MODE=FIRESTORE`,
 `CONVERSATION_FIRESTORE_COLLECTION=conversations` and
 `HANDOFF_REPOSITORY_MODE=FIRESTORE`, `HANDOFF_FIRESTORE_COLLECTION=handoffs`,
@@ -136,6 +141,7 @@ production) — never pass these as plain `--set-env-vars`:
 these match the code defaults in
 `agent_service/src/agent_service/settings.py` and are stated anyway so the
 deployed configuration doesn't silently depend on defaults nobody re-reads.
+Local `uv run rag-index` is not a deploy prerequisite.
 
 `CONVERSATION_REPOSITORY_MODE` is the one that deliberately **differs**
 from the code default — see the next section. `FAQ_PATH` and
