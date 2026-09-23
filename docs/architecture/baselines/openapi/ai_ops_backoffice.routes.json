@@ -1,5 +1,5 @@
 {
-  "routeCount": 222,
+  "routeCount": 223,
   "routes": [
     {
       "method": "GET",
@@ -307,6 +307,20 @@
       "method": "GET",
       "operationId": "capabilities_api_capabilities_get",
       "path": "/api/capabilities",
+      "requestSchema": null,
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_console_agent_knowledge_mirror_document",
+      "path": "/api/console/agent-knowledge/documents/{document_id}",
       "requestSchema": null,
       "responseSchemas": [
         "HTTPValidationError"

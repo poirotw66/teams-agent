@@ -10361,6 +10361,211 @@
         "summary": "Capabilities"
       }
     },
+    "/api/console/agent-knowledge/documents/{document_id}": {
+      "get": {
+        "operationId": "get_console_agent_knowledge_mirror_document",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-User-Name",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-User-Name"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ANALYST",
+              "title": "X-Backoffice-Role"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Owner-Units",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Owner-Units"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Tenant-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Tenant-Id"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Groups",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "",
+              "title": "X-Backoffice-Groups"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Revoked",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "false",
+              "title": "X-Backoffice-Revoked"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Source-Delegation",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Source-Delegation"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Backoffice-Service-Token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Backoffice-Service-Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Console Agent Knowledge Mirror Document",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": " Document"
+      }
+    },
     "/api/console/agent-knowledge/status": {
       "get": {
         "operationId": "get_console_agent_knowledge_status",

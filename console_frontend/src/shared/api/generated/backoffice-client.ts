@@ -164,7 +164,7 @@ function toFormData(body: FormData | object | undefined): FormData | undefined {
   return form;
 }
 
-// Operations from ai_ops_backoffice OpenAPI (222 methods).
+// Operations from ai_ops_backoffice OpenAPI (223 methods).
 export const backofficeClient = {
   async acknowledge_alert_api_alerts__alert_id__acknowledge_post(args: {
     path: {
@@ -1057,6 +1057,15 @@ export const backofficeClient = {
     };
 }): Promise<Record<string, unknown>> {
     const path = buildPath('/api/evaluations/runs/{run_id}/cases/{execution_id}/trajectory', args.path);
+    const url = path;
+    return apiClient<Record<string, unknown>>(url, { method: 'GET' });
+  },
+  async get_console_agent_knowledge_mirror_document(args: {
+    path: {
+      document_id: string;
+    };
+}): Promise<Record<string, unknown>> {
+    const path = buildPath('/api/console/agent-knowledge/documents/{document_id}', args.path);
     const url = path;
     return apiClient<Record<string, unknown>>(url, { method: 'GET' });
   },

@@ -25,6 +25,42 @@ from .knowledge_admin_reload import perform_knowledge_reload
 logger = logging.getLogger(__name__)
 
 
+def _is_aligned_with_cloud(
+    sync_status: dict[str, object],
+    loaded_id: object,
+) -> bool:
+    selection_mode = str(sync_status.get("selectionMode") or "").upper()
+    return bool(
+        selection_mode == "FOLLOW_CLOUD"
+        and sync_status.get("runtimeInventoryComplete")
+        and sync_status.get("syncState") == "IN_SYNC"
+        and sync_status.get("cloudActiveReleaseId")
+        and sync_status.get("cloudActiveReleaseId")
+        == sync_status.get("mirroredReleaseId")
+        == loaded_id
+        and not sync_status.get("behindCloud")
+    )
+
+
+def _public_sync_with_loaded_release(
+    sync_status: dict[str, object],
+    *,
+    loaded_id: object,
+    settings: RagSettings,
+) -> dict[str, object]:
+    aligned = _is_aligned_with_cloud(sync_status, loaded_id)
+    return attach_mirror_documents(
+        {
+            **sync_status,
+            "loadedReleaseId": loaded_id,
+            "alignedWithCloud": aligned,
+            "matchesCloudProduction": aligned,
+        },
+        settings=settings,
+        release_id=str(loaded_id) if loaded_id else None,
+    )
+
+
 async def _build_knowledge_status(
     request: Request,
     resolved_settings: RagSettings,
@@ -63,27 +99,10 @@ async def _build_knowledge_status(
     index: HybridIndex | None = getattr(request.app.state, "index", None)
     if sync_status is not None:
         # Always report the Agent's actual loaded release, not a desired target.
-        selection_mode = str(sync_status.get("selectionMode") or "").upper()
-        can_claim_cloud = selection_mode == "FOLLOW_CLOUD"
-        aligned = bool(
-            can_claim_cloud
-            and sync_status.get("runtimeInventoryComplete")
-            and sync_status.get("syncState") == "IN_SYNC"
-            and sync_status.get("cloudActiveReleaseId")
-            and sync_status.get("cloudActiveReleaseId")
-            == sync_status.get("mirroredReleaseId")
-            == current_id
-            and not sync_status.get("behindCloud")
-        )
-        sync_status = attach_mirror_documents(
-            {
-                **sync_status,
-                "loadedReleaseId": current_id,
-                "alignedWithCloud": aligned,
-                "matchesCloudProduction": aligned,
-            },
+        sync_status = _public_sync_with_loaded_release(
+            sync_status,
+            loaded_id=current_id,
             settings=resolved_settings,
-            release_id=str(current_id) if current_id else None,
         )
         syncer = getattr(request.app.state, "knowledge_release_syncer", None)
         if syncer is not None and current_id != syncer.status.loaded_release_id:
@@ -101,6 +120,51 @@ async def _build_knowledge_status(
     if sync_status is not None:
         payload["sync"] = sync_status
     return payload
+
+
+async def _sync_gcs_knowledge_release(
+    request: Request,
+    resolved_settings: RagSettings,
+) -> dict[str, object]:
+    if resolved_settings.knowledge_release_store_mode != "GCS":
+        raise HTTPException(
+            status_code=409,
+            detail="Knowledge sync is only available when KNOWLEDGE_RELEASE_STORE_MODE=GCS.",
+        )
+    syncer = getattr(request.app.state, "knowledge_release_syncer", None)
+    if syncer is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Knowledge release syncer is unavailable.",
+        )
+    status = await asyncio.to_thread(syncer.sync_now)
+    loaded_id = getattr(request.app.state, "knowledge_release_id", None)
+    return _public_sync_with_loaded_release(
+        status.to_public_dict(),
+        loaded_id=loaded_id,
+        settings=resolved_settings,
+    )
+
+
+async def _preview_knowledge_mirror_document(
+    document_id: str,
+    request: Request,
+    resolved_settings: RagSettings,
+) -> dict[str, object]:
+    loaded_id = getattr(request.app.state, "knowledge_release_id", None)
+    try:
+        return await asyncio.to_thread(
+            preview_mirrored_document,
+            settings=resolved_settings,
+            release_id=str(loaded_id) if loaded_id else None,
+            document_id=document_id,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except MirrorDocumentNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
 
 
 def register_knowledge_admin_routes(
@@ -149,42 +213,7 @@ def register_knowledge_admin_routes(
         dependencies=[Depends(authorize)],
     )
     async def sync_knowledge_release(request: Request) -> dict[str, object]:
-        if resolved_settings.knowledge_release_store_mode != "GCS":
-            raise HTTPException(
-                status_code=409,
-                detail="Knowledge sync is only available when KNOWLEDGE_RELEASE_STORE_MODE=GCS.",
-            )
-        syncer = getattr(request.app.state, "knowledge_release_syncer", None)
-        if syncer is None:
-            raise HTTPException(
-                status_code=503,
-                detail="Knowledge release syncer is unavailable.",
-            )
-        status = await asyncio.to_thread(syncer.sync_now)
-        # FOLLOW_CLOUD hot-reload runs via syncer callback when wired; also
-        # ensure status reflects the Agent's actual loaded release id.
-        loaded_id = getattr(request.app.state, "knowledge_release_id", None)
-        public = status.to_public_dict()
-        public["loadedReleaseId"] = loaded_id
-        selection_mode = str(public.get("selectionMode") or "").upper()
-        can_claim_cloud = selection_mode == "FOLLOW_CLOUD"
-        aligned = bool(
-            can_claim_cloud
-            and public.get("runtimeInventoryComplete")
-            and public.get("syncState") == "IN_SYNC"
-            and public.get("cloudActiveReleaseId")
-            and public.get("cloudActiveReleaseId")
-            == public.get("mirroredReleaseId")
-            == loaded_id
-            and not public.get("behindCloud")
-        )
-        public["alignedWithCloud"] = aligned
-        public["matchesCloudProduction"] = aligned
-        return attach_mirror_documents(
-            public,
-            settings=resolved_settings,
-            release_id=str(loaded_id) if loaded_id else None,
-        )
+        return await _sync_gcs_knowledge_release(request, resolved_settings)
 
     @app.get(
         "/admin/knowledge-mirror-documents/{document_id}",
@@ -194,20 +223,11 @@ def register_knowledge_admin_routes(
         document_id: str,
         request: Request,
     ) -> dict[str, object]:
-        loaded_id = getattr(request.app.state, "knowledge_release_id", None)
-        try:
-            return await asyncio.to_thread(
-                preview_mirrored_document,
-                settings=resolved_settings,
-                release_id=str(loaded_id) if loaded_id else None,
-                document_id=document_id,
-            )
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-        except MirrorDocumentNotFound as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
-        except FileNotFoundError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
+        return await _preview_knowledge_mirror_document(
+            document_id,
+            request,
+            resolved_settings,
+        )
 
     @app.post(
         "/admin/reload-knowledge",

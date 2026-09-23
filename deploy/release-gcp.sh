@@ -171,7 +171,7 @@ select_components() {
       src/*|pyproject.toml|uv.lock|Dockerfile)
         BUILD_ADAPTER=1
         ;;
-      console_frontend/*|console_frontend/Dockerfile|deploy/cloudbuild-console.yaml)
+      console_frontend/*|deploy/cloudbuild-console.yaml)
         # Phase G: UI-only changes build the independent console image, not
         # the Backoffice Python image.
         BUILD_CONSOLE=1

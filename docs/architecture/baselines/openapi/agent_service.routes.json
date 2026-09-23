@@ -1,5 +1,5 @@
 {
-  "routeCount": 16,
+  "routeCount": 17,
   "routes": [
     {
       "method": "GET",
@@ -20,6 +20,20 @@
       "operationId": "set_knowledge_backend_admin_knowledge_backend_put",
       "path": "/admin/knowledge-backend",
       "requestSchema": "KnowledgeBackendUpdate",
+      "responseSchemas": [
+        "HTTPValidationError"
+      ],
+      "statusCodes": [
+        "200",
+        "422"
+      ],
+      "tags": []
+    },
+    {
+      "method": "GET",
+      "operationId": "get_knowledge_mirror_document_admin_knowledge_mirror_documents__document_id__get",
+      "path": "/admin/knowledge-mirror-documents/{document_id}",
+      "requestSchema": null,
       "responseSchemas": [
         "HTTPValidationError"
       ],
