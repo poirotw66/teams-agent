@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import math
@@ -8,6 +10,10 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .gemini_clients import EmbeddingProvenance
 
 from knowledge_core.contextual_representation import effective_retrieval_text
 
@@ -164,6 +170,37 @@ def _payload_has_vectors(payload: dict[str, object]) -> bool:
     )
 
 
+def _format_provenance_side(label: str, provenance: EmbeddingProvenance) -> str:
+    rendered_dimensions = "none" if provenance.dimensions is None else str(provenance.dimensions)
+    return (
+        f"{label} backend={provenance.backend or 'none'} "
+        f"model={provenance.model or 'none'} "
+        f"location={provenance.vertex_location or 'none'} "
+        f"dimensions={rendered_dimensions}"
+    )
+
+
+def _embedding_index_mismatch_error(
+    payload: dict[str, object],
+    runtime_model: str | None,
+) -> ValueError:
+    from .gemini_clients import current_embedding_provenance, provenance_from_index_payload
+
+    index = provenance_from_index_payload(payload)
+    runtime = current_embedding_provenance(
+        runtime_model,
+        dimensions=index.dimensions,
+    )
+    return ValueError(
+        "Configured embedding backend/model/location/dimensions do not "
+        "match the built index. "
+        f"{_format_provenance_side('Process', runtime)}; "
+        f"{_format_provenance_side('index', index)}. "
+        "Rebuild the release instead of treating a matching model ID as "
+        "compatibility or masking the mismatch with sparse-only search."
+    )
+
+
 def _index_embedding_compatible(
     payload: dict[str, object],
     runtime_model: str | None,
@@ -255,17 +292,12 @@ class HybridIndex:
         index_path: Path,
         embedding_model: str | None = None,
         **fusion_kwargs: object,
-    ) -> "HybridIndex":
+    ) -> HybridIndex:
         value = json.loads(index_path.read_text(encoding="utf-8"))
         chunks = [DocumentChunk.from_dict(item) for item in value["chunks"]]
         indexed_model = value.get("embeddingModel")
         if not _index_embedding_compatible(value, embedding_model):
-            raise ValueError(
-                "Configured embedding backend/model/location/dimensions do not "
-                "match the built index. Rebuild the release instead of treating "
-                "a matching model ID as compatibility or masking the mismatch "
-                "with sparse-only search."
-            )
+            raise _embedding_index_mismatch_error(value, embedding_model)
         # Prefer a provider-prefixed id so the explicit Gemini embedding factory
         # can resolve the client.
         runtime_model = None

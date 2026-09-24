@@ -515,6 +515,13 @@ if [[ -f "${GCS_KNOWLEDGE_OVERRIDE}" ]]; then
   # shellcheck disable=SC1090
   source "${GCS_KNOWLEDGE_OVERRIDE}"
   set +a
+  # Developer API cannot load a Vertex-provenance FOLLOW_CLOUD index.
+  # Keep the GCS bucket for Adapter markdown (RAG_ASSET_GCS_*), but do
+  # not sync the cloud-active Vertex pointer into this process.
+  if [[ "${GEMINI_API_BACKEND_VALUE}" == "DEVELOPER_API" && "${KNOWLEDGE_RELEASE_SELECTION_MODE:-}" == "FOLLOW_CLOUD" ]]; then
+    export KNOWLEDGE_RELEASE_SELECTION_MODE=LOCAL_SANDBOX
+    log "Developer API 本機不跟隨雲端 Vertex 知識指標（FOLLOW_CLOUD → LOCAL_SANDBOX）。GCS bucket 仍供 Adapter 讀 markdown。若要對齊雲端知識，請用 GEMINI_API_BACKEND=VERTEX_AI 啟動。"
+  fi
 fi
 agent_env=(
   "PORT=${RAG_PORT}"

@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -218,6 +219,32 @@ def test_developer_api_grandfathers_old_index_without_backend_fields() -> None:
     }
     assert _index_embedding_compatible(payload, "google_genai:gemini-embedding-2") is True
     reset_gemini_backend_for_tests()
+
+
+def test_developer_api_refuses_vertex_provenance_index(tmp_path: Path) -> None:
+    payload = {
+        "embeddingModel": "google_genai:gemini-embedding-2",
+        "embeddingBackend": "VERTEX_AI",
+        "embeddingVertexLocation": "us",
+        "embeddingDimensions": 2,
+        "chunks": [
+            {
+                "chunk_id": "c1",
+                "title": "t",
+                "source_path": "sources/a.md",
+                "content": "body",
+                "vector": [0.1, 0.2],
+            }
+        ],
+    }
+    assert _index_embedding_compatible(payload, "google_genai:gemini-embedding-2") is False
+    index_path = tmp_path / "chunks.json"
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="Process backend=DEVELOPER_API") as error:
+        HybridIndex.load(index_path, "google_genai:gemini-embedding-2")
+    message = str(error.value)
+    assert "index backend=VERTEX_AI" in message
+    assert "sparse-only" in message
 
 
 def test_vertex_complete_provenance_is_compatible(
