@@ -194,8 +194,11 @@ def main() -> int:
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        from agent_service.eval_credentials import eval_gemini_report_fields
+
         payload = {
             "summary": summary,
+            **eval_gemini_report_fields(),
             "cases": [
                 {
                     "caseId": row.case_id,

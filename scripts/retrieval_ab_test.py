@@ -446,10 +446,10 @@ def _corpus_titles(settings: Any) -> frozenset[str]:
 
 
 def _build_hybrid_service(settings: Any, index: Any) -> Any:
+    from agent_service.graph import build_chat_model
     from agent_service.knowledge import HybridKnowledgeService
-    from langchain.chat_models import init_chat_model
 
-    model = init_chat_model(settings.model) if settings.model else None
+    model = build_chat_model(settings.model) if settings.model else None
     return HybridKnowledgeService(settings, index, model)
 
 
@@ -464,7 +464,16 @@ def _try_build_gemini_service(settings: Any) -> tuple[Any | None, str | None]:
     """Returns (service, skip_reason). Never raises -- degrades cleanly."""
     if not settings.gemini_file_search_store:
         return None, "GEMINI_FILE_SEARCH_STORE is not configured (settings.py)."
-    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
+    from agent_service.gemini_backend import (
+        GeminiApiBackend,
+        developer_api_key_available,
+        resolve_gemini_backend,
+    )
+
+    backend = resolve_gemini_backend()
+    if backend.backend is GeminiApiBackend.VERTEX_AI:
+        return None, "Gemini File Search is not supported on VERTEX_AI."
+    if not developer_api_key_available():
         return None, "Neither GEMINI_API_KEY nor GOOGLE_API_KEY is set in the environment."
     try:
         from agent_service.gemini_file_search import GeminiFileSearchKnowledgeService
@@ -705,6 +714,7 @@ async def _main_async(argv: list[str] | None = None) -> int:
         return 2
 
     apply_eval_gemini_credentials(dotenv_path=ROOT / "agent_service" / ".env")
+    from agent_service.eval_credentials import eval_gemini_report_fields
 
     cases = load_eval_set(args.eval_set)
     if args.limit:
@@ -749,6 +759,7 @@ async def _main_async(argv: list[str] | None = None) -> int:
         "case_count": len(cases),
         "model": settings.model,
         "embedding_model": settings.embedding_model,
+        **eval_gemini_report_fields(),
         "top_k": settings.top_k,
         "min_score": settings.min_score,
         "backend_monthly_cost_assumptions_usd": backend_monthly_costs,

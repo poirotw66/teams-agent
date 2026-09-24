@@ -8,24 +8,25 @@ Upstream capability source: [poirotw66/pdf-to-markdown-converter](https://github
 
 | Mode | How to run | Behavior |
 |---|---|---|
-| `gemini` (preferred) | `start.sh` when `GOOGLE_API_KEY` / `GEMINI_API_KEY` is set | Clones upstream into `upstream/` and runs **PyMuPDF + Gemini Vision** |
-| `legacy` | Fallback shim in this folder | Text-PDF extraction only |
-| `auto` (default in `start.sh`) | — | `gemini` if API key present, else `legacy` |
-| Cloud Run upstream image | `Dockerfile.upstream` | Same Gemini Vision stack for production |
+| `gemini` (preferred) | `start.sh` when `GEMINI_API_BACKEND` is set; never inferred from key presence | Clones upstream into `upstream/` and runs **PyMuPDF + Gemini Vision** |
+| `legacy` | Explicit `PDF_CONVERTER_MODE=legacy` only | Text-PDF extraction only |
+| `auto` (default in `start.sh`) | Follows `GEMINI_API_BACKEND` | Always `gemini`; does **not** silent-fall back to `legacy` |
+| Cloud Run upstream image | `Dockerfile.upstream` | Same Vision stack; Vertex revisions use SA ADC, no `GOOGLE_API_KEY` |
 
 ## Local run (Gemini Vision via start.sh)
 
 `./start.sh` will:
 
-1. Detect `GEMINI_API_KEY` / `GOOGLE_API_KEY` from `agent_service/.env`
-2. Clone [poirotw66/pdf-to-markdown-converter](https://github.com/poirotw66/pdf-to-markdown-converter) into `services/pdf_converter/upstream/` (gitignored)
+1. Read `GEMINI_API_BACKEND` from `agent_service/.env` (default `DEVELOPER_API`)
+2. Clone [poirotw66/pdf-to-markdown-converter](https://github.com/poirotw66/pdf-to-markdown-converter) into `services/pdf_converter/upstream/` (gitignored) and apply the dual-mode client patch
 3. Start it on port **8095**
 4. Point Portal at `KNOWLEDGE_PORTAL_PDF_CONVERTER_URL=http://127.0.0.1:8095` with `KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE=gemini_vision`
 
 Requirements:
 
 - `uv`, `git`, `poppler` (`brew install poppler`)
-- A valid Gemini API key
+- Developer API: a valid Gemini API key
+- Vertex: ADC (Cloud Run SA or local impersonation) plus `VERTEX_AI_PROJECT` / `VERTEX_AI_PDF_LOCATION`
 
 Force modes:
 
@@ -72,7 +73,7 @@ export KNOWLEDGE_PORTAL_PDF_SYNC_MAX_PAGES=20
    images: ['$_IMAGE']
    EOF
    ```
-2. Deploy with `GOOGLE_API_KEY` secret and optional `PDF_CONVERTER_TOKEN`.
+2. Deploy BU revisions with `GEMINI_API_BACKEND=VERTEX_AI`, `GEMINI_MODEL=gemini-3.8-flash` (Vertex `us` proven ID; do not leave `gemini-flash-latest`), and the converter SA. Do not mount `GOOGLE_API_KEY`. Optional `PDF_CONVERTER_TOKEN` remains a separate secret.
 3. Set Portal env:
    - `KNOWLEDGE_PORTAL_PDF_CONVERTER_URL` → service URI
    - `KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE=gemini_vision`

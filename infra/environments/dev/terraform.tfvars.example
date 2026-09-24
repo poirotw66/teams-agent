@@ -10,6 +10,8 @@ allow_latest_image_tags = false
 deployment_phase        = "prepare"
 
 # Set immutable Agent, Adapter, Backoffice, and Portal images before activate.
+# Also set explicit vertex_ai_project and approved vertex_ai_*_location values.
+# Do not copy project_id. Do not write "global".
 
 # For a retention-TTL exercise only, a dev value may be shorter than 365 days.
 # conversation_retention_days = 30

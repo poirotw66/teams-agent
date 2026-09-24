@@ -97,7 +97,11 @@ def synchronize_file_search_if_configured(
 
     if settings.gemini_file_search_sync_enabled:
         try:
+            from agent_service.gemini_backend import require_developer_api_for_file_search
+
             from .file_search_release import synchronize_file_search_release
+
+            require_developer_api_for_file_search(feature="Portal File Search release sync")
 
             return synchronize_file_search_release(
                 release_dir,
@@ -179,10 +183,16 @@ def build_release_index_from_sources(
             raise ReleaseBuildError("Release build produced zero searchable segments.")
 
         previous = previous_release if isinstance(previous_release, ReleaseRecord) else None
+        from agent_service.gemini_clients import current_embedding_provenance
+
+        provenance = current_embedding_provenance(selected_embedding)
         fingerprint = index_setting_fingerprint(
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
             embedding_model=selected_embedding,
+            embedding_backend=provenance.backend,
+            embedding_vertex_location=provenance.vertex_location,
+            embedding_dimensions=provenance.dimensions,
         )
         previous_payload = load_previous_release_index_payload(settings, previous)
         apply_reused_embeddings(

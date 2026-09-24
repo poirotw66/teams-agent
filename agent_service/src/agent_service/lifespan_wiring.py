@@ -88,7 +88,9 @@ def build_knowledge_router(
         )
     }
     unavailable_backends: dict[str, str] = {}
-    if active_file_search_store:
+    from .gemini_backend import file_search_supported
+
+    if active_file_search_store and file_search_supported():
         gemini_settings = replace(
             settings,
             knowledge_service_mode="GEMINI_FILE_SEARCH",
@@ -99,6 +101,10 @@ def build_knowledge_router(
             index,
             rag_model,
             release_id=release_id,
+        )
+    elif not file_search_supported():
+        unavailable_backends["GEMINI_FILE_SEARCH"] = (
+            "Gemini File Search is not supported on VERTEX_AI"
         )
     else:
         unavailable_backends["GEMINI_FILE_SEARCH"] = "尚未設定 GEMINI_FILE_SEARCH_STORE"

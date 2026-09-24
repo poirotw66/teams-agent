@@ -9,20 +9,63 @@ from .errors import EvaluationValidationError
 from .runner_models import TargetExecutionInput, TargetManifest
 from .tool_fixture_models import ToolCallTrace
 
+# Gemini Developer API and Vertex both may return list/dict content parts.
+_TEXT_PART_KEYS: tuple[str, ...] = ("text", "content")
+
+
+def normalize_gemini_message_content(content: Any) -> str:
+    """Join Gemini/LangChain message content into a scoring string.
+
+    Both Developer API and Vertex may return ``str``, a list of text parts, or
+    a dict part. Scorers call ``.lower()`` and require a string.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, dict):
+        return _text_from_content_part(content)
+    if isinstance(content, (list, tuple)):
+        parts = [normalize_gemini_message_content(item) for item in content]
+        return "".join(part for part in parts if part)
+    text = getattr(content, "text", None)
+    if isinstance(text, str) and text:
+        return text
+    nested = getattr(content, "content", None)
+    if nested is not None and nested is not content:
+        return normalize_gemini_message_content(nested)
+    return str(content)
+
+
+def _text_from_content_part(part: dict[str, Any]) -> str:
+    for key in _TEXT_PART_KEYS:
+        value = part.get(key)
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple, dict)):
+            return normalize_gemini_message_content(value)
+    return ""
+
 
 def normalize_model_invoker_result(
     res: Any,
 ) -> tuple[str, int | None, float, list[ToolCallTrace], str | None] | None:
     if isinstance(res, tuple):
         if len(res) == 5:
-            return res[0], res[1], res[2], list(res[3]), res[4]
+            return (
+                normalize_gemini_message_content(res[0]),
+                res[1],
+                res[2],
+                list(res[3]),
+                res[4],
+            )
         if len(res) == 4:
-            return res[0], res[1], res[2], [], res[3]
+            return normalize_gemini_message_content(res[0]), res[1], res[2], [], res[3]
         if len(res) == 3:
-            return res[0], res[1], res[2], [], None
+            return normalize_gemini_message_content(res[0]), res[1], res[2], [], None
     elif isinstance(res, dict):
         return (
-            res.get("answer", ""),
+            normalize_gemini_message_content(res.get("answer", "")),
             res.get("tokens"),
             float(res.get("cost", 0.0)),
             list(res.get("tool_calls", [])),
@@ -73,7 +116,8 @@ def invoke_chat_model_answer(
         HumanMessage(content=f"使用者原始問題：{query}\n請根據上述已授權知識內容直接回答。")
     )
     response = chat_model.invoke(messages)
-    answer = response.content if hasattr(response, "content") else str(response)
+    raw_content = response.content if hasattr(response, "content") else response
+    answer = normalize_gemini_message_content(raw_content)
     usage = getattr(response, "usage_metadata", None) or {}
     tokens = usage.get("total_tokens")
     req_id = getattr(response, "id", None) or getattr(response, "response_metadata", {}).get("id")
@@ -85,7 +129,7 @@ def invoke_chat_model_answer(
         model_id=manifest.model_id,
         total_tokens=tokens,
         prompt_chars=prompt_chars,
-        answer_chars=len(str(answer)),
+        answer_chars=len(answer),
     )
     return answer, tokens, cost, [], req_id
 

@@ -115,7 +115,19 @@ class PortalSettings:
             raise ValueError(
                 "KNOWLEDGE_PORTAL_DOCUMENT_AI_PROCESSOR is required for DOCUMENT_AI."
             )
-        if self.gemini_file_search_sync_enabled and not self.gemini_file_search_api_key:
+        from agent_service.gemini_backend import (
+            GeminiApiBackend,
+            peek_gemini_api_backend,
+        )
+
+        if peek_gemini_api_backend() is GeminiApiBackend.VERTEX_AI:
+            if self.gemini_file_search_sync_enabled or self.require_file_search_parity:
+                raise ValueError(
+                    "VERTEX_AI disables File Search sync and parity together. "
+                    "Do not enable KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED "
+                    "or KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY on Vertex."
+                )
+        elif self.gemini_file_search_sync_enabled and not self.gemini_file_search_api_key:
             raise ValueError(
                 "GEMINI_API_KEY is required when File Search release sync is enabled."
             )

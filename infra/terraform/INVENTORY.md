@@ -96,13 +96,42 @@ terraform import 'google_cloud_run_v2_service_iam_member.adapter_public[0]' \
   "projects/${PROJECT}/locations/${REGION}/services/teams-agent-adapter roles/run.invoker allUsers"
 ```
 
-Import secret IAM members individually if plan still shows drift:
+## PDF converter import (lab / POC, before any apply)
+
+The live `teams-pdf-converter` service is **not** in Terraform state. Pin
+`pdf_converter_image` to the **running** digest and set
+`pdf_converter_existing_url` so Portal keeps `gemini_vision`. Then import —
+do **not** apply a create/replace of the live service.
 
 ```bash
-terraform import google_secret_manager_secret_iam_member.agent_google_api_key \
-  "projects/${PROJECT}/secrets/teams-agent-google-api-key roles/secretmanager.secretAccessor serviceAccount:teams-rag-agent@${PROJECT}.iam.gserviceaccount.com"
-# … adapter bindings likewise
+PROJECT=itr-aimasteryhub-lab
+REGION=asia-east1
+
+# Confirm the live digest before pinning tfvars; do not invent a new image.
+gcloud run services describe teams-pdf-converter \
+  --project="${PROJECT}" --region="${REGION}" \
+  --format='value(spec.template.spec.containers[0].image)'
+
+terraform import 'google_service_account.pdf_converter[0]' \
+  "projects/${PROJECT}/serviceAccounts/teams-pdf-converter@${PROJECT}.iam.gserviceaccount.com"
+terraform import 'google_cloud_run_v2_service.pdf_converter[0]' \
+  "projects/${PROJECT}/locations/${REGION}/services/teams-pdf-converter"
+terraform import 'google_cloud_run_v2_service_iam_member.portal_invokes_pdf_converter[0]' \
+  "projects/${PROJECT}/locations/${REGION}/services/teams-pdf-converter roles/run.invoker serviceAccount:teams-knowledge-portal@${PROJECT}.iam.gserviceaccount.com"
 ```
+
+`google_project_iam_member.pdf_converter_aiplatform_user[0]` is new Vertex IAM
+and is created on a later approved apply; do not import it unless the binding
+already exists. After import, re-plan. Apply remains forbidden until that plan
+shows an in-place revision (Vertex env, no `GOOGLE_API_KEY`) rather than
+create/replace of `teams-pdf-converter`.
+
+Do **not** import `google_secret_manager_secret_iam_member.agent_google_api_key`.
+That resource is intentionally absent: BU Vertex revisions must not read the
+Gemini key. After converter import, a later approved plan may **destroy** live
+Agent/Portal `secretAccessor` bindings on `teams-agent-google-api-key` while
+keeping `google_secret_manager_secret.google_api_key` itself. Import only
+secret IAM that still exists in `secrets.tf` (Bot, asset signing, delegation).
 
 ## Audit commands (export live config)
 

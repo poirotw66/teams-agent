@@ -124,11 +124,12 @@ resource "google_secret_manager_secret_iam_member" "portal_service_token" {
   member    = "serviceAccount:${google_service_account.portal.email}"
 }
 
-resource "google_secret_manager_secret_iam_member" "portal_google_api_key" {
-  project   = var.project_id
-  secret_id = google_secret_manager_secret.google_api_key.secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.portal.email}"
+resource "google_project_iam_member" "portal_aiplatform_user" {
+  count = local.vertex_ai_project_is_explicit ? 1 : 0
+
+  project = local.vertex_ai_project
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.portal.email}"
 }
 
 resource "google_secret_manager_secret_iam_member" "portal_delegation_secret" {
@@ -144,12 +145,12 @@ resource "google_cloud_run_v2_service" "portal" {
   depends_on = [
     google_project_service.required,
     google_secret_manager_secret_iam_member.portal_service_token,
-    google_secret_manager_secret_iam_member.portal_google_api_key,
     google_secret_manager_secret_iam_member.portal_delegation_secret,
     google_storage_bucket_iam_member.portal_knowledge_writer,
     google_storage_bucket_iam_member.portal_ingestion_objects,
     google_project_iam_member.portal_task_enqueuer,
     terraform_data.image_policy,
+    google_project_iam_member.portal_aiplatform_user,
   ]
 
   name     = var.portal_service_name
@@ -247,13 +248,53 @@ resource "google_cloud_run_v2_service" "portal" {
       }
 
       env {
-        name  = "KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED"
+        name  = "GEMINI_API_BACKEND"
+        value = "VERTEX_AI"
+      }
+
+      env {
+        name  = "VERTEX_AI_PROJECT"
+        value = local.vertex_ai_project
+      }
+
+      env {
+        name  = "VERTEX_AI_CHAT_LOCATION"
+        value = local.vertex_ai_chat_location
+      }
+
+      env {
+        name  = "VERTEX_AI_EMBEDDING_LOCATION"
+        value = local.vertex_ai_embedding_location
+      }
+
+      env {
+        name  = "VERTEX_AI_PDF_LOCATION"
+        value = local.vertex_ai_pdf_location
+      }
+
+      env {
+        name  = "GOOGLE_GENAI_USE_VERTEXAI"
         value = "true"
       }
 
       env {
+        name  = "GOOGLE_CLOUD_PROJECT"
+        value = local.vertex_ai_project
+      }
+
+      env {
+        name  = "GOOGLE_CLOUD_LOCATION"
+        value = local.vertex_ai_embedding_location
+      }
+
+      env {
+        name  = "KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED"
+        value = "false"
+      }
+
+      env {
         name  = "KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY"
-        value = "true"
+        value = "false"
       }
 
       dynamic "env" {
@@ -292,17 +333,17 @@ resource "google_cloud_run_v2_service" "portal" {
 
       env {
         name  = "KNOWLEDGE_PORTAL_PDF_CONVERTER_URL"
-        value = local.deploy_pdf_converter ? google_cloud_run_v2_service.pdf_converter[0].uri : ""
+        value = local.portal_pdf_converter_url
       }
 
       env {
         name  = "KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE"
-        value = local.deploy_pdf_converter ? "gemini_vision" : "legacy_text"
+        value = local.portal_pdf_converter_engine
       }
 
       env {
         name  = "KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE"
-        value = local.deploy_pdf_converter ? "GOOGLE_ID_TOKEN" : "BEARER"
+        value = local.portal_pdf_converter_auth_mode
       }
 
       env {
@@ -321,16 +362,6 @@ resource "google_cloud_run_v2_service" "portal" {
       }
 
       env {
-        name = "GOOGLE_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.google_api_key.secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      env {
         name = "KNOWLEDGE_PORTAL_DELEGATION_SECRET"
         value_source {
           secret_key_ref {
@@ -343,6 +374,14 @@ resource "google_cloud_run_v2_service" "portal" {
   }
 
   lifecycle {
+    precondition {
+      condition = (
+        local.portal_pdf_converter_engine != "gemini_vision" ||
+        local.portal_pdf_converter_url != ""
+      )
+      error_message = "gemini_vision requires a converter URL. Set pdf_converter_existing_url to the live service, enable and import the converter, or set portal_pdf_converter_engine=legacy_text to park Vision explicitly."
+    }
+
     ignore_changes = [
       template[0].containers[0].image,
       client,

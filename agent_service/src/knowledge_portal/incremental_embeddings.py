@@ -44,28 +44,23 @@ def index_setting_fingerprint(
     embedding_model: str | None,
     chunker_version: str = "layout-v1",
     chunking_profile: str = "AUTO",
+    embedding_backend: str | None = None,
+    embedding_vertex_location: str | None = None,
+    embedding_dimensions: int | None = None,
 ) -> str:
     """Stable gate string stored on ReleaseRecord.index_setting_version."""
-    return (
+    fingerprint = (
         f"chunker={chunker_version};profile={chunking_profile};"
         f"chunk={chunk_size};overlap={chunk_overlap};"
         f"embedding={embedding_model or 'bm25-only'}"
     )
-
-
-def _normalize_embedding_model_id(model_id: str) -> str:
-    normalized = model_id.strip()
-    if ":" in normalized:
-        return normalized.split(":", 1)[1].strip()
-    return normalized
-
-
-def _embedding_models_compatible(left: str | None, right: str | None) -> bool:
-    if not left or not right:
-        return False
-    if left == right:
-        return True
-    return _normalize_embedding_model_id(left) == _normalize_embedding_model_id(right)
+    if embedding_backend:
+        fingerprint += f";backend={embedding_backend}"
+    if embedding_vertex_location:
+        fingerprint += f";location={embedding_vertex_location}"
+    if embedding_dimensions is not None:
+        fingerprint += f";dimensions={embedding_dimensions}"
+    return fingerprint
 
 
 def load_previous_release_index_payload(
@@ -113,15 +108,13 @@ def apply_reused_embeddings(
                     pending=len(chunks),
                     skipped_reason="index_setting_mismatch",
                 )
-    previous_model = previous_payload.get("embeddingModel")
-    if not _embedding_models_compatible(
-        str(previous_model) if previous_model else None,
-        selected_embedding,
-    ):
+    from agent_service.gemini_clients import embedding_payloads_compatible
+
+    if not embedding_payloads_compatible(previous_payload, selected_embedding):
         return EmbeddingReuseStats(
             reused=0,
             pending=len(chunks),
-            skipped_reason="embedding_model_mismatch",
+            skipped_reason="embedding_provenance_mismatch",
         )
 
     by_hash: dict[str, list[float]] = {}

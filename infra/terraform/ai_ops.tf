@@ -186,6 +186,7 @@ resource "google_cloud_run_v2_service" "backoffice" {
     google_bigquery_dataset.ai_ops,
     google_secret_manager_secret_iam_member.backoffice_knowledge_delegation_secret,
     terraform_data.image_policy,
+    google_project_iam_member.backoffice_aiplatform_user,
   ]
 
   name     = var.backoffice_service_name

@@ -1,3 +1,19 @@
+resource "google_project_iam_member" "agent_aiplatform_user" {
+  count = local.vertex_ai_project_is_explicit ? 1 : 0
+
+  project = local.vertex_ai_project
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.agent.email}"
+}
+
+resource "google_project_iam_member" "backoffice_aiplatform_user" {
+  count = local.vertex_ai_project_is_explicit ? 1 : 0
+
+  project = local.vertex_ai_project
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${google_service_account.backoffice.email}"
+}
+
 resource "google_project_iam_member" "agent_firestore" {
   project = var.project_id
   role    = "roles/datastore.user"

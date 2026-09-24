@@ -102,8 +102,15 @@ def synchronize_file_search_release(
     from google import genai
     from google.genai import types
 
+    from agent_service.gemini_backend import (
+        require_developer_api_for_file_search,
+        require_developer_api_key,
+    )
+
+    require_developer_api_for_file_search(feature="File Search release sync")
+    resolved_key = (api_key or "").strip() or require_developer_api_key()
     entries = load_file_search_release_entries(release_dir)
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=resolved_key)
     if store_name is None:
         display_name = f"knowledge-{entries[0].release_id}"
         matching_stores = sorted(

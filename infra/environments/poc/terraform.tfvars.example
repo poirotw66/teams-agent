@@ -25,3 +25,17 @@ backoffice_auth_mode    = "HEADER"  # LAB import; use ENTRA for production
 # adapter_image    = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-agent-adapter:latest"
 # backoffice_image = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-ai-ops-backoffice:latest"
 # portal_image     = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-knowledge-portal:latest"
+
+# Live PDF converter (2026-09-24). Import before apply — do not create a second service.
+# Pin is the running digest of teams-pdf-converter-00008-zrb (eba3c8e-vertex-vision2);
+# do not invent a new image. Do not apply BigQuery / ingestion-bucket drift to "align" this.
+enable_pdf_converter       = true
+pdf_converter_image        = "asia-east1-docker.pkg.dev/itr-aimasteryhub-lab/teams-agent/teams-pdf-converter@sha256:6c00f9f11a93f9f8a756c9ed9fadcb9f9b1dbd6ce28282d82a6fb005ace683a3"
+pdf_converter_existing_url = "https://teams-pdf-converter-jt7pjdeeoa-de.a.run.app"
+
+# Vertex target is not recorded here. activate/full fails closed without these.
+# Do not treat project_id as VERTEX_AI_PROJECT. Do not write "global".
+# vertex_ai_project            = "bu-approved-vertex-project"
+# vertex_ai_chat_location      = "bu-approved-region"
+# vertex_ai_embedding_location = "bu-approved-region"
+# vertex_ai_pdf_location       = "bu-approved-region"  # required: Vision is in play

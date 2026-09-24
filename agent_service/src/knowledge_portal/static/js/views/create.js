@@ -93,6 +93,7 @@ function applyImportedPdf(formValues, imported) {
     source_type: "PDF",
     conversion_mode: result.conversion_mode || "converter",
     conversion_engine: result.conversion_engine || "unknown",
+    conversion_gemini_backend: result.conversion_gemini_backend || null,
     original_asset_token: result.original_asset_token || "",
     original_asset_name: result.original_asset_name || "",
     import_entry: "pdf",

@@ -36,7 +36,7 @@ Wrapper scripts (no manual `-target`):
 | Required GCP APIs | Secret **values** (API keys, client secrets) |
 | Artifact Registry repository | Teams Developer Portal settings |
 | Agent / Adapter / Portal service accounts | Knowledge release contents |
-| IAM (Firestore, Secret Accessor, Run invoker, scoped BigQuery access) | Playground / Mock Ticket (optional UAT) |
+| IAM (Firestore, Vertex `roles/aiplatform.user`, Run invoker, scoped BigQuery access) | Playground / Mock Ticket (optional UAT) |
 | Secret Manager secret **containers** + IAM | Entra client secret value |
 | Firestore database + TTL field policies | Production HA / VPC / WAF / DR |
 | Cloud Run service **shape** (CPU, memory, env, SA, IAM) | Cloud Build job definitions (in `deploy/`) |
@@ -54,7 +54,7 @@ release-gcp.sh     → subsequent immutable image updates only
 smoke test         → /readyz, Agent IAM, Teams E2E
 ```
 
-Terraform owns the Cloud Run service shape: service account, timeout, concurrency, scaling, resources, environment and secret references. Only the container **image** is ignored after creation, so the approved application release flow can update an immutable image without Terraform replacing it. A POC import therefore requires reconciling the live template with reviewed tfvars; a prior zero-diff claim made while the whole template was ignored is not proof of environment ownership.
+Terraform owns the Cloud Run service shape: service account, timeout, concurrency, scaling, resources, environment and secret references. After creation, the container **image** is ignored so the approved application release flow can update an immutable image without Terraform replacing it. The PDF converter also ignores service-level `scaling` (live `manual_instance_count` / `min_instance_count` leftover from gcloud); that capacity is operational, not the Vertex env contract, and reconciling it would mint a dummy revision. Template-level min/max stays owned. A POC import therefore requires reconciling the live template with reviewed tfvars; a prior zero-diff claim made while the whole template was ignored is not proof of environment ownership.
 
 ## Phase 0 data and isolation contract
 
@@ -78,7 +78,16 @@ cp ../environments/test/terraform.tfvars.example infra/terraform/terraform.tfvar
 ./infra/scripts/terraform-prepare.sh infra/environments/test/backend.hcl
 ```
 
-Inject secret **values**:
+BU Cloud Run revisions (Agent, Portal, PDF Converter, and Backoffice judges)
+set `GEMINI_API_BACKEND=VERTEX_AI` with explicit `VERTEX_AI_PROJECT` / chat /
+embedding / PDF locations. They do **not** mount `GOOGLE_API_KEY`. The Google
+API key secret **resource** is retained for allowed Developer API environments.
+Do **not** treat `project_id` as `VERTEX_AI_PROJECT`. Set `vertex_ai_project`
+and approved chat / embedding locations in tfvars before `activate` / `full`.
+When PDF Vision or the converter is in play, also set `vertex_ai_pdf_location`.
+Empty values and the unapproved P0 placeholder `global` fail closed.
+
+Inject secret **values** (Developer API environments only for the Gemini key):
 
 ```bash
 export GCP_PROJECT_ID=your-test-project-id
@@ -113,6 +122,13 @@ Subsequent app releases: `./deploy/release-gcp.sh` (without `BUILD_ONLY`).
 ## Import existing POC project
 
 Use `environment_name = "poc"`, `deployment_phase = "full"` and `allow_latest_image_tags = true` in POC tfvars. Import with `[0]` addresses for Cloud Run resources — see [INVENTORY.md](./INVENTORY.md). Do not treat old import notes or reported plans as current cloud verification.
+
+The live PDF converter is unmanaged today. Set `enable_pdf_converter = true`,
+pin `pdf_converter_image` to the **running** digest, and set
+`pdf_converter_existing_url` so Portal stays on `gemini_vision`. Import the
+existing SA, Cloud Run service, and Portal invoker binding before apply.
+Vertex mode must not park Vision as `legacy_text`; that engine is only for an
+explicit `portal_pdf_converter_engine = "legacy_text"` park.
 
 ## Directory layout
 

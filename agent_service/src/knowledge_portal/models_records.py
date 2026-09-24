@@ -163,6 +163,8 @@ class ReleaseRecord(StrictModel):
     vector_count: int = 0
     embedding_model: str | None = None
     embedding_dimensions: int | None = None
+    embedding_backend: str | None = None
+    embedding_vertex_location: str | None = None
     file_search_store: str | None = None
     hybrid_backend_ready: bool = False
     file_search_backend_ready: bool = False

@@ -2,23 +2,36 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
 import pytest
 
-from agent_service.eval_credentials import apply_eval_gemini_credentials
+from agent_service.eval_credentials import (
+    apply_eval_gemini_credentials,
+    eval_gemini_report_fields,
+)
+from agent_service.gemini_backend import GeminiConfigurationError, reset_gemini_backend_for_tests
 
 
 @pytest.fixture(autouse=True)
 def _clear_gemini_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    reset_gemini_backend_for_tests()
     for name in (
         "GEMINI_EVAL_API_KEY",
         "GOOGLE_EVAL_API_KEY",
         "GEMINI_API_KEY",
         "GOOGLE_API_KEY",
+        "GEMINI_API_BACKEND",
+        "VERTEX_AI_PROJECT",
+        "VERTEX_AI_CHAT_LOCATION",
+        "VERTEX_AI_EMBEDDING_LOCATION",
+        "VERTEX_AI_EVAL_PROJECT",
     ):
         monkeypatch.delenv(name, raising=False)
+    yield
+    reset_gemini_backend_for_tests()
 
 
 def test_apply_eval_key_overrides_runtime_keys(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -60,3 +73,49 @@ def test_apply_loads_eval_key_from_dotenv(
     assert source == "GEMINI_EVAL_API_KEY"
     assert os.environ["GEMINI_API_KEY"] == "eval-from-file"
     assert os.environ["GOOGLE_API_KEY"] == "eval-from-file"
+
+
+def test_vertex_eval_uses_adc_and_never_falls_back_to_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_BACKEND", "VERTEX_AI")
+    monkeypatch.setenv("VERTEX_AI_PROJECT", "eval-proj")
+    monkeypatch.setenv("VERTEX_AI_CHAT_LOCATION", "us")
+    monkeypatch.setenv("VERTEX_AI_EMBEDDING_LOCATION", "us")
+
+    source = apply_eval_gemini_credentials()
+
+    assert source == "VERTEX_AI_ADC"
+    assert os.environ.get("GEMINI_API_KEY") in {None, ""}
+    assert os.environ.get("GOOGLE_API_KEY") in {None, ""}
+    assert os.environ["GOOGLE_GENAI_USE_VERTEXAI"] == "true"
+    assert os.environ["GOOGLE_CLOUD_PROJECT"] == "eval-proj"
+
+
+def test_vertex_eval_refuses_injected_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEMINI_API_BACKEND", "VERTEX_AI")
+    monkeypatch.setenv("VERTEX_AI_PROJECT", "eval-proj")
+    monkeypatch.setenv("VERTEX_AI_CHAT_LOCATION", "us")
+    monkeypatch.setenv("VERTEX_AI_EMBEDDING_LOCATION", "us")
+    monkeypatch.setenv("GEMINI_API_KEY", "eval-key")
+
+    with pytest.raises(GeminiConfigurationError, match="refuses"):
+        apply_eval_gemini_credentials()
+
+
+def test_eval_report_fields_record_backend_without_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_BACKEND", "VERTEX_AI")
+    monkeypatch.setenv("VERTEX_AI_PROJECT", "eval-proj")
+    monkeypatch.setenv("VERTEX_AI_CHAT_LOCATION", "us")
+    monkeypatch.setenv("VERTEX_AI_EMBEDDING_LOCATION", "eu")
+    apply_eval_gemini_credentials()
+    fields = eval_gemini_report_fields()
+    assert fields == {
+        "geminiBackend": "VERTEX_AI",
+        "vertexProject": "eval-proj",
+        "vertexChatLocation": "us",
+        "vertexEmbeddingLocation": "eu",
+    }
+    assert "key" not in json.dumps(fields).lower()

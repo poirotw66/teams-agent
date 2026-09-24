@@ -32,6 +32,13 @@ PUBLIC_GROUP_KEY = "grp_public"
 
 
 def _require_api_key() -> str:
+    from agent_service.gemini_backend import (
+        load_dotenv_for_gemini_backend,
+        require_developer_api_for_file_search,
+    )
+
+    load_dotenv_for_gemini_backend()
+    require_developer_api_for_file_search(feature="migrate_legacy_file_search_acl")
     api_key = (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
     if not api_key:
         print("error: GOOGLE_API_KEY or GEMINI_API_KEY must be set.", file=sys.stderr)

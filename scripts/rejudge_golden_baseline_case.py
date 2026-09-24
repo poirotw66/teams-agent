@@ -10,15 +10,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from run_golden_baseline import summarize_records
-
 from ai_ops_backoffice.evaluation_domain.baseline import (
-    AgentTargetResult,
     DEFAULT_JUDGE_MODEL_ID,
     DEFAULT_JUDGE_REASONING_EFFORT,
+    AgentTargetResult,
     GeminiAnswerJudge,
     load_question_bank_csv,
 )
+from run_golden_baseline import apply_golden_eval_preflight, summarize_records
 
 
 def parse_args() -> argparse.Namespace:
@@ -118,6 +117,7 @@ async def rejudge(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main() -> int:
+    apply_golden_eval_preflight()
     args = parse_args()
     result = asyncio.run(rejudge(args))
     print(json.dumps(result, ensure_ascii=False, indent=2))

@@ -80,6 +80,8 @@ async def convert_via_converter_service(
     if fallback_warning:
         warnings += (fallback_warning,)
     engine = (settings.pdf_converter_engine or "gemini_vision").strip() or "gemini_vision"
+    from agent_service.gemini_backend import peek_gemini_api_backend
+
     return PdfConversionResult(
         markdown=result.markdown,
         page_count=pages,
@@ -90,6 +92,7 @@ async def convert_via_converter_service(
             **result.raw,
             "conversion_mode": "converter",
             "conversion_engine": engine,
+            "conversion_gemini_backend": peek_gemini_api_backend().value,
         },
     )
 
@@ -174,6 +177,7 @@ def conversion_to_import_dict(
     ]
     mode = str((result.raw or {}).get("conversion_mode") or "converter")
     engine = str((result.raw or {}).get("conversion_engine") or "unknown")
+    backend = str((result.raw or {}).get("conversion_gemini_backend") or "").strip() or None
     asset_slug = slug_from_title(stem)
     markdown = rewrite_local_image_refs(
         ensure_asset_references(result.markdown, result.assets),
@@ -193,6 +197,7 @@ def conversion_to_import_dict(
         "warnings": list(result.warnings),
         "conversion_mode": mode,
         "conversion_engine": engine,
+        "conversion_gemini_backend": backend,
         "assets": assets,
         **(original_asset or {}),
     }

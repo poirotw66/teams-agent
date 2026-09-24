@@ -58,7 +58,19 @@ def test_deploy_gcp_keeps_citation_flag_and_rewires_when_possible() -> None:
     assert "ensure_source_api_secrets" in script
     assert "ensure_source_api_wiring" in script
     assert "deploy_cloud_run_preserving_runtime" in script
+    assert script.count("deploy_cloud_run_preserving_runtime") >= 2
     assert "--set-env-vars=" not in script.split("部署 public Teams Adapter", 1)[1]
+
+
+def test_deploy_gcp_agent_uses_preserving_runtime_without_knowledge_set_env() -> None:
+    script = _read(DEPLOY_GCP)
+    agent_only = script.split("部署 private LangGraph Agent", 1)[1].split(
+        "部署 public Teams Adapter", 1
+    )[0]
+    assert "deploy_cloud_run_preserving_runtime" in agent_only
+    assert "--set-env-vars=" not in agent_only
+    assert "preserve_live_agent_knowledge_env" in script
+    assert "KNOWLEDGE_SERVICE_MODE=HYBRID" in agent_only
 
 
 def test_deploy_backoffice_uses_remote_portal_without_locking_writes() -> None:

@@ -1,0 +1,226 @@
+{
+  "summary": {
+    "caseCount": 3.0,
+    "evidenceLabeledCaseCount": 3.0,
+    "recallAt4": 1.0,
+    "precisionAt4": 0.8888888888888888,
+    "evidenceRecallAt4": 0.6666666666666666,
+    "evidencePrecisionAt4": 0.6666666666666666,
+    "recallAt5": 1.0,
+    "recallAt10": 1.0,
+    "recallAt20": 1.0,
+    "mrrAt10": 1.0,
+    "ndcgAt10": 0.9732402630493958,
+    "hitAt1": 1.0,
+    "hitAt3": 1.0,
+    "hardNegativeAccuracy": 1.0,
+    "hardNegativeLabeledCaseCount": 1.0,
+    "aclLeakageCount": 0.0,
+    "forbiddenDocumentHitCount": 0.0,
+    "noAnswer": {
+      "precision": 0.0,
+      "recall": 0.0,
+      "f1": 0.0,
+      "truePositive": 0.0,
+      "falsePositive": 0.0,
+      "falseNegative": 0.0
+    },
+    "inputCaseCount": 3.0,
+    "excludedMultiTurnCaseCount": 0.0,
+    "multiTurnCaseCount": 0.0,
+    "aclCoverageMode": "CORPUS_HAS_NO_GROUP_GATED_DOCUMENTS",
+    "layer": 3,
+    "liveModel": true,
+    "evidenceTokenBudgets": {
+      "cliOverride": null,
+      "configuredTokenBudget": 1200,
+      "effectiveTokenBudget": 1200,
+      "queryTier": null,
+      "trivial": 500,
+      "standard": 800,
+      "hard": 1200,
+      "usesQueryTier": true
+    },
+    "documentHitAt4": 1.0,
+    "documentCandidateHitAt24": 1.0,
+    "candidateEvidenceRecallAt24": 1.0,
+    "candidateRecallAt24": 1.0,
+    "rerankerHeadroomPp": 33.333333333333336,
+    "latencyMsP50": 4706.51095896028,
+    "latencyMsP95": 6208.2690840470605,
+    "latencyMsMean": 4683.759000346375,
+    "fastPathRate": 0.0,
+    "avgFacetCount": 0.0,
+    "avgBatchEmbeddingMs": 0.0,
+    "embeddingMsP50": 636.0,
+    "embeddingMsP95": 1788.3,
+    "sparseMsP50": 5.1,
+    "sparseMsP95": 5.4,
+    "denseMsP50": 29.2,
+    "denseMsP95": 32.8,
+    "fusionMsP50": 0.4,
+    "fusionMsP95": 0.4,
+    "searchTotalMsP50": 674.5,
+    "searchTotalMsP95": 1822.3,
+    "facetGroupCounts": {
+      "facet0": 3.0,
+      "facet1": 0.0,
+      "facet2plus": 0.0
+    },
+    "facet0SearchTotalMsP50": 674.5,
+    "facet0SearchTotalMsP95": 1822.3,
+    "approxCacheHitRate": 0.0,
+    "answerAccuracy": 0.6666666666666666,
+    "singleTurnAnswerAccuracy": 0.6666666666666666,
+    "multiTurnAnswerAccuracy": 0.0,
+    "singleTurnCaseCount": 3.0,
+    "multiTurnScoredCaseCount": 0.0,
+    "citationPrecision": 0.8888888888888888,
+    "citationRecall": 1.0,
+    "groundedness": 1.0,
+    "evidenceDropStages": {
+      "GENERATION_IGNORED": 1.0
+    },
+    "answerEvidenceRecallAt4": 0.6666666666666666,
+    "retrievalEvidenceRecallAt4": 1.0,
+    "retrievalMsP50": 676.1,
+    "retrievalMsP95": 1829.2,
+    "relevanceMsP50": 0.6,
+    "relevanceMsP95": 1009.6,
+    "generateMsP50": 2873.8,
+    "generateMsP95": 4519.8,
+    "totalMsP50": 4705.0,
+    "totalMsP95": 6208.1,
+    "llmCallsPerQuery": 1.6666666666666667,
+    "inputTokensPerQuery": 7156.0,
+    "outputTokensPerQuery": 561.0,
+    "costUsdPerQuery": 0.0026304999999999996,
+    "usageSourceCounts": {
+      "PROVIDER": 3
+    },
+    "queryTierCounts": {
+      "trivial": 0.0,
+      "standard": 0.0,
+      "hard": 3.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "ANSWER_OMISSION": 1,
+      "BAD_CITATION": 1
+    },
+    "failureCount": 2,
+    "split": "all",
+    "evalSet": "data/eval/reports/_tmp_l3_ans07_ver04_neg03_cases.json",
+    "provenance": {
+      "datasetPath": "data/eval/reports/_tmp_l3_ans07_ver04_neg03_cases.json",
+      "datasetHash": "31b8d928f2fd5a76fa261d49527483450067c1350e42b56ebeb431c62d038de6",
+      "commitSha": "eba3c8eb96026dccd891868bcbbc0733a4259dd1",
+      "freezeVersion": 5,
+      "model": "google_genai:gemini-3.1-flash-lite",
+      "agentModel": "google_genai:gemini-3.8-flash",
+      "answerModel": "google_genai:gemini-3.1-flash-lite",
+      "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+      "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "liveModel": true,
+      "releaseId": "release-8535419976b4",
+      "region": null,
+      "knowledgeReleaseTenantId": "default",
+      "startedAt": null,
+      "completedAt": "2026-09-24T10:05:52.621768+00:00",
+      "geminiBackend": "VERTEX_AI",
+      "vertexProject": "itr-aimasteryhub-lab",
+      "vertexChatLocation": "us",
+      "vertexEmbeddingLocation": "us"
+    }
+  },
+  "provenance": {
+    "datasetPath": "data/eval/reports/_tmp_l3_ans07_ver04_neg03_cases.json",
+    "datasetHash": "31b8d928f2fd5a76fa261d49527483450067c1350e42b56ebeb431c62d038de6",
+    "commitSha": "eba3c8eb96026dccd891868bcbbc0733a4259dd1",
+    "freezeVersion": 5,
+    "model": "google_genai:gemini-3.1-flash-lite",
+    "agentModel": "google_genai:gemini-3.8-flash",
+    "answerModel": "google_genai:gemini-3.1-flash-lite",
+    "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+    "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "liveModel": true,
+    "releaseId": "release-8535419976b4",
+    "region": null,
+    "knowledgeReleaseTenantId": "default",
+    "startedAt": null,
+    "completedAt": "2026-09-24T10:05:52.621768+00:00",
+    "geminiBackend": "VERTEX_AI",
+    "vertexProject": "itr-aimasteryhub-lab",
+    "vertexChatLocation": "us",
+    "vertexEmbeddingLocation": "us"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-ans-07",
+      "query": "VPN 密碼到期了要怎麼處理？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼到期",
+          "改密碼"
+        ]
+      ],
+      "answer": "若您使用一般電腦，請插上實體網路線，使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]。\n\n若您使用內網型筆電，請直接變更密碼，請勿前往金控入口網同步開機密碼 (AD) [S2]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|chk-doc-forticlient-c9bc5032a5-951576ca51bccbc3",
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus VPN password expired; how-to steps live in FortiClient companion | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='若您使用一般電腦，請插上實體網路線，使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]。\\n\\n若您使用內網型筆電，請直接變更密碼，請勿前往金控入口網同步開機密碼 (AD) [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ver-04",
+      "query": "樹精靈無法登入跟超音樹閃退是不是同一份？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應",
+        "超音樹-程式閃退問題"
+      ],
+      "selectedEvidenceTitles": [
+        "樹精靈AP無法登入",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應",
+        "超音樹-程式閃退問題"
+      ],
+      "expectedEvidence": [
+        [
+          "新版簽章元件",
+          "國泰期貨"
+        ]
+      ],
+      "answer": "不是同一份。樹精靈無法登入與超音樹閃退分別屬於不同的系統異常，處理方式如下：\n\n樹精靈無法登入：\n若為網路錯誤 12029，請確認網路環境（重啟數據機或改用手機熱點）並調整控制台的 TLS 安全協定與停用 Proxy [S1]。若為 WEB 版登入無反應，請於電腦右下角將安控元件「離開」後，重新開啟網頁並安裝元件 [S2]。\n\n超音樹閃退：\n此問題需至國泰期貨官網安裝「新版簽章元件」以排除 [S3]。",
+      "citations": [
+        "樹精靈AP無法登入|chk-doc-ap-1f8ba2b78c-28fad8992f2b9d0f",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應|chk-doc-2433239567cf-a9585c7539a96cc0",
+        "超音樹-程式閃退問題|chk-doc--7424f76326-1444d2324f79f897"
+      ],
+      "citationPrecision": 0.6666666666666666,
+      "terminalReason": null,
+      "notes": "Adjacent product docs discrimination. | evidenceDrop=NONE facts=['NONE'] | answer_preview='不是同一份。樹精靈無法登入與超音樹閃退分別屬於不同的系統異常，處理方式如下：\\n\\n樹精靈無法登入：\\n若為網路錯誤 12029，請確認網路環境（重啟數據機或改用手機熱點）並調整控制台的 TLS 安全協定與停用 Proxy [S1]。若為 WEB 版登入無反應，請於電腦右下角將安控元件「離開」後，重新開啟網頁並安裝元件 [S2]。\\n\\n超音樹閃退：\\n此問題需至國泰期貨官網安裝「新版簽章元件」以排除 [S3]。'"
+    }
+  ]
+}

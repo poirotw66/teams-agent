@@ -35,7 +35,12 @@ The script:
    expected; the Agent image does not bake a laptop index.
 5. Builds both Linux images in Cloud Build.
 6. Deploys the private Agent with `KNOWLEDGE_RELEASE_STORE_MODE=GCS` and
-   grants only the Adapter `run.invoker`.
+   grants only the Adapter `run.invoker`. The first Agent revision may set
+   the full env list. Later Agent image updates use
+   `deploy_cloud_run_preserving_runtime` so live `KNOWLEDGE_RELEASE_MODE`
+   (PORTAL), the current release pointer, and File Search option A are not
+   replaced by script defaults. Vertex env, `KNOWLEDGE_SERVICE_MODE=HYBRID`,
+   and Gemini key unmount still apply.
 7. Deploys the public Teams Adapter. The first revision may set the full
    env and secret list. Later image updates use `--update-env-vars` /
    `--update-secrets` so `SOURCE_API_*`, `TEAMS_CITATION_OPEN_ACTIONS`,
@@ -121,8 +126,8 @@ separate Cloud Run services with different exposure and different config:
 | Full env var reference | [`../README.md`](../README.md) ([繁中](../README-TW.md)) | [`../README.md`](../README.md) ([繁中](../README-TW.md)) |
 
 Never merge the two into one Cloud Run service or one `.env` file — the
-private/public split is what lets the Agent Service (which holds the
-Gemini API key and reaches the knowledge base) stay unauthenticated-free
+private/public split is what lets the Agent Service (which reaches the
+knowledge base via Vertex AI ADC on BU revisions) stay unauthenticated-free
 while the Adapter, which must be internet-reachable for the Bot Framework
 service, carries
 no AI credentials at all.
@@ -134,7 +139,7 @@ to the service account that needs them:
 
 | Secret | Bound to | Cloud Run env var it becomes |
 |---|---|---|
-| `teams-agent-google-api-key` | Agent SA | `GOOGLE_API_KEY` |
+| `teams-agent-google-api-key` | Retained for allowed Developer API environments; **not** mounted on BU Vertex revisions. `deploy-gcp.sh` / `deploy-portal.sh` / `deploy-backoffice.sh` unmount leftover `GOOGLE_API_KEY` / `GEMINI_API_KEY` because `--set-env-vars` does not clear secret mounts. BU Vertex deploys require explicit `VERTEX_AI_PROJECT` plus approved chat/embedding locations (and `VERTEX_AI_PDF_LOCATION` when Vision is in play). Missing values or the unapproved placeholder `global` fail closed; `PROJECT_ID` is not used as a fallback. | `GOOGLE_API_KEY` (Developer API only) |
 | `teams-agent-bot-client-secret` | Adapter SA | `CLIENT_SECRET` |
 | `teams-agent-asset-signing-key` | Adapter SA | `RAG_ASSET_SIGNING_KEY` |
 | `teams-ai-ops-backoffice-token` | Adapter SA + Backoffice SA | Adapter `SOURCE_API_TOKEN` / Backoffice `AI_OPS_BACKOFFICE_TOKEN` |

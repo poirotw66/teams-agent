@@ -32,6 +32,23 @@ class ReleaseBuildError(Exception):
         super().__init__(message)
 
 
+def _require_vertex_index_provenance(release_dir: Path) -> None:
+    from agent_service.gemini_backend import GeminiApiBackend, peek_gemini_api_backend
+
+    if peek_gemini_api_backend() is not GeminiApiBackend.VERTEX_AI:
+        return
+    artifact = inspect_index_artifact(release_dir / INDEX_RELATIVE_PATH)
+    if (
+        artifact.embedding_backend != GeminiApiBackend.VERTEX_AI.value
+        or not artifact.embedding_vertex_location
+    ):
+        raise ReleaseBuildError(
+            "VERTEX_AI production releases must record embeddingBackend=VERTEX_AI "
+            "and embeddingVertexLocation. Rebuild the index; do not reuse a "
+            "Developer API release by model ID."
+        )
+
+
 def publish_release_if_configured(
     settings: PortalSettings,
     *,
@@ -119,6 +136,7 @@ def validate_production_release_if_needed(
             expected_tenant_id=resolved_tenant_id,
             expected_purpose="PRODUCTION",
         )
+        _require_vertex_index_provenance(settings.release_artifact_dir / release_id)
     except KnowledgeReleaseValidationError as error:
         raise ReleaseBuildError(
             f"Production release validation failed: {error}"
@@ -177,6 +195,9 @@ def assemble_release_record(
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
             embedding_model=selected_embedding,
+            embedding_backend=index_artifact.embedding_backend,
+            embedding_vertex_location=index_artifact.embedding_vertex_location,
+            embedding_dimensions=index_artifact.embedding_dimensions,
         ),
         created_at=created_at,
         previous_release_id=previous_release_id,
@@ -201,6 +222,8 @@ def assemble_release_record(
         vector_count=index_artifact.vector_count,
         embedding_model=index_artifact.embedding_model,
         embedding_dimensions=index_artifact.embedding_dimensions,
+        embedding_backend=index_artifact.embedding_backend,
+        embedding_vertex_location=index_artifact.embedding_vertex_location,
         file_search_store=file_search_store,
         hybrid_backend_ready=True,
         file_search_backend_ready=file_search_store is not None,

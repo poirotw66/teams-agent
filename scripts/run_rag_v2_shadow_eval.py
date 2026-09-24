@@ -314,9 +314,12 @@ def main() -> int:
         fusion_candidate_k=max(settings.rag_fusion_candidate_k, args.limit),
     )
 
+    from agent_service.eval_credentials import eval_gemini_report_fields
+
     report: dict[str, Any] = {
         "evalSet": str(args.eval_set),
         "indexPath": str(settings.index_path),
+        **eval_gemini_report_fields(),
         "indexHasVectors": any(bool(chunk.vector) for chunk in base.chunks),
         "indexHasRetrievalText": any(bool(chunk.retrieval_text) for chunk in base.chunks),
         "rerankerModel": args.reranker_model,

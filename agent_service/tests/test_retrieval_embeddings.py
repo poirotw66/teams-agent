@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from agent_service.documents import DocumentChunk
+from agent_service.gemini_backend import reset_gemini_backend_for_tests
 from agent_service.retrieval import HybridIndex
-from agent_service.retrieval_embeddings import embed_queries_batch, embed_single_query
+from agent_service.retrieval_embeddings import (
+    embed_documents_batch,
+    embed_queries_batch,
+    embed_single_query,
+)
 
 
 class MockGoogleEmbeddings:
@@ -133,6 +140,54 @@ def test_retry_on_transient_recovers_from_disconnect() -> None:
 
     assert _retry_on_transient(flaky, initial_delay=0.01) == "ok"
     assert calls["n"] == 3
+
+
+class MockBatchSizeEmbeddings:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def embed_documents(
+        self,
+        texts: list[str],
+        *,
+        batch_size: int = 100,
+        task_type: str | None = None,
+    ) -> list[list[float]]:
+        self.calls.append(
+            {"texts": list(texts), "batch_size": batch_size, "task_type": task_type}
+        )
+        if batch_size > 1 and len(texts) > 1:
+            raise ValueError("The embedContent API for this model only supports one content at a time.")
+        return [[float(len(text))] for text in texts]
+
+
+def test_vertex_document_embed_uses_single_content_batch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_gemini_backend_for_tests()
+    monkeypatch.setenv("GEMINI_API_BACKEND", "VERTEX_AI")
+    monkeypatch.setenv("VERTEX_AI_PROJECT", "proj-a")
+    monkeypatch.setenv("VERTEX_AI_CHAT_LOCATION", "us")
+    monkeypatch.setenv("VERTEX_AI_EMBEDDING_LOCATION", "us")
+    client = MockBatchSizeEmbeddings()
+    vectors = embed_documents_batch(client, ["alpha", "beta"])
+    assert vectors == [[5.0], [4.0]]
+    assert client.calls[0]["batch_size"] == 1
+    assert len(client.calls[0]["texts"]) == 2
+    reset_gemini_backend_for_tests()
+
+
+def test_document_embed_falls_back_when_api_rejects_batch() -> None:
+    reset_gemini_backend_for_tests()
+    client = MockBatchSizeEmbeddings()
+    vectors = embed_documents_batch(client, ["alpha", "beta"])
+    assert vectors == [[5.0], [4.0]]
+    assert [call["texts"] for call in client.calls] == [
+        ["alpha", "beta"],
+        ["alpha"],
+        ["beta"],
+    ]
+    reset_gemini_backend_for_tests()
 
 
 def test_hybrid_index_embed_queries_delegation() -> None:

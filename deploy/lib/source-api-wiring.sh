@@ -104,6 +104,11 @@ _update_cloud_run_runtime() {
   )
   [[ -n "${env_vars}" ]] && update_args+=(--update-env-vars="${env_vars}")
   [[ -n "${secrets}" ]] && update_args+=(--update-secrets="${secrets}")
+  if declare -F deploy_remove_developer_api_key_secrets_args >/dev/null; then
+    local remove_secrets
+    remove_secrets="$(deploy_remove_developer_api_key_secrets_args "${service}" || true)"
+    [[ -n "${remove_secrets}" ]] && update_args+=("${remove_secrets}")
+  fi
   if [[ -n "${remove_env_vars}" ]] \
     && gcloud run services update "${service}" \
       "${update_args[@]}" \

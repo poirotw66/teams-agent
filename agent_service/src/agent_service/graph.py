@@ -21,7 +21,7 @@ No retrieval/answer-generation code is duplicated between this module and
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Literal, TypedDict
+from typing import Literal, TypedDict
 from uuid import uuid4
 
 from langchain.chat_models import init_chat_model
@@ -49,21 +49,29 @@ def build_chat_model(
     max_retries: int | None = None,
     reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
 ) -> BaseChatModel | None:
-    """Return a LangChain chat model, or ``None`` when no model is configured."""
+    """Return a LangChain chat model, or ``None`` when no model is configured.
+
+    Gemini ``google_genai:*`` clients follow the process-fixed
+    ``GEMINI_API_BACKEND`` contract. Other providers keep prior kwargs.
+    """
     if not model_name:
         return None
-    kwargs: dict[str, Any] = {}
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
-    if timeout is not None:
-        kwargs["timeout"] = timeout
-    if max_retries is not None:
-        kwargs["max_retries"] = max_retries
-    if reasoning_effort is not None:
-        kwargs["reasoning_effort"] = reasoning_effort
-    return init_chat_model(model_name, **kwargs)
+    from .gemini_clients import chat_model_init_kwargs
+    from .gemini_errors import raise_classified_gemini_error
+
+    try:
+        kwargs = chat_model_init_kwargs(
+            model_name,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            max_retries=max_retries,
+            reasoning_effort=reasoning_effort,
+        )
+        return init_chat_model(model_name, **kwargs)
+    except Exception as error:  # noqa: BLE001 - classify at the client boundary
+        raise_classified_gemini_error(error, context="build_chat_model")
+        raise
 
 
 class RouteDecision(BaseModel):

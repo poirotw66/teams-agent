@@ -4,7 +4,6 @@ import time
 from typing import Any
 from uuid import uuid4
 
-from dotenv import load_dotenv
 from microsoft_teams.api import ConversationUpdateActivity, MessageActivity
 from microsoft_teams.api.activities.utils import StripMentionsTextOptions
 from microsoft_teams.apps import ActivityContext, App, ErrorEvent
@@ -34,7 +33,35 @@ from .text import clean_message_text
 
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+_GEMINI_DOTENV_KEY_NAMES = frozenset(
+    {
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_EVAL_API_KEY",
+        "GOOGLE_EVAL_API_KEY",
+    }
+)
+
+
+def _load_adapter_dotenv() -> None:
+    """Load adapter secrets without importing Gemini API keys.
+
+    The adapter never constructs Gemini clients. Keys stay in the Agent
+    process so a shared ``.env`` cannot inject them into this one.
+    """
+    from os import environ
+
+    from dotenv import dotenv_values
+
+    for key, value in dotenv_values().items():
+        if not key or value is None or key in _GEMINI_DOTENV_KEY_NAMES:
+            continue
+        if key in environ:
+            continue
+        environ[key] = value.replace("\r", "") if "\r" in value else value
+
+
+_load_adapter_dotenv()
 agent_settings = AgentSettings.from_env()
 agent_gateway = AgentGateway(agent_settings)
 adapter_health = AdapterHealthReporter(agent_settings, agent_gateway)

@@ -27,15 +27,13 @@ logger = logging.getLogger("ai_ops_worker")
 
 
 def _load_worker_dotenv() -> None:
-    """Load ambient .env for the standalone worker CLI only (not at import time)."""
-    from os import environ
+    """Load ambient .env for the standalone worker CLI only (not at import time).
 
-    from dotenv import load_dotenv
+    Vertex mode never copies Gemini/Google API keys from ``.env``.
+    """
+    from agent_service.runtime_dotenv import load_runtime_dotenv
 
-    load_dotenv()
-    for key, value in list(environ.items()):
-        if "\r" in value:
-            environ[key] = value.replace("\r", "")
+    load_runtime_dotenv()
 
 
 def _collect_dependency_status(

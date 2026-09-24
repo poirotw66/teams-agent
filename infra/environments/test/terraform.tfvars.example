@@ -13,6 +13,13 @@ allow_latest_image_tags = false
 # Step 1 — Prepare Environment (no Cloud Run, no images required):
 deployment_phase = "prepare"
 
+# Before activate/full, write explicit Vertex project + approved locations.
+# Do not copy project_id into vertex_ai_project. Do not write "global".
+# vertex_ai_project            = "your-vertex-project"
+# vertex_ai_chat_location      = "bu-approved-region"
+# vertex_ai_embedding_location = "bu-approved-region"
+# vertex_ai_pdf_location       = "bu-approved-region"  # required when Vision/converter is on
+
 # Step 4 — Activate Services (after secrets + BUILD_ONLY=1 release-gcp.sh):
 # deployment_phase = "activate"
 # agent_image      = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-rag-agent:REPLACE_WITH_GIT_SHA"
@@ -21,6 +28,8 @@ deployment_phase = "prepare"
 # portal_image     = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-knowledge-portal:REPLACE_WITH_GIT_SHA"
 # enable_pdf_converter = true
 # pdf_converter_image  = "asia-east1-docker.pkg.dev/your-test-project-id/teams-agent/teams-pdf-converter:REPLACE_WITH_GIT_SHA"
+# pdf_converter_existing_url = "https://teams-pdf-converter-xxxxx.a.run.app"
+# portal_pdf_converter_engine = "legacy_text"  # only to park Vision explicitly
 
 # Step 5 — set after activate once Adapter URL is known:
 # adapter_public_base_url = "https://teams-agent-adapter-xxxxx.a.run.app"

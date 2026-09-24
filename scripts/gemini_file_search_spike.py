@@ -51,6 +51,13 @@ REQUIRED_ENV_VAR = "GEMINI_API_KEY"
 
 
 def _require_api_key() -> str:
+    from agent_service.gemini_backend import (
+        load_dotenv_for_gemini_backend,
+        require_developer_api_for_file_search,
+    )
+
+    load_dotenv_for_gemini_backend()
+    require_developer_api_for_file_search(feature="gemini_file_search_spike")
     api_key = os.environ.get(REQUIRED_ENV_VAR, "").strip()
     if not api_key:
         print(

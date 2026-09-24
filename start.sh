@@ -59,6 +59,11 @@ GEMINI_FILE_SEARCH_ENABLED="false"
 GEMINI_FILE_SEARCH_ENFORCE_ACL_VALUE="true"
 RAG_MODEL_VALUE=""
 AGENT_MODEL_VALUE=""
+GEMINI_API_BACKEND_VALUE=""
+VERTEX_AI_PROJECT_VALUE=""
+VERTEX_AI_CHAT_LOCATION_VALUE=""
+VERTEX_AI_EMBEDDING_LOCATION_VALUE=""
+VERTEX_AI_PDF_LOCATION_VALUE=""
 
 CHILD_PIDS=()
 
@@ -69,6 +74,18 @@ log() {
 fail() {
   printf '[start] ERROR: %s\n' "$*" >&2
   exit 1
+}
+
+require_approved_start_vertex_location() {
+  local value="${1:-}"
+  local name="${2:-VERTEX location}"
+  local normalized
+  value="$(printf '%s' "${value}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+  [[ -n "${value}" ]] || fail "VERTEX_AI 需要 ${name}。"
+  normalized="$(printf '%s' "${value}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "${normalized}" == "global" ]]; then
+    fail "${name}=global 是 P0 未核准占位，請填入 BU 核准的 location。"
+  fi
 }
 
 require_command() {
@@ -175,6 +192,58 @@ env_value() {
   printf '%s' "${value}"
 }
 
+configure_gemini_backend() {
+  local configured_backend
+  configured_backend="$(env_value "${AGENT_SERVICE_DIR}/.env" "GEMINI_API_BACKEND")"
+  GEMINI_API_BACKEND_VALUE="${GEMINI_API_BACKEND:-${configured_backend:-DEVELOPER_API}}"
+  case "${GEMINI_API_BACKEND_VALUE}" in
+    DEVELOPER_API|VERTEX_AI) ;;
+    *)
+      fail "GEMINI_API_BACKEND 必須是 DEVELOPER_API 或 VERTEX_AI，目前為 ${GEMINI_API_BACKEND_VALUE}。"
+      ;;
+  esac
+
+  VERTEX_AI_PROJECT_VALUE="${VERTEX_AI_PROJECT:-$(env_value "${AGENT_SERVICE_DIR}/.env" "VERTEX_AI_PROJECT")}"
+  if [[ -z "${VERTEX_AI_PROJECT_VALUE}" ]]; then
+    local gcp_project
+    local gcloud_project
+    gcp_project="${GCP_PROJECT_ID:-$(env_value "${AGENT_SERVICE_DIR}/.env" "GCP_PROJECT_ID")}"
+    gcloud_project="${GOOGLE_CLOUD_PROJECT:-$(env_value "${AGENT_SERVICE_DIR}/.env" "GOOGLE_CLOUD_PROJECT")}"
+    if [[ -n "${gcp_project}" && -n "${gcloud_project}" && "${gcp_project}" != "${gcloud_project}" ]]; then
+      fail "VERTEX_AI 需要 VERTEX_AI_PROJECT；GCP_PROJECT_ID 與 GOOGLE_CLOUD_PROJECT 不一致。"
+    fi
+    VERTEX_AI_PROJECT_VALUE="${gcp_project:-${gcloud_project}}"
+  fi
+  VERTEX_AI_CHAT_LOCATION_VALUE="${VERTEX_AI_CHAT_LOCATION:-$(env_value "${AGENT_SERVICE_DIR}/.env" "VERTEX_AI_CHAT_LOCATION")}"
+  VERTEX_AI_EMBEDDING_LOCATION_VALUE="${VERTEX_AI_EMBEDDING_LOCATION:-$(env_value "${AGENT_SERVICE_DIR}/.env" "VERTEX_AI_EMBEDDING_LOCATION")}"
+  VERTEX_AI_PDF_LOCATION_VALUE="${VERTEX_AI_PDF_LOCATION:-$(env_value "${AGENT_SERVICE_DIR}/.env" "VERTEX_AI_PDF_LOCATION")}"
+
+  if [[ "${GEMINI_API_BACKEND_VALUE}" == "VERTEX_AI" ]]; then
+    [[ -n "${VERTEX_AI_PROJECT_VALUE}" ]] \
+      || fail "VERTEX_AI 需要 VERTEX_AI_PROJECT 或 GCP_PROJECT_ID。"
+    require_approved_start_vertex_location \
+      "${VERTEX_AI_CHAT_LOCATION_VALUE}" "VERTEX_AI_CHAT_LOCATION"
+    require_approved_start_vertex_location \
+      "${VERTEX_AI_EMBEDDING_LOCATION_VALUE}" "VERTEX_AI_EMBEDDING_LOCATION"
+    if [[ -n "${VERTEX_AI_PDF_LOCATION_VALUE}" ]]; then
+      require_approved_start_vertex_location \
+        "${VERTEX_AI_PDF_LOCATION_VALUE}" "VERTEX_AI_PDF_LOCATION"
+    fi
+    if [[ -n "${GOOGLE_API_KEY:-}" || -n "${GEMINI_API_KEY:-}" ]]; then
+      fail "VERTEX_AI 拒絕程序環境中的 GEMINI_API_KEY／GOOGLE_API_KEY。請先取消設定後再啟動。"
+    fi
+    if ! command -v gcloud >/dev/null 2>&1; then
+      fail "VERTEX_AI 需要 gcloud 以檢查 Application Default Credentials。"
+    fi
+    if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+      fail "VERTEX_AI ADC 預檢失敗。本機請執行 gcloud auth application-default login --impersonate-service-account=SA_EMAIL。"
+    fi
+    log "Gemini 後端：VERTEX_AI（project=${VERTEX_AI_PROJECT_VALUE}；不載入 Gemini API key）。"
+    return
+  fi
+  log "Gemini 後端：DEVELOPER_API。"
+}
+
 configure_gemini_file_search() {
   local configured_store
   local configured_google_api_key
@@ -183,6 +252,13 @@ configure_gemini_file_search() {
   local store_source
   local key_source=""
   local warning=""
+
+  if [[ "${GEMINI_API_BACKEND_VALUE}" == "VERTEX_AI" ]]; then
+    GEMINI_FILE_SEARCH_STORE_VALUE=""
+    GEMINI_FILE_SEARCH_ENABLED="false"
+    log "VERTEX_AI 已停用 Gemini File Search sync／parity；正式知識後端維持 HYBRID。"
+    return
+  fi
 
   configured_store="$(env_value "${AGENT_SERVICE_DIR}/.env" "GEMINI_FILE_SEARCH_STORE")"
   configured_google_api_key="$(env_value "${AGENT_SERVICE_DIR}/.env" "GOOGLE_API_KEY")"
@@ -278,7 +354,7 @@ configure_agentic_models() {
   elif [[ -n "${configured_rag_model}" ]]; then
     RAG_MODEL_VALUE="${configured_rag_model}"
     log "RAG model 沿用 agent_service/.env 的明確設定。"
-  elif [[ "${GEMINI_FILE_SEARCH_ENABLED}" == "true" ]]; then
+  elif [[ "${GEMINI_FILE_SEARCH_ENABLED}" == "true" || "${GEMINI_API_BACKEND_VALUE}" == "VERTEX_AI" ]]; then
     RAG_MODEL_VALUE="${AGENTIC_RAG_MODEL_DEFAULT}"
     log "啟用本機 RAG Gemini model：${RAG_MODEL_VALUE}（可用 RAG_MODEL 覆寫）。"
   else
@@ -292,7 +368,7 @@ configure_agentic_models() {
   elif [[ -n "${configured_agent_model}" ]]; then
     AGENT_MODEL_VALUE="${configured_agent_model}"
     log "Agent model 沿用 agent_service/.env 的明確設定。"
-  elif [[ "${GEMINI_FILE_SEARCH_ENABLED}" == "true" ]]; then
+  elif [[ "${GEMINI_FILE_SEARCH_ENABLED}" == "true" || "${GEMINI_API_BACKEND_VALUE}" == "VERTEX_AI" ]]; then
     AGENT_MODEL_VALUE="${AGENTIC_AGENT_MODEL_DEFAULT}"
     log "啟用本機 agentic Gemini model：${AGENT_MODEL_VALUE}（可用 AGENT_MODEL 覆寫）。"
   else
@@ -342,8 +418,25 @@ require_command ps
 [[ -f "${AGENT_SERVICE_DIR}/.env" ]] \
   || fail "缺少 ${AGENT_SERVICE_DIR}/.env（可先執行 cp agent_service/.env.example agent_service/.env）"
 
+configure_gemini_backend
 configure_gemini_file_search
 configure_agentic_models
+export GEMINI_API_BACKEND="${GEMINI_API_BACKEND_VALUE}"
+if [[ "${GEMINI_API_BACKEND_VALUE}" == "VERTEX_AI" ]]; then
+  export VERTEX_AI_PROJECT="${VERTEX_AI_PROJECT_VALUE}"
+  export VERTEX_AI_CHAT_LOCATION="${VERTEX_AI_CHAT_LOCATION_VALUE}"
+  export VERTEX_AI_EMBEDDING_LOCATION="${VERTEX_AI_EMBEDDING_LOCATION_VALUE}"
+  export GOOGLE_GENAI_USE_VERTEXAI=true
+  export GOOGLE_CLOUD_PROJECT="${VERTEX_AI_PROJECT_VALUE}"
+  export GOOGLE_CLOUD_LOCATION="${VERTEX_AI_CHAT_LOCATION_VALUE}"
+  export KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED=false
+  export KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY=false
+  if [[ -n "${VERTEX_AI_PDF_LOCATION_VALUE}" ]]; then
+    export VERTEX_AI_PDF_LOCATION="${VERTEX_AI_PDF_LOCATION_VALUE}"
+  fi
+else
+  export GOOGLE_GENAI_USE_VERTEXAI=false
+fi
 
 # Shared local Source API credentials (Adapter → Backoffice originals).
 LOCAL_SOURCE_TOKEN="${SOURCE_API_TOKEN:-${AI_OPS_BACKOFFICE_TOKEN:-local-dev-backoffice-token}}"
@@ -428,13 +521,25 @@ agent_env=(
   "RAG_DATA_DIR=${PROJECT_DIR}/data"
   "OPS_EVENTS_ENABLED=true"
   "OPS_STORE_MODE=FILE"
+  "GEMINI_API_BACKEND=${GEMINI_API_BACKEND_VALUE}"
   "GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE_VALUE}"
   "GEMINI_FILE_SEARCH_ENFORCE_ACL=${GEMINI_FILE_SEARCH_ENFORCE_ACL_VALUE}"
-  "GOOGLE_API_KEY=${GOOGLE_API_KEY_VALUE}"
   "RAG_MODEL=${RAG_MODEL_VALUE}"
   "AGENT_MODEL=${AGENT_MODEL_VALUE}"
   "GOLDEN_EVALUATION_TOKEN=${GOLDEN_EVALUATION_TOKEN:-golden-eval-secret-token}"
 )
+if [[ "${GEMINI_API_BACKEND_VALUE}" == "VERTEX_AI" ]]; then
+  agent_env+=(
+    "VERTEX_AI_PROJECT=${VERTEX_AI_PROJECT_VALUE}"
+    "VERTEX_AI_CHAT_LOCATION=${VERTEX_AI_CHAT_LOCATION_VALUE}"
+    "VERTEX_AI_EMBEDDING_LOCATION=${VERTEX_AI_EMBEDDING_LOCATION_VALUE}"
+    "GOOGLE_GENAI_USE_VERTEXAI=true"
+    "GOOGLE_CLOUD_PROJECT=${VERTEX_AI_PROJECT_VALUE}"
+    "GOOGLE_CLOUD_LOCATION=${VERTEX_AI_CHAT_LOCATION_VALUE}"
+  )
+else
+  agent_env+=("GOOGLE_API_KEY=${GOOGLE_API_KEY_VALUE}")
+fi
 # Propagate knowledge GCS override keys when set (already exported above).
 for _k in \
   KNOWLEDGE_RELEASE_STORE_MODE \
@@ -475,20 +580,22 @@ export KNOWLEDGE_PORTAL_AGENT_API_URL="http://127.0.0.1:${RAG_PORT}"
 export KNOWLEDGE_PORTAL_DELEGATION_SECRET="${KNOWLEDGE_DELEGATION_SECRET}"
 
 if [[ "${START_PDF_CONVERTER}" == "true" ]]; then
-  # auto → gemini when a Google/Gemini API key is available; otherwise legacy text shim.
+  # Mode follows GEMINI_API_BACKEND, not key presence. auto never silent-falls
+  # back to legacy_text.
   PDF_CONVERTER_MODE_VALUE="${PDF_CONVERTER_MODE:-auto}"
   if [[ "${PDF_CONVERTER_MODE_VALUE}" == "auto" ]]; then
-    if [[ -n "${GOOGLE_API_KEY_VALUE}" ]]; then
-      PDF_CONVERTER_MODE_VALUE="gemini"
-    else
-      PDF_CONVERTER_MODE_VALUE="legacy"
-    fi
+    PDF_CONVERTER_MODE_VALUE="gemini"
   fi
   PDF_CONVERTER_ENGINE_VALUE="legacy_text"
-  log "啟動 PDF Converter（mode=${PDF_CONVERTER_MODE_VALUE}）：${PDF_CONVERTER_URL}/"
+  log "啟動 PDF Converter（mode=${PDF_CONVERTER_MODE_VALUE} backend=${GEMINI_API_BACKEND_VALUE}）：${PDF_CONVERTER_URL}/"
   if [[ "${PDF_CONVERTER_MODE_VALUE}" == "gemini" ]]; then
-    [[ -n "${GOOGLE_API_KEY_VALUE}" ]] \
-      || fail "PDF_CONVERTER_MODE=gemini 需要 GOOGLE_API_KEY 或 GEMINI_API_KEY。"
+    if [[ "${GEMINI_API_BACKEND_VALUE}" == "DEVELOPER_API" ]]; then
+      [[ -n "${GOOGLE_API_KEY_VALUE}" ]] \
+        || fail "PDF_CONVERTER_MODE=gemini 在 DEVELOPER_API 需要 GOOGLE_API_KEY 或 GEMINI_API_KEY。"
+    else
+      require_approved_start_vertex_location \
+        "${VERTEX_AI_PDF_LOCATION_VALUE}" "VERTEX_AI_PDF_LOCATION"
+    fi
     require_command git
     if ! command -v pdftoppm >/dev/null 2>&1; then
       fail "Gemini Vision 轉換需要 poppler（pdftoppm）。macOS：brew install poppler"
@@ -499,12 +606,23 @@ if [[ "${START_PDF_CONVERTER}" == "true" ]]; then
     PDF_CONVERTER_ENGINE_VALUE="gemini_vision"
     (
       cd "${UPSTREAM_DIR}"
-      export GOOGLE_API_KEY="${GOOGLE_API_KEY_VALUE}"
-      export GEMINI_API_KEY="${GOOGLE_API_KEY_VALUE}"
-      export GEMINI_MODEL="${PDF_CONVERTER_GEMINI_MODEL:-${GEMINI_MODEL:-gemini-flash-latest}}"
+      export GEMINI_API_BACKEND="${GEMINI_API_BACKEND_VALUE}"
+      export GEMINI_MODEL="${PDF_CONVERTER_GEMINI_MODEL:-${GEMINI_MODEL:-gemini-3.8-flash}}"
       export API_HOST=127.0.0.1
       export API_PORT="${PDF_CONVERTER_PORT}"
       export PDF_PRESERVE_VISION_ASSETS="${PDF_PRESERVE_VISION_ASSETS:-true}"
+      if [[ "${GEMINI_API_BACKEND_VALUE}" == "VERTEX_AI" ]]; then
+        export VERTEX_AI_PROJECT="${VERTEX_AI_PROJECT_VALUE}"
+        export VERTEX_AI_PDF_LOCATION="${VERTEX_AI_PDF_LOCATION_VALUE}"
+        export GOOGLE_GENAI_USE_VERTEXAI=true
+        export GOOGLE_CLOUD_PROJECT="${VERTEX_AI_PROJECT_VALUE}"
+        export GOOGLE_CLOUD_LOCATION="${VERTEX_AI_PDF_LOCATION_VALUE}"
+        unset GOOGLE_API_KEY GEMINI_API_KEY
+      else
+        export GOOGLE_API_KEY="${GOOGLE_API_KEY_VALUE}"
+        export GEMINI_API_KEY="${GOOGLE_API_KEY_VALUE}"
+        export GOOGLE_GENAI_USE_VERTEXAI=false
+      fi
       exec uv run uvicorn app.main:app \
         --host 127.0.0.1 --port "${PDF_CONVERTER_PORT}"
     ) &

@@ -37,6 +37,14 @@ def _optional_env(*keys: str) -> str | None:
     return None
 
 
+def _file_search_api_key_from_env() -> str | None:
+    from agent_service.gemini_backend import GeminiApiBackend, peek_gemini_api_backend
+
+    if peek_gemini_api_backend() is GeminiApiBackend.VERTEX_AI:
+        return None
+    return os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY") or None
+
+
 def resolve_portal_paths() -> tuple[Path, Path, Path, str]:
     repo_root = Path(__file__).resolve().parents[3]
     data_dir = Path(os.environ.get("KNOWLEDGE_PORTAL_DATA_DIR", repo_root / "data"))
@@ -337,11 +345,7 @@ def load_gemini_ingestion_env() -> dict[str, Any]:
             ),
             extras={"on"},
         ),
-        "gemini_file_search_api_key": (
-            os.environ.get("GEMINI_API_KEY")
-            or os.environ.get("GOOGLE_API_KEY")
-            or None
-        ),
+        "gemini_file_search_api_key": _file_search_api_key_from_env(),
         "require_file_search_parity": _truthy(
             os.environ.get(
                 "KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY",
