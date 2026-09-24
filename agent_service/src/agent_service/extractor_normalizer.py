@@ -8,6 +8,7 @@ from .contracts import Issue
 from .extractor_heuristics import (
     _has_helpdesk_domain_evidence,
     _is_known_dazhou_issue,
+    _is_shu_channel_login_symptom,
 )
 from .sanitize import sanitize_description
 from .service_scope_evidence import (
@@ -187,7 +188,9 @@ def coerce_issue(
         data["missingInfo"] = []
         data["faqKey"] = None
     else:
-        if _is_known_dazhou_issue(data["description"]):
+        if _is_known_dazhou_issue(data["description"]) or _is_shu_channel_login_symptom(
+            data["description"]
+        ) or (raw_utterance and _is_shu_channel_login_symptom(raw_utterance)):
             data["readiness"] = "READY"
             data["missingInfo"] = []
 

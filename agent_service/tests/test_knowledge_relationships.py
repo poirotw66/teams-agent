@@ -19,6 +19,7 @@ def test_default_catalog_loads_companion_rules() -> None:
     assert "enterprise-app-trust" in ids
     assert "employee-portal-password-companion" in ids
     assert "adjacent-product-shu-sonic" in ids
+    assert "shu-ap-channel" in ids
 
 
 def test_matching_relationships_requires_portal_and_password_markers() -> None:
@@ -41,6 +42,10 @@ def test_matching_relationships_shu_sonic_requires_both_product_names() -> None:
     )
     assert [item.relationship_id for item in matched] == ["adjacent-product-shu-sonic"]
     assert matching_relationships("樹精靈無法登入", relationships=rows) == []
+    assert [item.relationship_id for item in matching_relationships(
+        "樹精靈 AP 無法登入",
+        relationships=rows,
+    )] == ["shu-ap-channel"]
     assert (
         matching_relationships(
             "樹精靈無法登入跟超音樹閃退是不是同一份？",

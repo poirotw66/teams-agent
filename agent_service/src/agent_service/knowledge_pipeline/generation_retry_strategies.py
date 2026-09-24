@@ -17,6 +17,7 @@ from .generator import (
     should_retry_error_coverage,
     should_retry_false_none,
     should_retry_procedure_coverage,
+    should_retry_ticket_intake_coverage,
     should_retry_visual_evidence,
 )
 from .grounding import (
@@ -27,6 +28,11 @@ from .grounding import (
     visual_evidence_plates_in_text,
 )
 from .models import StructuredKnowledgeAnswer
+from .ticket_intake import (
+    missing_ticket_intake_fields,
+    ticket_intake_field_labels,
+    ticket_intake_fields_in_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +208,60 @@ async def maybe_retry_procedure_coverage(
     return response, answer
 
 
+async def maybe_retry_ticket_intake_coverage(
+    host: Any,
+    *,
+    state: Any,
+    answer_model: BaseChatModel,
+    context: str,
+    marker_to_chunk_ids: dict[str, list[str]],
+    chunk_content_by_id: dict[str, str],
+    response: StructuredKnowledgeAnswer,
+    answer: str,
+    counter: LlmCallCounter,
+    execution_context: ExecutionContext | None,
+) -> tuple[StructuredKnowledgeAnswer, str]:
+    context_ticket_fields = ticket_intake_fields_in_text(context)
+    if not should_retry_ticket_intake_coverage(
+        answerability=response.answerability,
+        resolved_issue_query=state.resolved_issue_query,
+        context_ticket_fields=context_ticket_fields,
+        answer=answer,
+    ):
+        return response, answer
+    missing_fields = missing_ticket_intake_fields(answer, context_ticket_fields)
+    missing_csv = ", ".join(ticket_intake_field_labels(missing_fields))
+    logger.info(
+        "Retrying knowledge generation for incomplete ticket-intake coverage "
+        "(missing=%s)",
+        missing_fields,
+    )
+    response, answer = await invoke_structured_retry(
+        host,
+        answer_model=answer_model,
+        question=state.resolved_issue_query,
+        context=context,
+        human_content=(
+            f"已解析問題：{state.resolved_issue_query}\n"
+            "來源已列出建立工單前必填欄位，不可只複製最短話術。"
+            "請先告知無法自助／需由資訊人員處理，再以有序清單列出工單確認欄位。"
+            f"知識內容已包含但回答仍缺的欄位：{missing_csv}。"
+        ),
+        component="knowledge_answer_ticket_intake_coverage",
+        counter=counter,
+        execution_context=execution_context,
+        marker_to_chunk_ids=marker_to_chunk_ids,
+        chunk_content_by_id=chunk_content_by_id,
+    )
+    logger.info(
+        "Knowledge ticket-intake retry answer=%r answerability=%s claims=%s",
+        answer,
+        response.answerability,
+        response.claims,
+    )
+    return response, answer
+
+
 async def maybe_retry_visual_evidence(
     host: Any,
     *,
@@ -274,5 +334,6 @@ __all__ = [
     "maybe_retry_error_coverage",
     "maybe_retry_false_none",
     "maybe_retry_procedure_coverage",
+    "maybe_retry_ticket_intake_coverage",
     "maybe_retry_visual_evidence",
 ]

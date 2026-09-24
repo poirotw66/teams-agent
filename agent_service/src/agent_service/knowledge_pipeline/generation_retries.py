@@ -14,6 +14,7 @@ from .generation_retry_strategies import (
     maybe_retry_error_coverage,
     maybe_retry_false_none,
     maybe_retry_procedure_coverage,
+    maybe_retry_ticket_intake_coverage,
     maybe_retry_visual_evidence,
 )
 from .models import StructuredKnowledgeAnswer
@@ -62,6 +63,18 @@ async def apply_generation_retries(
         execution_context=execution_context,
     )
     response, answer = await maybe_retry_procedure_coverage(
+        host,
+        state=state,
+        answer_model=answer_model,
+        context=context,
+        marker_to_chunk_ids=marker_to_chunk_ids,
+        chunk_content_by_id=chunk_content_by_id,
+        response=response,
+        answer=answer,
+        counter=counter,
+        execution_context=execution_context,
+    )
+    response, answer = await maybe_retry_ticket_intake_coverage(
         host,
         state=state,
         answer_model=answer_model,

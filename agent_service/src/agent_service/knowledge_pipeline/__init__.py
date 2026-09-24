@@ -23,6 +23,8 @@ from .document_selection import (
     inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
     inject_same_doc_discrimination_evidence,
+    inject_shu_channel_evidence,
+    inject_ticket_intake_checklist,
     inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
@@ -33,6 +35,7 @@ from .generator import (
     should_retry_error_coverage,
     should_retry_false_none,
     should_retry_procedure_coverage,
+    should_retry_ticket_intake_coverage,
     should_retry_visual_evidence,
 )
 from .grounding import (
@@ -104,6 +107,12 @@ from .selector import (
     section_sort_key,
     top1_was_displaced,
 )
+from .ticket_intake import (
+    answer_covers_ticket_intake_fields,
+    missing_ticket_intake_fields,
+    query_asks_for_ticket_intake,
+    ticket_intake_fields_in_text,
+)
 from .trace import attach_retrieval_trace, build_retrieval_attempt
 
 __all__ = [
@@ -122,6 +131,7 @@ __all__ = [
     "annotate_relevance_attempts",
     "answer_covers_error_branches",
     "answer_covers_procedure_steps",
+    "answer_covers_ticket_intake_fields",
     "answer_covers_visual_evidence_plates",
     "answer_has_knowledge_citation",
     "answer_indicates_insufficient_information",
@@ -147,6 +157,8 @@ __all__ = [
     "inject_employee_portal_password_evidence",
     "inject_enterprise_app_evidence",
     "inject_same_doc_discrimination_evidence",
+    "inject_shu_channel_evidence",
+    "inject_ticket_intake_checklist",
     "inject_vpn_password_expiry_howto",
     "is_non_production_knowledge_chunk",
     "is_numbered_section",
@@ -157,6 +169,7 @@ __all__ = [
     "merge_policy_advisories",
     "missing_diagnosis_facet_queries",
     "missing_procedure_steps",
+    "missing_ticket_intake_fields",
     "missing_visual_evidence_plates",
     "normalize_composite_citation_markers",
     "ordered_cited_keys_from_markers",
@@ -169,6 +182,7 @@ __all__ = [
     "query_asks_for_multi_section_selection",
     "query_asks_for_procedure",
     "query_asks_for_procedure_selection",
+    "query_asks_for_ticket_intake",
     "query_asks_for_visual_evidence",
     "query_lexically_matches_results",
     "remap_answer_citation_markers",
@@ -185,8 +199,10 @@ __all__ = [
     "should_retry_error_coverage",
     "should_retry_false_none",
     "should_retry_procedure_coverage",
+    "should_retry_ticket_intake_coverage",
     "should_retry_visual_evidence",
     "structured_answer_is_grounded",
+    "ticket_intake_fields_in_text",
     "top1_was_displaced",
     "visual_evidence_plates_in_text",
 ]

@@ -320,6 +320,8 @@ async def test_known_dazhou_typo_skips_extractor_llm(tmp_path) -> None:
         "Outlook 無法登入",
         "Gitlab 帳號被鎖怎麼解鎖",
         "VPN 打不開",
+        "樹精靈 WEB - 登入異常",
+        "樹精靈AP無法登入",
     ],
 )
 async def test_ready_it_symptom_skips_extractor_llm(tmp_path, text: str) -> None:
@@ -422,6 +424,25 @@ def test_known_dazhou_issue_coerce_forces_ready_when_model_asks_more_info(
         new_id=1,
         allowed_faq_keys=set(),
         raw_utterance="大洲無法選取。",
+    )
+
+    assert coerced.readiness == "READY"
+    assert coerced.missingInfo == []
+
+
+def test_shu_web_login_symptom_coerce_forces_ready_when_model_asks_error_code(
+    tmp_path,
+) -> None:
+    extractor = IssueExtractor(make_settings(tmp_path), model=FakeModel(result=IssueExtraction(issues=[])))
+    coerced = extractor._coerce_issue(
+        issue(
+            description="樹精靈 WEB 登入異常",
+            readiness="NEED_MORE_INFO",
+            missingInfo=["請問登入時是否有顯示具體的錯誤訊息或錯誤代碼？"],
+        ),
+        new_id=1,
+        allowed_faq_keys=set(),
+        raw_utterance="樹精靈 WEB - 登入異常",
     )
 
     assert coerced.readiness == "READY"

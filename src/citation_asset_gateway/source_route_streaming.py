@@ -149,6 +149,50 @@ async def handle_source_preview(
     return await _render_citation_preview(source_ref_id, settings, viewer, payload)
 
 
+async def _release_markdown_for_missing_local_source(
+    request: Request,
+    settings: CitationGatewaySettings,
+) -> Response | None:
+    """Serve FOLLOW_CLOUD Markdown from GCS when Adapter has no local copy."""
+    source_ref_id = str(request.query_params.get("sourceRefId") or "").strip()
+    if not source_ref_id:
+        return None
+    tenant_id = citation_source_tenant_id(
+        "playground", request.query_params.get("tenantId")
+    ) or settings.asset_gcs_tenant_id or "default"
+    preview = resolve_release_citation_preview(
+        settings,
+        source_ref_id=source_ref_id,
+        tenant_id=str(tenant_id),
+    )
+    if preview is None:
+        return None
+    try:
+        document = await asyncio.to_thread(
+            fetch_release_source_document,
+            settings,
+            release_id=preview.release_id,
+            source_path=preview.source_path,
+            tenant_id=str(tenant_id),
+        )
+    except SourceDocumentUnavailable:
+        return None
+    rendered = render_source_markdown_html(
+        document,
+        settings,
+        fallback_title=preview.title,
+        release_id=preview.release_id,
+        evidence=preview.excerpt,
+        status_message="此來源依知識庫版本呈現。",
+        mapping_status="AVAILABLE",
+    )
+    return Response(
+        content=rendered,
+        media_type="text/html; charset=utf-8",
+        headers=citation_html_response_headers(),
+    )
+
+
 def _release_preview_fallback(
     settings: CitationGatewaySettings,
     source_ref_id: str,
@@ -245,6 +289,9 @@ async def handle_source_document(
             return redirect
         raise HTTPException(status_code=403, detail=str(error)) from error
     except FileNotFoundError as error:
+        fallback = await _release_markdown_for_missing_local_source(request, settings)
+        if fallback is not None:
+            return fallback
         raise HTTPException(status_code=404, detail="Not Found") from error
 
     return Response(
@@ -287,6 +334,12 @@ async def handle_original_source_document(
             return redirect
         raise HTTPException(status_code=403, detail=str(error)) from error
     except SourceApiError as error:
+        # Markdown-only publishes have no original bytes. Open the governed
+        # citation preview instead of a JSON 404 in Playground.
+        if request.method != "HEAD" and (
+            error.status == 404 or "HTTP 404" in str(error)
+        ):
+            return await handle_source_preview(source_ref_id, request, settings)
         return raise_original_source_api_error(error)
 
 

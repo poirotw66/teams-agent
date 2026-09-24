@@ -47,6 +47,8 @@ from .knowledge_pipeline.document_selection import (
     inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
     inject_same_doc_discrimination_evidence,
+    inject_shu_channel_evidence,
+    inject_ticket_intake_checklist,
     inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
@@ -246,6 +248,20 @@ class HybridKnowledgeService:
             environment=environment,
         )
         boosted = inject_vpn_password_expiry_howto(
+            query,
+            boosted,
+            index_chunks=self.index.chunks,
+            groups=groups,
+            environment=environment,
+        )
+        boosted = inject_shu_channel_evidence(
+            query,
+            boosted,
+            index_chunks=self.index.chunks,
+            groups=groups,
+            environment=environment,
+        )
+        boosted = inject_ticket_intake_checklist(
             query,
             boosted,
             index_chunks=self.index.chunks,

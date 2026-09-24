@@ -3,6 +3,7 @@ from microsoft_teams.api import Attachment, MessageActivityInput
 from .cards_body import build_image_card_body
 from .contracts import (
     AgentResponse,
+    Citation,
     format_agent_response,
     format_turn_cost_line,
 )
@@ -127,6 +128,27 @@ def _answer_open_url_actions(response: AgentResponse) -> list[dict[str, object]]
     ]
 
 
+def _citation_document_key(citation: Citation) -> str:
+    """Group chunk-level citations that belong to the same source file."""
+    if citation.sourcePath:
+        return f"path:{citation.sourcePath.strip()}"
+    title = citation.title.strip() or "來源"
+    return f"title:{title}"
+
+
+def _unique_source_citations(citations: list[Citation]) -> list[Citation]:
+    """Keep one citation per document so Playground does not stack duplicate buttons."""
+    unique: list[Citation] = []
+    seen: set[str] = set()
+    for citation in citations:
+        key = _citation_document_key(citation)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(citation)
+    return unique
+
+
 def _source_open_actions(
     response: AgentResponse, *, enabled: bool
 ) -> list[dict[str, object]]:
@@ -135,7 +157,8 @@ def _source_open_actions(
     Adaptive Card markdown links are not reliably clickable in Agents
     Playground. ``Action.OpenUrl`` is rendered as a button the host actually
     opens. Prefer original-file actions when present; keep citation-paragraph
-    actions as a secondary path.
+    actions as a secondary path. Multiple chunks from the same document still
+    produce one original button and one paragraph button.
 
     Controlled by ``TEAMS_CITATION_OPEN_ACTIONS`` (default on; Playground
     otherwise shows source titles as plain text).
@@ -145,7 +168,7 @@ def _source_open_actions(
         return []
 
     actions: list[dict[str, object]] = []
-    for citation in response.citations:
+    for citation in _unique_source_citations(response.citations):
         title = citation.title.strip() or "來源"
         if len(title) > 28:
             title = f"{title[:27]}…"

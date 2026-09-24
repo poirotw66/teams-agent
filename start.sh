@@ -589,6 +589,12 @@ if [[ "${START_BACKOFFICE}" == "true" ]]; then
   export SOURCE_API_TOKEN="${LOCAL_SOURCE_TOKEN}"
   export SOURCE_DELEGATION_SECRET="${LOCAL_SOURCE_DELEGATION}"
 fi
+# FOLLOW_CLOUD markdown lives in the knowledge bucket, not local data/sources.
+if [[ -n "${KNOWLEDGE_RELEASE_GCS_BUCKET:-}" ]]; then
+  export RAG_ASSET_GCS_BUCKET="${KNOWLEDGE_RELEASE_GCS_BUCKET}"
+  export RAG_ASSET_GCS_PREFIX="${KNOWLEDGE_RELEASE_GCS_PREFIX:-knowledge-releases}"
+  export RAG_ASSET_GCS_TENANT_ID="${KNOWLEDGE_RELEASE_TENANT_ID:-default}"
+fi
 start_background bash -c "
   cd \"\$1\"
   export PORT=\"\$2\"
@@ -603,6 +609,11 @@ start_background bash -c "
     export SOURCE_API_BASE_URL
     export SOURCE_API_TOKEN
     export SOURCE_DELEGATION_SECRET
+  fi
+  if [[ -n \"\${RAG_ASSET_GCS_BUCKET:-}\" ]]; then
+    export RAG_ASSET_GCS_BUCKET
+    export RAG_ASSET_GCS_PREFIX
+    export RAG_ASSET_GCS_TENANT_ID
   fi
   exec uv run teams-agent
 " _ "${PROJECT_DIR}" "${TEAMS_PORT}" "${RAG_PORT}" "${PLAYGROUND_TEST_USER_EMAIL}"

@@ -75,6 +75,31 @@ def test_enrich_without_viewer_does_not_mint_transferable_url(tmp_path: Path) ->
     assert enriched.citations[0].url is None
 
 
+def test_enrich_does_not_mint_missing_local_markdown_as_rag_sources(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    response = AgentResponse(
+        answer="目前好麥系統尚未提供自助解鎖功能。",
+        traceId="t",
+        citations=[
+            Citation(
+                title="好麥系統－帳號鎖定與密碼解鎖",
+                sourcePath="sources/doc-0b3b82209273.md",
+                sourceRefId="src-29323ef1bd8ac580a76d4720",
+            )
+        ],
+    )
+
+    enriched = enrich_citation_urls(
+        response, settings, now=1_000, viewer=_viewer()
+    )
+
+    url = enriched.citations[0].url or ""
+    assert "/rag-sources/sources/doc-0b3b82209273.md" not in url
+    assert enriched.citations[0].url is None
+
+
 def test_enrich_citation_urls_replaces_non_delivery_url_when_source_path_exists(
     tmp_path: Path,
 ) -> None:

@@ -22,6 +22,7 @@ def parse_citations(raw_citations: object) -> list[Citation]:
         source_ref_id = item.get("sourceRefId")
         release_id = item.get("releaseId")
         original_url = item.get("originalUrl")
+        original_available = item.get("originalAssetAvailable")
         if isinstance(title, str) and (isinstance(url, str) or url is None):
             citations.append(
                 Citation(
@@ -47,6 +48,9 @@ def parse_citations(raw_citations: object) -> list[Citation]:
                         original_url
                         if isinstance(original_url, str) and original_url.strip()
                         else None
+                    ),
+                    originalAssetAvailable=(
+                        original_available if isinstance(original_available, bool) else None
                     ),
                 )
             )

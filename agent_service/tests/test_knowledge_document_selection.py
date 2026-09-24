@@ -7,6 +7,7 @@ from agent_service.knowledge_pipeline.document_selection import (
     inject_employee_portal_password_evidence,
     inject_enterprise_app_evidence,
     inject_same_doc_discrimination_evidence,
+    inject_ticket_intake_checklist,
     inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
@@ -380,6 +381,52 @@ def test_inject_vpn_password_expiry_howto_appends_forticlient_chunk() -> None:
         environment="prod",
     )
     assert [item.chunk.chunk_id for item in boosted] == ["vpn", "forti"]
+
+
+def test_inject_ticket_intake_checklist_appends_same_document_fields() -> None:
+    script = _chunk(
+        "script",
+        title="好麥系統－帳號鎖定與密碼解鎖",
+        content="目前好麥系統尚未提供自助解鎖功能。",
+        document_id="haomai",
+    )
+    checklist = _chunk(
+        "checklist",
+        title="好麥系統－帳號鎖定與密碼解鎖",
+        content="建立工單前資訊確認\n1. 使用者姓名\n2. 員工編號",
+        document_id="haomai",
+    )
+    other = _chunk(
+        "ad",
+        title="AD 帳號解鎖",
+        content="建立工單前資訊確認\n1. 使用者姓名",
+        document_id="ad",
+    )
+    boosted = inject_ticket_intake_checklist(
+        "好麥系統解鎖",
+        [_result(script, 0.95)],
+        index_chunks=[script, checklist, other],
+        groups={"IT"},
+        environment="prod",
+    )
+    assert [item.chunk.chunk_id for item in boosted] == ["script", "checklist"]
+
+
+def test_inject_ticket_intake_checklist_noop_without_unlock_query() -> None:
+    checklist = _chunk(
+        "checklist",
+        title="好麥系統－帳號鎖定與密碼解鎖",
+        content="建立工單前資訊確認\n1. 使用者姓名",
+        document_id="haomai",
+    )
+    boosted = inject_ticket_intake_checklist(
+        "VPN 連不上",
+        [_result(checklist, 0.9)],
+        index_chunks=[checklist],
+        groups={"IT"},
+        environment="prod",
+    )
+    assert [item.chunk.chunk_id for item in boosted] == ["checklist"]
 
 
 def test_vpn_password_expiry_selection_packs_forticlient_howto() -> None:

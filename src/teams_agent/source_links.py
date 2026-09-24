@@ -17,9 +17,11 @@ from citation_asset_gateway.source_links import (
     build_original_url,
     build_source_url,
     citation_delivery_path,
+    citation_source_file_exists,
     citation_source_groups,
     citation_source_tenant_id,
     create_viewer_token,
+    is_adapter_citation_preview_url,
     is_adapter_original_delivery_url,
     is_adapter_source_delivery_url,
     load_source_acl_document,
@@ -47,10 +49,12 @@ __all__ = [
     "build_original_url",
     "build_source_url",
     "citation_delivery_path",
+    "citation_source_file_exists",
     "citation_source_groups",
     "citation_source_tenant_id",
     "create_viewer_token",
     "enrich_citation_urls",
+    "is_adapter_citation_preview_url",
     "is_adapter_original_delivery_url",
     "is_adapter_source_delivery_url",
     "load_source_acl_document",
@@ -75,13 +79,18 @@ def _enrich_one_citation(
 ) -> tuple[Citation, bool]:
     updated = citation
     changed = False
-    if (
-        can_mint_markdown
-        and citation.sourcePath
-        and not (
-            citation.url and is_adapter_source_delivery_url(citation.url, settings)
+    has_local_markdown = bool(
+        citation.sourcePath
+        and citation_source_file_exists(
+            citation.sourcePath,
+            settings,
+            release_id=citation.releaseId,
         )
-    ):
+    )
+    url_is_source = bool(
+        citation.url and is_adapter_source_delivery_url(citation.url, settings)
+    )
+    if can_mint_markdown and has_local_markdown and not url_is_source:
         url = build_source_url(
             citation.sourcePath,
             settings,
@@ -95,7 +104,18 @@ def _enrich_one_citation(
             updated = replace(updated, url=url)
             changed = True
 
-    if can_mint_original and citation.sourceRefId and not updated.url:
+    current_is_source = bool(
+        updated.url and is_adapter_source_delivery_url(updated.url, settings)
+    )
+    current_is_preview = bool(
+        updated.url and is_adapter_citation_preview_url(updated.url, settings)
+    )
+    if (
+        can_mint_original
+        and citation.sourceRefId
+        and not current_is_source
+        and not current_is_preview
+    ):
         preview_url = build_citation_preview_url(
             citation.sourceRefId,
             settings,
@@ -110,6 +130,7 @@ def _enrich_one_citation(
     if (
         can_mint_original
         and citation.sourceRefId
+        and citation.originalAssetAvailable is not False
         and not (
             updated.originalUrl
             and is_adapter_original_delivery_url(updated.originalUrl, settings)
@@ -138,11 +159,13 @@ def enrich_citation_urls(
 ) -> AgentResponse:
     """Fill citation delivery URLs for markdown viewers and original files.
 
-    Prefer signed ``/rag-sources/`` delivery when a local ``sourcePath`` exists.
-    Prefer signed ``/rag-originals/`` when Source API is configured and a
-    ``sourceRefId`` is present. Agent-minted formal URLs that are not already
-    adapter delivery links are replaced so Playground/Teams open the shared
-    viewer instead of a dead path.
+    Prefer signed ``/rag-sources/`` delivery when the local ``sourcePath`` file
+    exists. FOLLOW_CLOUD markdown that is only in GCS must use
+    ``/rag-citations/{sourceRefId}`` instead of a local path that Adapter
+    cannot open. Prefer signed ``/rag-originals/`` when Source API is
+    configured and a ``sourceRefId`` is present. Agent-minted formal URLs that
+    are not already adapter delivery links are replaced so Playground/Teams
+    open the shared viewer instead of a dead path.
     """
 
     if not response.citations:
