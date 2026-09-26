@@ -182,10 +182,102 @@ def embed_single_query(client: Any, text: str) -> list[float]:
     return batch[0] if batch else []
 
 
+def _normalize_embedding_model_id(model_id: str) -> str:
+    """Compare embedding ids with or without provider prefix."""
+
+    normalized = model_id.strip()
+    if ":" in normalized:
+        return normalized.split(":", 1)[1].strip()
+    return normalized
+
+
+def _embedding_models_compatible(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    return _normalize_embedding_model_id(left) == _normalize_embedding_model_id(right)
+
+
+def _payload_has_vectors(payload: dict[str, object]) -> bool:
+    chunks = payload.get("chunks")
+    if not isinstance(chunks, list):
+        return False
+    return any(
+        isinstance(chunk, dict)
+        and isinstance(chunk.get("vector"), list)
+        and bool(chunk.get("vector"))
+        for chunk in chunks
+    )
+
+
+def _format_provenance_side(label: str, provenance: object) -> str:
+    rendered_dimensions = (
+        "none" if getattr(provenance, "dimensions", None) is None else str(provenance.dimensions)
+    )
+    return (
+        f"{label} backend={getattr(provenance, 'backend', None) or 'none'} "
+        f"model={getattr(provenance, 'model', None) or 'none'} "
+        f"location={getattr(provenance, 'vertex_location', None) or 'none'} "
+        f"dimensions={rendered_dimensions}"
+    )
+
+
+def embedding_index_mismatch_error(
+    payload: dict[str, object],
+    runtime_model: str | None,
+) -> ValueError:
+    from .gemini_clients import current_embedding_provenance, provenance_from_index_payload
+
+    index = provenance_from_index_payload(payload)
+    runtime = current_embedding_provenance(
+        runtime_model,
+        dimensions=index.dimensions,
+    )
+    return ValueError(
+        "Configured embedding backend/model/location/dimensions do not "
+        "match the built index. "
+        f"{_format_provenance_side('Process', runtime)}; "
+        f"{_format_provenance_side('index', index)}. "
+        "Rebuild the release instead of treating a matching model ID as "
+        "compatibility or masking the mismatch with sparse-only search."
+    )
+
+
+def index_embedding_compatible(
+    payload: dict[str, object],
+    runtime_model: str | None,
+) -> bool:
+    """Require provenance match. Model-id equality alone is not enough."""
+    from .gemini_backend import GeminiApiBackend, resolve_gemini_backend
+    from .gemini_clients import embedding_payloads_compatible
+
+    config = resolve_gemini_backend()
+    has_vectors = _payload_has_vectors(payload)
+    indexed_model = payload.get("embeddingModel")
+    if config.backend is GeminiApiBackend.VERTEX_AI:
+        if has_vectors or indexed_model:
+            if not runtime_model:
+                return False
+            return embedding_payloads_compatible(
+                payload,
+                runtime_model,
+                allow_developer_api_grandfather=False,
+            )
+        return True
+    if not runtime_model or not indexed_model:
+        return True
+    return embedding_payloads_compatible(
+        payload,
+        runtime_model,
+        allow_developer_api_grandfather=True,
+    )
+
+
 __all__ = [
     "embed_documents_batch",
     "embed_queries_batch",
     "embed_single_query",
+    "embedding_index_mismatch_error",
+    "index_embedding_compatible",
     "is_transient_embedding_error",
 ]
 

@@ -108,7 +108,7 @@ def apply_reused_embeddings(
                     pending=len(chunks),
                     skipped_reason="index_setting_mismatch",
                 )
-    from agent_service.gemini_clients import embedding_payloads_compatible
+    from knowledge_core.gemini_clients import embedding_payloads_compatible
 
     if not embedding_payloads_compatible(previous_payload, selected_embedding):
         return EmbeddingReuseStats(

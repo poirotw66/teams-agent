@@ -5,13 +5,12 @@ import pytest
 
 from agent_service.documents import DocumentChunk
 from agent_service.gemini_backend import reset_gemini_backend_for_tests
-from agent_service.retrieval import (
-    HybridIndex,
-    _embedding_models_compatible,
-    _index_embedding_compatible,
-    tokenize,
-)
+from agent_service.retrieval import HybridIndex, tokenize
 from agent_service.retrieval_acl import is_chunk_visible_to_groups
+from agent_service.retrieval_embeddings import _embedding_models_compatible
+from agent_service.retrieval_embeddings import (
+    index_embedding_compatible as _index_embedding_compatible,
+)
 
 
 @pytest.fixture(autouse=True)

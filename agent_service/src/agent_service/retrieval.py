@@ -10,19 +10,15 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .gemini_clients import EmbeddingProvenance
 
 from knowledge_core.contextual_representation import effective_retrieval_text
 
 from .documents import DocumentChunk
 from .knowledge_eligibility import is_chunk_generation_eligible
 from .retrieval_acl import is_chunk_visible_to_groups
+from .retrieval_embeddings import embedding_index_mismatch_error, index_embedding_compatible
 
 logger = logging.getLogger(__name__)
-
 TOKEN_PATTERN = re.compile(r"[a-zA-Z0-9_./:\\-]+|[\u3400-\u9fff]+")
 
 
@@ -143,94 +139,6 @@ class SearchResult:
     final_rank: int | None = None
 
 
-def _normalize_embedding_model_id(model_id: str) -> str:
-    """Compare embedding ids with or without provider prefix."""
-
-    normalized = model_id.strip()
-    if ":" in normalized:
-        return normalized.split(":", 1)[1].strip()
-    return normalized
-
-
-def _embedding_models_compatible(left: str, right: str) -> bool:
-    if left == right:
-        return True
-    return _normalize_embedding_model_id(left) == _normalize_embedding_model_id(right)
-
-
-def _payload_has_vectors(payload: dict[str, object]) -> bool:
-    chunks = payload.get("chunks")
-    if not isinstance(chunks, list):
-        return False
-    return any(
-        isinstance(chunk, dict)
-        and isinstance(chunk.get("vector"), list)
-        and bool(chunk.get("vector"))
-        for chunk in chunks
-    )
-
-
-def _format_provenance_side(label: str, provenance: EmbeddingProvenance) -> str:
-    rendered_dimensions = "none" if provenance.dimensions is None else str(provenance.dimensions)
-    return (
-        f"{label} backend={provenance.backend or 'none'} "
-        f"model={provenance.model or 'none'} "
-        f"location={provenance.vertex_location or 'none'} "
-        f"dimensions={rendered_dimensions}"
-    )
-
-
-def _embedding_index_mismatch_error(
-    payload: dict[str, object],
-    runtime_model: str | None,
-) -> ValueError:
-    from .gemini_clients import current_embedding_provenance, provenance_from_index_payload
-
-    index = provenance_from_index_payload(payload)
-    runtime = current_embedding_provenance(
-        runtime_model,
-        dimensions=index.dimensions,
-    )
-    return ValueError(
-        "Configured embedding backend/model/location/dimensions do not "
-        "match the built index. "
-        f"{_format_provenance_side('Process', runtime)}; "
-        f"{_format_provenance_side('index', index)}. "
-        "Rebuild the release instead of treating a matching model ID as "
-        "compatibility or masking the mismatch with sparse-only search."
-    )
-
-
-def _index_embedding_compatible(
-    payload: dict[str, object],
-    runtime_model: str | None,
-) -> bool:
-    """Require provenance match. Model-id equality alone is not enough."""
-    from .gemini_backend import GeminiApiBackend, resolve_gemini_backend
-    from .gemini_clients import embedding_payloads_compatible
-
-    config = resolve_gemini_backend()
-    has_vectors = _payload_has_vectors(payload)
-    indexed_model = payload.get("embeddingModel")
-    if config.backend is GeminiApiBackend.VERTEX_AI:
-        if has_vectors or indexed_model:
-            if not runtime_model:
-                return False
-            return embedding_payloads_compatible(
-                payload,
-                runtime_model,
-                allow_developer_api_grandfather=False,
-            )
-        return True
-    if not runtime_model or not indexed_model:
-        return True
-    return embedding_payloads_compatible(
-        payload,
-        runtime_model,
-        allow_developer_api_grandfather=True,
-    )
-
-
 class HybridIndex:
     def __init__(
         self,
@@ -296,8 +204,8 @@ class HybridIndex:
         value = json.loads(index_path.read_text(encoding="utf-8"))
         chunks = [DocumentChunk.from_dict(item) for item in value["chunks"]]
         indexed_model = value.get("embeddingModel")
-        if not _index_embedding_compatible(value, embedding_model):
-            raise _embedding_index_mismatch_error(value, embedding_model)
+        if not index_embedding_compatible(value, embedding_model):
+            raise embedding_index_mismatch_error(value, embedding_model)
         # Prefer a provider-prefixed id so the explicit Gemini embedding factory
         # can resolve the client.
         runtime_model = None

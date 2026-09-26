@@ -7,7 +7,9 @@ from pathlib import Path
 
 from pypdf import PdfReader
 
-FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "pdf-vision"
+FIXTURE_DIR = (
+    Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "pdf-vision"
+)
 sys.path.insert(0, str(FIXTURE_DIR))
 from build_vision_fixtures import (
     MIXED_TEXT,

@@ -31,9 +31,16 @@ def _load_worker_dotenv() -> None:
 
     Vertex mode never copies Gemini/Google API keys from ``.env``.
     """
-    from agent_service.runtime_dotenv import load_runtime_dotenv
+    from knowledge_core.gemini_backend import (
+        load_dotenv_for_gemini_backend,
+        resolve_gemini_backend,
+    )
 
-    load_runtime_dotenv()
+    load_dotenv_for_gemini_backend(override=False)
+    for key, value in list(os.environ.items()):
+        if "\r" in value:
+            os.environ[key] = value.replace("\r", "")
+    resolve_gemini_backend()
 
 
 def _collect_dependency_status(

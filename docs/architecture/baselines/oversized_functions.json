@@ -14,9 +14,9 @@
     "agent_service/src/ai_ops_backoffice/knowledge_bridge/routes.py::build_knowledge_router": 99,
     "agent_service/src/ai_ops_backoffice/routers/ops_health_auth_routes.py::register_ops_health_auth_routes": 196,
     "agent_service/src/knowledge_portal/file_search_release.py::synchronize_file_search_release": 82,
-    "agent_service/src/knowledge_portal/incremental_embeddings.py::apply_reused_embeddings": 84,
+    "agent_service/src/knowledge_portal/incremental_embeddings.py::apply_reused_embeddings": 82,
     "agent_service/src/knowledge_portal/publisher_finalize.py::finalize_release_artifacts": 93,
-    "agent_service/src/knowledge_portal/publisher_index.py::build_release_index_from_sources": 90,
+    "agent_service/src/knowledge_portal/publisher_index.py::build_release_index_from_sources": 85,
     "agent_service/src/knowledge_portal/release/activation.py::activate_release": 83,
     "agent_service/src/knowledge_portal/routers/catalog_routes.py::register_catalog_routes": 189
   },

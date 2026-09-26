@@ -38,7 +38,7 @@ def _optional_env(*keys: str) -> str | None:
 
 
 def _file_search_api_key_from_env() -> str | None:
-    from agent_service.gemini_backend import GeminiApiBackend, peek_gemini_api_backend
+    from knowledge_core.gemini_backend import GeminiApiBackend, peek_gemini_api_backend
 
     if peek_gemini_api_backend() is GeminiApiBackend.VERTEX_AI:
         return None

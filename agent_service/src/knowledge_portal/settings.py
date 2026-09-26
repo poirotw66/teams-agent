@@ -115,7 +115,7 @@ class PortalSettings:
             raise ValueError(
                 "KNOWLEDGE_PORTAL_DOCUMENT_AI_PROCESSOR is required for DOCUMENT_AI."
             )
-        from agent_service.gemini_backend import (
+        from knowledge_core.gemini_backend import (
             GeminiApiBackend,
             peek_gemini_api_backend,
         )

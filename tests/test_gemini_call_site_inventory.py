@@ -24,7 +24,7 @@ INIT_CHAT_ALLOWED = {
     REPO_ROOT / "agent_service" / "src" / "agent_service" / "graph.py",
 }
 INIT_EMBEDDINGS_ALLOWED = {
-    REPO_ROOT / "agent_service" / "src" / "agent_service" / "gemini_clients.py",
+    REPO_ROOT / "agent_service" / "src" / "knowledge_core" / "gemini_clients.py",
 }
 GENAI_CLIENT_ALLOWED = {
     REPO_ROOT / "agent_service" / "src" / "agent_service" / "gemini_file_search.py",

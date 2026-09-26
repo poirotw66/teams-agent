@@ -123,6 +123,14 @@ def restore_utterance_qualifiers(issue: Issue, raw_utterance: str) -> Issue:
     return updated
 
 
+def _description_is_known_ready(description: str, raw_utterance: str) -> bool:
+    return (
+        _is_known_dazhou_issue(description)
+        or _is_shu_channel_login_symptom(description)
+        or bool(raw_utterance and _is_shu_channel_login_symptom(raw_utterance))
+    )
+
+
 def coerce_issue(
     issue: Issue,
     *,
@@ -188,9 +196,7 @@ def coerce_issue(
         data["missingInfo"] = []
         data["faqKey"] = None
     else:
-        if _is_known_dazhou_issue(data["description"]) or _is_shu_channel_login_symptom(
-            data["description"]
-        ) or (raw_utterance and _is_shu_channel_login_symptom(raw_utterance)):
+        if _description_is_known_ready(data["description"], raw_utterance):
             data["readiness"] = "READY"
             data["missingInfo"] = []
 

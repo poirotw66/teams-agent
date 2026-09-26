@@ -80,7 +80,7 @@ async def convert_via_converter_service(
     if fallback_warning:
         warnings += (fallback_warning,)
     engine = (settings.pdf_converter_engine or "gemini_vision").strip() or "gemini_vision"
-    from agent_service.gemini_backend import peek_gemini_api_backend
+    from knowledge_core.gemini_backend import peek_gemini_api_backend
 
     return PdfConversionResult(
         markdown=result.markdown,

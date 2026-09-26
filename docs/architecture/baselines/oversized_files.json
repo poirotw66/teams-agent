@@ -5,7 +5,6 @@
     "agent_service/src/agent_service/knowledge_pipeline/grounding.py": 514,
     "agent_service/src/agent_service/knowledge_pipeline/source_roles.py": 682,
     "agent_service/src/agent_service/knowledge_release_sync.py": 809,
-    "agent_service/src/agent_service/retrieval.py": 501,
     "agent_service/src/knowledge_core/layout_chunking.py": 624
   },
   "max_new_file_lines": 500

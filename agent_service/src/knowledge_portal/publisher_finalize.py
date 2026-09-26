@@ -33,7 +33,7 @@ class ReleaseBuildError(Exception):
 
 
 def _require_vertex_index_provenance(release_dir: Path) -> None:
-    from agent_service.gemini_backend import GeminiApiBackend, peek_gemini_api_backend
+    from knowledge_core.gemini_backend import GeminiApiBackend, peek_gemini_api_backend
 
     if peek_gemini_api_backend() is not GeminiApiBackend.VERTEX_AI:
         return
