@@ -596,6 +596,67 @@ def test_real_rag_answer_adapter_fails_without_invoker_when_synthetic_disabled()
     assert "requires a registered real model invoker" in str(exc_info.value)
 
 
+def test_real_rag_answer_adapter_probes_configured_chat_model_not_literal_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REAL_RAG preflight must construct the settings chat model, never id 'probe'."""
+    seen: list[str] = []
+
+    def factory(model_id: str) -> object | None:
+        seen.append(model_id)
+        if model_id in {"", "probe"}:
+            raise AssertionError(f"literal placeholder model id {model_id!r} must not be probed")
+        if model_id == "google_genai:gemini-3.8-flash":
+            return object()
+        return None
+
+    monkeypatch.setattr(
+        "ai_ops_backoffice.evaluation_domain.real_rag_adapters.get_default_chat_model_id",
+        lambda: "google_genai:gemini-3.8-flash",
+    )
+    adapter = RealRagAnswerAdapter(model_factory=factory)
+    assert adapter.is_real_model_configured() is True
+    assert seen == ["google_genai:gemini-3.8-flash"]
+
+
+def test_real_rag_answer_adapter_probe_is_fail_closed_on_vertex_key_conflict(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """VERTEX_AI leftover-key / construction errors must not count as a real model."""
+    from agent_service.gemini_backend import GeminiConfigurationError
+
+    def factory(_model_id: str) -> object:
+        raise GeminiConfigurationError(
+            "VERTEX_AI process has leftover GEMINI_API_KEY; refuse API key fallback"
+        )
+
+    monkeypatch.setattr(
+        "ai_ops_backoffice.evaluation_domain.real_rag_adapters.get_default_chat_model_id",
+        lambda: "google_genai:gemini-3.8-flash",
+    )
+    adapter = RealRagAnswerAdapter(model_factory=factory)
+    assert adapter.is_real_model_configured() is False
+
+
+def test_real_rag_answer_adapter_probe_skips_factory_when_no_configured_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Empty settings must not fall through to a placeholder model id."""
+    seen: list[str] = []
+
+    def factory(model_id: str) -> object:
+        seen.append(model_id)
+        return object()
+
+    monkeypatch.setattr(
+        "ai_ops_backoffice.evaluation_domain.real_rag_adapters.get_default_chat_model_id",
+        lambda: None,
+    )
+    adapter = RealRagAnswerAdapter(model_factory=factory)
+    assert adapter.is_real_model_configured() is False
+    assert seen == []
+
+
 def test_real_rag_answer_adapter_with_model_invoker():
     """RealRagAnswerAdapter propagates real model tokens, cost, and provider request ID."""
     def mock_invoker(query, manifest, sanitized_input, evidence, history):

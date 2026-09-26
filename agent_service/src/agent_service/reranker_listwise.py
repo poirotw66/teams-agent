@@ -75,7 +75,7 @@ def build_gemini_listwise_pair_scorer(model_id: str = "gemini-2.5-flash") -> Pai
     )
 
     async def score_pairs(query: str, texts: Sequence[str]) -> Sequence[float]:
-        from langchain.chat_models import init_chat_model
+        from .graph import build_chat_model
 
         if not texts:
             return []
@@ -97,7 +97,9 @@ def build_gemini_listwise_pair_scorer(model_id: str = "gemini-2.5-flash") -> Pai
             "e.g. [3,1,2,...]. No objects, no markdown.\n\n"
             f"Query: {query}\n\nCandidates:\n" + "\n".join(lines)
         )
-        model = init_chat_model(langchain_id, temperature=0, timeout=30)
+        model = build_chat_model(langchain_id, temperature=0, timeout=30)
+        if model is None:
+            raise RuntimeError("gemini listwise chat model is not configured")
         response = await asyncio.to_thread(model.invoke, prompt)
         content = getattr(response, "content", str(response))
         if isinstance(content, list):

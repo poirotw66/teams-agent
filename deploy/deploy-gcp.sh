@@ -16,7 +16,14 @@ REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}"
 AGENT_IMAGE="${REGISTRY}/${AGENT_SERVICE}:latest"
 ADAPTER_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:latest"
 
-GOOGLE_API_SECRET="teams-agent-google-api-key"
+# BU Vertex revisions must not upload, inject, or mount
+# teams-agent-google-api-key. Developer API environments keep that secret
+# outside this script.
+GEMINI_API_BACKEND="VERTEX_AI"
+# Explicit Vertex target only. Do not default to PROJECT_ID or "global".
+VERTEX_AI_PROJECT="${VERTEX_AI_PROJECT:-}"
+VERTEX_AI_CHAT_LOCATION="${VERTEX_AI_CHAT_LOCATION:-}"
+VERTEX_AI_EMBEDDING_LOCATION="${VERTEX_AI_EMBEDDING_LOCATION:-}"
 BOT_CLIENT_SECRET="teams-agent-bot-client-secret"
 ASSET_SIGNING_SECRET="teams-agent-asset-signing-key"
 export BACKOFFICE_SERVICE="${GCP_BACKOFFICE_API_SERVICE:-teams-ai-ops-backoffice}"
@@ -151,20 +158,13 @@ cd "${PROJECT_DIR}"
 
 # shellcheck disable=SC1091
 source "${PROJECT_DIR}/deploy/lib/source-api-wiring.sh"
+# shellcheck disable=SC1091
+source "${PROJECT_DIR}/deploy/lib/vertex-revision-contract.sh"
 
 command -v gcloud >/dev/null 2>&1 || fail "找不到 gcloud CLI"
 gcloud auth list --filter=status:ACTIVE --format='value(account)' \
   | grep -q . || fail "請先執行 gcloud auth login --update-adc"
 
-GOOGLE_API_KEY_VALUE="$(env_value agent_service/.env GOOGLE_API_KEY)"
-if [[ -z "${GOOGLE_API_KEY_VALUE}" ]]; then
-  GOOGLE_API_KEY_VALUE="$(env_value agent_service/.env GEMINI_API_KEY)"
-fi
-if [[ -z "${GOOGLE_API_KEY_VALUE}" ]]; then
-  GOOGLE_API_KEY_VALUE="$(gcloud secrets versions access latest \
-    --secret="${GOOGLE_API_SECRET}" \
-    --project="${PROJECT_ID}" 2>/dev/null || true)"
-fi
 BOT_CLIENT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTID)"
 BOT_CLIENT_SECRET_VALUE="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__CLIENTSECRET)"
 BOT_TENANT_ID="$(env_value .env CONNECTIONS__SERVICE_CONNECTION__SETTINGS__TENANTID)"
@@ -177,7 +177,9 @@ AGENT_MODEL="$(env_value agent_service/.env AGENT_MODEL)"
 RAG_EMBEDDING_MODEL="$(env_value agent_service/.env RAG_EMBEDDING_MODEL)"
 RAG_ALLOWED_TENANTS="$(env_value agent_service/.env RAG_ALLOWED_TENANTS)"
 
-require_value "${GOOGLE_API_KEY_VALUE}" "agent_service/.env GOOGLE_API_KEY or GEMINI_API_KEY (or Secret Manager ${GOOGLE_API_SECRET})"
+require_explicit_vertex_project
+require_approved_vertex_location "${VERTEX_AI_CHAT_LOCATION}" "VERTEX_AI_CHAT_LOCATION"
+require_approved_vertex_location "${VERTEX_AI_EMBEDDING_LOCATION}" "VERTEX_AI_EMBEDDING_LOCATION"
 require_value "${BOT_CLIENT_ID}" ".env CLIENT_ID"
 require_value "${BOT_CLIENT_SECRET_VALUE}" ".env CLIENT_SECRET"
 require_value "${BOT_TENANT_ID}" ".env TENANT_ID"
@@ -200,7 +202,15 @@ gcloud services enable \
   iamcredentials.googleapis.com \
   firestore.googleapis.com \
   storage.googleapis.com \
+  aiplatform.googleapis.com \
   --project="${PROJECT_ID}" >/dev/null
+if ! gcloud services list --enabled --project="${PROJECT_ID}" \
+  --filter="config.name=aiplatform.googleapis.com" \
+  --format="value(config.name)" | grep -q aiplatform.googleapis.com; then
+  fail "aiplatform.googleapis.com is not enabled on ${PROJECT_ID}."
+fi
+[[ -n "${VERTEX_AI_CHAT_LOCATION}" && -n "${VERTEX_AI_EMBEDDING_LOCATION}" ]] \
+  || fail "BU Vertex locations must be set explicitly."
 
 log "建立 Artifact Registry 與 Service Accounts"
 if ! gcloud artifacts repositories describe "${REPOSITORY}" \
@@ -268,15 +278,14 @@ gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
   --role=roles/datastore.user \
   --condition=None >/dev/null
 
-log "同步 Secret Manager secrets"
-upsert_secret "${GOOGLE_API_SECRET}" "${GOOGLE_API_KEY_VALUE}"
+log "同步 Secret Manager secrets（保留 Google API key secret 資源，但不寫入或掛載到 Vertex revision）"
 upsert_secret "${BOT_CLIENT_SECRET}" "${BOT_CLIENT_SECRET_VALUE}"
 upsert_secret "${ASSET_SIGNING_SECRET}" "${ASSET_SIGNING_KEY_VALUE}"
 
-gcloud secrets add-iam-policy-binding "${GOOGLE_API_SECRET}" \
+gcloud projects add-iam-policy-binding "${VERTEX_AI_PROJECT}" \
   --member="serviceAccount:${AGENT_SA}" \
-  --role=roles/secretmanager.secretAccessor \
-  --project="${PROJECT_ID}" >/dev/null
+  --role=roles/aiplatform.user \
+  --condition=None >/dev/null
 for secret in "${BOT_CLIENT_SECRET}" "${ASSET_SIGNING_SECRET}"; do
   gcloud secrets add-iam-policy-binding "${secret}" \
     --member="serviceAccount:${ADAPTER_SA}" \
@@ -298,6 +307,9 @@ grant_bucket_role \
   "${KNOWLEDGE_RELEASE_BUCKET}" \
   "serviceAccount:${ADAPTER_SA}" \
   roles/storage.objectViewer
+if cloud_run_service_exists "${AGENT_SERVICE}"; then
+  preserve_live_agent_knowledge_env "${AGENT_SERVICE}"
+fi
 TENANT_RELEASE_INDEX="gs://${KNOWLEDGE_RELEASE_BUCKET}/${KNOWLEDGE_RELEASE_PREFIX}/tenants/${KNOWLEDGE_RELEASE_TENANT_ID}/releases/${KNOWLEDGE_ACTIVE_RELEASE_ID}/index/chunks.json"
 LEGACY_RELEASE_INDEX="gs://${KNOWLEDGE_RELEASE_BUCKET}/${KNOWLEDGE_RELEASE_PREFIX}/${KNOWLEDGE_ACTIVE_RELEASE_ID}/index/chunks.json"
 if ! gcloud storage objects describe "${TENANT_RELEASE_INDEX}" \
@@ -321,8 +333,21 @@ gcloud builds submit . \
   --project="${PROJECT_ID}"
 
 log "部署 private LangGraph Agent"
-gcloud run deploy "${AGENT_SERVICE}" \
-  --image="${AGENT_IMAGE}" \
+# Existing revisions: image + --update-env-vars. --set-env-vars would replace
+# live KNOWLEDGE_RELEASE_MODE=PORTAL, the current release pointer, and File
+# Search option A with AUTO / release-19072ac9a1e2 / gemini-2.5-flash.
+AGENT_VERTEX_RUNTIME_ENV_VARS="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},AGENT_MODEL=${AGENT_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,GEMINI_API_BACKEND=${GEMINI_API_BACKEND},VERTEX_AI_PROJECT=${VERTEX_AI_PROJECT},VERTEX_AI_CHAT_LOCATION=${VERTEX_AI_CHAT_LOCATION},VERTEX_AI_EMBEDDING_LOCATION=${VERTEX_AI_EMBEDDING_LOCATION},GOOGLE_GENAI_USE_VERTEXAI=true,GOOGLE_CLOUD_PROJECT=${VERTEX_AI_PROJECT},GOOGLE_CLOUD_LOCATION=${VERTEX_AI_CHAT_LOCATION},KNOWLEDGE_RELEASE_DIR=${KNOWLEDGE_RELEASE_DIR},KNOWLEDGE_RELEASE_STORE_MODE=${KNOWLEDGE_RELEASE_STORE_MODE},KNOWLEDGE_RELEASE_GCS_BUCKET=${KNOWLEDGE_RELEASE_BUCKET},KNOWLEDGE_RELEASE_GCS_PREFIX=${KNOWLEDGE_RELEASE_PREFIX},KNOWLEDGE_RELEASE_TENANT_ID=${KNOWLEDGE_RELEASE_TENANT_ID},KNOWLEDGE_RELEASE_FIRESTORE_PROJECT=${PROJECT_ID},KNOWLEDGE_RELEASE_FIRESTORE_DATABASE=${FIRESTORE_DATABASE},KNOWLEDGE_RELEASE_REQUIRE_MANIFEST=${KNOWLEDGE_RELEASE_REQUIRE_MANIFEST},KNOWLEDGE_RELEASE_REQUIRE_VECTORS=${KNOWLEDGE_RELEASE_REQUIRE_VECTORS},KNOWLEDGE_BACKEND_STATE_MODE=FIRESTORE,KNOWLEDGE_BACKEND_STATE_COLLECTION=${KNOWLEDGE_BACKEND_STATE_COLLECTION},KNOWLEDGE_BACKEND_ADMIN_ENABLED=${KNOWLEDGE_BACKEND_ADMIN_ENABLED},TICKET_REQUEST_DEDUPE_MODE=${TICKET_REQUEST_DEDUPE_MODE},TICKET_REQUEST_DEDUPE_COLLECTION=${TICKET_REQUEST_DEDUPE_COLLECTION},TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=FIRESTORE,CONVERSATION_FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},CONVERSATION_RETENTION_DAYS=365,SUPERVISOR_TERMINAL_CONFIDENCE=0.9,HANDOFF_REPOSITORY_MODE=FIRESTORE,HANDOFF_FIRESTORE_COLLECTION=${HANDOFF_FIRESTORE_COLLECTION},HANDOFF_DEMO_TIMEOUT_HOURS=24,HANDOFF_RETENTION_DAYS=365,FEEDBACK_ENABLED=true,SHOW_TURN_COST=true,SHOW_TURN_COST_PLAYGROUND=false,AGENT_DEPLOYMENT_ENV=${AGENT_DEPLOYMENT_ENV},GCP_PROJECT_ID=${PROJECT_ID},OPS_EVENTS_ENABLED=true,OPS_STORE_MODE=FIRESTORE,OPS_AUDIT_STORE_MODE=FIRESTORE,OPS_FIRESTORE_PROJECT=${PROJECT_ID},OPS_FIRESTORE_COLLECTION=${OPS_EVENTS_COLLECTION},OPS_AUDIT_FIRESTORE_COLLECTION=${OPS_AUDIT_COLLECTION},OPS_BIGQUERY_ENABLED=${OPS_BIGQUERY_ENABLED},OPS_BIGQUERY_DATASET=${OPS_BIGQUERY_DATASET},OPS_BIGQUERY_TABLE=${OPS_BIGQUERY_TABLE}"
+AGENT_FIRST_TIME_KNOWLEDGE_ENV_VARS="KNOWLEDGE_RELEASE_MODE=${KNOWLEDGE_RELEASE_MODE},KNOWLEDGE_ACTIVE_RELEASE_ID=${KNOWLEDGE_ACTIVE_RELEASE_ID},KNOWLEDGE_RELEASE_SELECTION_MODE=${KNOWLEDGE_RELEASE_SELECTION_MODE},GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE},GEMINI_FILE_SEARCH_MODEL=${GEMINI_FILE_SEARCH_MODEL},GEMINI_FILE_SEARCH_ENFORCE_ACL=${GEMINI_FILE_SEARCH_ENFORCE_ACL},RAG_REQUIRE_FILE_SEARCH_ACL=${RAG_REQUIRE_FILE_SEARCH_ACL}"
+if cloud_run_service_exists "${AGENT_SERVICE}"; then
+  AGENT_ENV_VARS="${AGENT_VERTEX_RUNTIME_ENV_VARS}"
+else
+  AGENT_ENV_VARS="${AGENT_VERTEX_RUNTIME_ENV_VARS},${AGENT_FIRST_TIME_KNOWLEDGE_ENV_VARS}"
+fi
+deploy_cloud_run_preserving_runtime \
+  "${AGENT_SERVICE}" \
+  "${AGENT_IMAGE}" \
+  "${AGENT_ENV_VARS}" \
+  "" \
   --region="${REGION}" \
   --project="${PROJECT_ID}" \
   --platform=managed \
@@ -335,30 +360,31 @@ gcloud run deploy "${AGENT_SERVICE}" \
   --concurrency=8 \
   --timeout=90 \
   --min=0 \
-  --max=3 \
-  --set-env-vars="LOG_LEVEL=INFO,RAG_DATA_DIR=/app/data,RAG_INDEX_PATH=/app/data/index/chunks.json,RAG_AUTO_BUILD_INDEX=false,RAG_MODEL=${RAG_MODEL},AGENT_MODEL=${AGENT_MODEL},RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL},RAG_ALLOWED_TENANTS=${RAG_ALLOWED_TENANTS},RAG_MAX_IMAGES=2,KNOWLEDGE_SERVICE_MODE=HYBRID,KNOWLEDGE_RELEASE_MODE=${KNOWLEDGE_RELEASE_MODE},KNOWLEDGE_RELEASE_DIR=${KNOWLEDGE_RELEASE_DIR},KNOWLEDGE_ACTIVE_RELEASE_ID=${KNOWLEDGE_ACTIVE_RELEASE_ID},KNOWLEDGE_RELEASE_SELECTION_MODE=${KNOWLEDGE_RELEASE_SELECTION_MODE},KNOWLEDGE_RELEASE_STORE_MODE=${KNOWLEDGE_RELEASE_STORE_MODE},KNOWLEDGE_RELEASE_GCS_BUCKET=${KNOWLEDGE_RELEASE_BUCKET},KNOWLEDGE_RELEASE_GCS_PREFIX=${KNOWLEDGE_RELEASE_PREFIX},KNOWLEDGE_RELEASE_TENANT_ID=${KNOWLEDGE_RELEASE_TENANT_ID},KNOWLEDGE_RELEASE_FIRESTORE_PROJECT=${PROJECT_ID},KNOWLEDGE_RELEASE_FIRESTORE_DATABASE=${FIRESTORE_DATABASE},KNOWLEDGE_RELEASE_REQUIRE_MANIFEST=${KNOWLEDGE_RELEASE_REQUIRE_MANIFEST},KNOWLEDGE_RELEASE_REQUIRE_VECTORS=${KNOWLEDGE_RELEASE_REQUIRE_VECTORS},GEMINI_FILE_SEARCH_STORE=${GEMINI_FILE_SEARCH_STORE},GEMINI_FILE_SEARCH_MODEL=${GEMINI_FILE_SEARCH_MODEL},GEMINI_FILE_SEARCH_ENFORCE_ACL=${GEMINI_FILE_SEARCH_ENFORCE_ACL},RAG_REQUIRE_FILE_SEARCH_ACL=${RAG_REQUIRE_FILE_SEARCH_ACL},KNOWLEDGE_BACKEND_STATE_MODE=FIRESTORE,KNOWLEDGE_BACKEND_STATE_COLLECTION=${KNOWLEDGE_BACKEND_STATE_COLLECTION},KNOWLEDGE_BACKEND_ADMIN_ENABLED=${KNOWLEDGE_BACKEND_ADMIN_ENABLED},TICKET_REQUEST_DEDUPE_MODE=${TICKET_REQUEST_DEDUPE_MODE},TICKET_REQUEST_DEDUPE_COLLECTION=${TICKET_REQUEST_DEDUPE_COLLECTION},TICKET_SERVICE_MODE=DISABLED,CONVERSATION_REPOSITORY_MODE=FIRESTORE,CONVERSATION_FIRESTORE_COLLECTION=${FIRESTORE_COLLECTION},CONVERSATION_RETENTION_DAYS=365,SUPERVISOR_TERMINAL_CONFIDENCE=0.9,HANDOFF_REPOSITORY_MODE=FIRESTORE,HANDOFF_FIRESTORE_COLLECTION=${HANDOFF_FIRESTORE_COLLECTION},HANDOFF_DEMO_TIMEOUT_HOURS=24,HANDOFF_RETENTION_DAYS=365,FEEDBACK_ENABLED=true,SHOW_TURN_COST=true,SHOW_TURN_COST_PLAYGROUND=false,AGENT_DEPLOYMENT_ENV=${AGENT_DEPLOYMENT_ENV},GCP_PROJECT_ID=${PROJECT_ID},OPS_EVENTS_ENABLED=true,OPS_STORE_MODE=FIRESTORE,OPS_AUDIT_STORE_MODE=FIRESTORE,OPS_FIRESTORE_PROJECT=${PROJECT_ID},OPS_FIRESTORE_COLLECTION=${OPS_EVENTS_COLLECTION},OPS_AUDIT_FIRESTORE_COLLECTION=${OPS_AUDIT_COLLECTION},OPS_BIGQUERY_ENABLED=${OPS_BIGQUERY_ENABLED},OPS_BIGQUERY_DATASET=${OPS_BIGQUERY_DATASET},OPS_BIGQUERY_TABLE=${OPS_BIGQUERY_TABLE}" \
-  --set-secrets="GOOGLE_API_KEY=${GOOGLE_API_SECRET}:latest"
-  # KNOWLEDGE_SERVICE_MODE/TICKET_SERVICE_MODE/CONVERSATION_REPOSITORY_MODE/
-  # FEEDBACK_ENABLED/KNOWLEDGE_RELEASE_STORE_MODE above are set explicitly
-  # so this deploy is self-documenting about which mode is running in
-  # production (spec §16). Knowledge comes from the GCS release bucket,
-  # not a laptop data/index/chunks.json baked into the Agent image.
-  # KNOWLEDGE_RELEASE_SELECTION_MODE=FOLLOW_CLOUD is explicit so
-  # KNOWLEDGE_ACTIVE_RELEASE_ID stays a startup fallback and does not
-  # infer PINNED.
-  # CONVERSATION_REPOSITORY_MODE deliberately DIFFERS from the RagSettings
-  # default of MEMORY: MEMORY is right for local dev but loses conversation
-  # context whenever Cloud Run recycles an instance (spec §10.1's 連續問答
-  # and 使用者補充資訊 would silently break). Firestore project and
-  # database are left unset so Application Default Credentials resolve them
-  # to this service's own project and the (default) database. To enable the
-  # ticket
-  # integration, add TICKET_SERVICE_MODE=HTTP, TICKET_SERVICE_BASE_URL=...
-  # to --set-env-vars and TICKET_SERVICE_TOKEN=<secret>:latest to
-  # --set-secrets (spec §17: it is a credential, never a plain env var).
-  # See deploy/README.md for the full list of tunable Agent Service env
-  # vars and which Cloud Run knobs (concurrency/CPU/memory/timeout) are
-  # worth adjusting once load-test data (spec §16) justifies it.
+  --max=3
+unmount_developer_api_key_secrets "${AGENT_SERVICE}"
+assert_bu_vertex_revision "${AGENT_SERVICE}"
+assert_bu_agent_knowledge_runtime "${AGENT_SERVICE}"
+# KNOWLEDGE_SERVICE_MODE/TICKET_SERVICE_MODE/CONVERSATION_REPOSITORY_MODE/
+# FEEDBACK_ENABLED/KNOWLEDGE_RELEASE_STORE_MODE above are set explicitly
+# so this deploy is self-documenting about which mode is running in
+# production (spec §16). Knowledge comes from the GCS release bucket,
+# not a laptop data/index/chunks.json baked into the Agent image.
+# KNOWLEDGE_RELEASE_SELECTION_MODE=FOLLOW_CLOUD is explicit so
+# KNOWLEDGE_ACTIVE_RELEASE_ID stays a startup fallback and does not
+# infer PINNED.
+# CONVERSATION_REPOSITORY_MODE deliberately DIFFERS from the RagSettings
+# default of MEMORY: MEMORY is right for local dev but loses conversation
+# context whenever Cloud Run recycles an instance (spec §10.1's 連續問答
+# and 使用者補充資訊 would silently break). Firestore project and
+# database are left unset so Application Default Credentials resolve them
+# to this service's own project and the (default) database. To enable the
+# ticket
+# integration, add TICKET_SERVICE_MODE=HTTP, TICKET_SERVICE_BASE_URL=...
+# to --set-env-vars and TICKET_SERVICE_TOKEN=<secret>:latest to
+# --set-secrets (spec §17: it is a credential, never a plain env var).
+# See deploy/README.md for the full list of tunable Agent Service env
+# vars and which Cloud Run knobs (concurrency/CPU/memory/timeout) are
+# worth adjusting once load-test data (spec §16) justifies it.
 
 AGENT_URL="$(gcloud run services describe "${AGENT_SERVICE}" \
   --region="${REGION}" \
@@ -437,6 +463,9 @@ if gcloud run services describe "${MOCK_TICKET_SERVICE}" \
     --project="${PROJECT_ID}" \
     --update-env-vars="TICKET_SERVICE_MODE=HTTP,TICKET_SERVICE_BASE_URL=${MOCK_TICKET_URL}" \
     --update-secrets="TICKET_SERVICE_TOKEN=${MOCK_TICKET_TOKEN_SECRET}:latest" >/dev/null
+  unmount_developer_api_key_secrets "${AGENT_SERVICE}"
+  assert_bu_vertex_revision "${AGENT_SERVICE}"
+  assert_bu_agent_knowledge_runtime "${AGENT_SERVICE}"
   gcloud run services update "${ADAPTER_SERVICE}" \
     --region="${REGION}" \
     --project="${PROJECT_ID}" \

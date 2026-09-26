@@ -346,15 +346,23 @@ def build_cross_encoder_pair_scorer(model_name: str) -> PairScorer:
 
 def _build_listwise_reranker(model_name: str | None, *, timeout_ms: int) -> Reranker:
     """Gemini listwise + title-protect (experiment-only; lexical offline fallback)."""
-    import os
-
     from .reranker_listwise import (
         build_gemini_listwise_pair_scorer,
         wrap_listwise_title_protect,
     )
 
     resolved = (model_name or "listwise").strip()
-    if not (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")):
+    from .gemini_backend import (
+        GeminiApiBackend,
+        developer_api_key_available,
+        resolve_gemini_backend,
+    )
+
+    backend = resolve_gemini_backend()
+    if (
+        backend.backend is GeminiApiBackend.DEVELOPER_API
+        and not developer_api_key_available()
+    ):
         logger.warning(
             "rag_reranker_model=%s requested without Gemini API key; "
             "using lexical title-protect FailOpenReranker",

@@ -82,6 +82,27 @@
       "relationship": "COMPANION",
       "owner": "knowledge-ops",
       "temporaryCompatibility": true
+    },
+    {
+      "id": "shu-ap-channel",
+      "aliases": [
+        "樹精靈"
+      ],
+      "intent": "shu_ap_login",
+      "requireAnyQueryMarkers": [
+        "樹精靈AP",
+        "樹精靈 AP",
+        "樹精靈ap",
+        "樹精靈 ap"
+      ],
+      "relatedDocumentMarkers": [
+        "樹精靈AP無法登入",
+        "網路錯誤12029",
+        "網路錯誤 12029"
+      ],
+      "relationship": "COMPANION",
+      "owner": "knowledge-ops",
+      "temporaryCompatibility": true
     }
   ]
 }

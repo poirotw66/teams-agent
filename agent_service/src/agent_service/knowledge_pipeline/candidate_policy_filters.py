@@ -142,6 +142,44 @@ def _is_android_handbook(result: SearchResult) -> bool:
     return any(token in text for token in ("android", "安卓"))
 
 
+def _compact_channel_text(text: str) -> str:
+    return "".join(text.split()).casefold()
+
+
+def _query_mentions_shu_ap(query: str) -> bool:
+    return "樹精靈ap" in _compact_channel_text(query)
+
+
+def _query_mentions_shu_web(query: str) -> bool:
+    return "樹精靈web" in _compact_channel_text(query)
+
+
+def _is_shu_ap_handbook(result: SearchResult) -> bool:
+    return "樹精靈ap" in _compact_channel_text(result.chunk.title or "")
+
+
+def _is_shu_web_handbook(result: SearchResult) -> bool:
+    return "樹精靈web" in _compact_channel_text(result.chunk.title or "")
+
+
+def _apply_shu_channel_isolation(
+    results: list[SearchResult],
+    intent: QueryIntentFlags,
+) -> list[SearchResult]:
+    """Keep 樹精靈 AP and WEB manuals from answering for each other."""
+    mentions_ap = _query_mentions_shu_ap(intent.normalized_query)
+    mentions_web = _query_mentions_shu_web(intent.normalized_query)
+    if mentions_ap and not mentions_web:
+        ap_results = [result for result in results if _is_shu_ap_handbook(result)]
+        if ap_results:
+            return [result for result in results if not _is_shu_web_handbook(result)]
+    if mentions_web and not mentions_ap:
+        web_results = [result for result in results if _is_shu_web_handbook(result)]
+        if web_results:
+            return [result for result in results if not _is_shu_ap_handbook(result)]
+    return results
+
+
 def apply_platform_isolation(
     results: list[SearchResult],
     intent: QueryIntentFlags,
@@ -151,7 +189,10 @@ def apply_platform_isolation(
     ``iPhone`` must count as iOS so contrast queries like「為何不能套用 Android」
     do not isolate to the Android manual and drop the matching iOS handbook.
     True side-by-side comparisons (both platforms, no rejection) keep both.
+    樹精靈 AP vs WEB is the same channel split: an AP-only login question
+    must not be answered from the WEB security-component article.
     """
+    results = _apply_shu_channel_isolation(results, intent)
     normalized = intent.normalized_query
     mentions_ios = _mentions_ios_platform(normalized)
     mentions_android = _mentions_android_platform(normalized)

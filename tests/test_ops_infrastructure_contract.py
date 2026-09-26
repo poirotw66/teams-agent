@@ -197,20 +197,134 @@ class OpsInfrastructureContractTests(unittest.TestCase):
         self.assertIn('*",converter,"*', release_script)
         self.assertIn('ingress  = "INGRESS_TRAFFIC_INTERNAL_ONLY"', converter)
         self.assertIn('value = "gemini"', converter)
-        self.assertIn("pdf_converter_google_api_key", converter)
+        self.assertIn('name  = "GEMINI_MODEL"', converter)
+        self.assertIn('value = "gemini-3.8-flash"', converter)
+        self.assertIn("pdf_converter_aiplatform_user", converter)
+        self.assertIn("GEMINI_API_BACKEND", converter)
+        self.assertNotIn("GOOGLE_API_KEY", converter)
         self.assertIn("google_service_account.pdf_converter[0].email", converter)
         self.assertIn("google_service_account.portal.email", converter)
         self.assertNotIn("google_service_account.agent.email", converter)
+        self.assertIn("template[0].containers[0].image", converter)
+        self.assertIn("      scaling,", converter)
+        self.assertNotIn("      template,", converter)
+        self.assertIn("pdf_converter_existing_url", converter)
+        self.assertIn("portal_pdf_converter_engine", converter)
+        self.assertIn('? "gemini_vision" : "legacy_text"', converter)
+        self.assertRegex(
+            portal,
+            r'KNOWLEDGE_PORTAL_PDF_CONVERTER_URL"\s+'
+            r"value = local\.portal_pdf_converter_url",
+        )
         self.assertRegex(
             portal,
             r'KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE"\s+'
-            r'value = local\.deploy_pdf_converter \? "gemini_vision" : "legacy_text"',
+            r"value = local\.portal_pdf_converter_engine",
         )
         self.assertRegex(
             portal,
             r'KNOWLEDGE_PORTAL_PDF_CONVERTER_AUTH_MODE"\s+'
-            r'value = local\.deploy_pdf_converter \? "GOOGLE_ID_TOKEN" : "BEARER"',
+            r"value = local\.portal_pdf_converter_auth_mode",
         )
+        self.assertNotRegex(
+            portal,
+            r'KNOWLEDGE_PORTAL_PDF_CONVERTER_ENGINE"\s+'
+            r'value = local\.deploy_pdf_converter \? "gemini_vision" : "legacy_text"',
+        )
+        variables = self.read("infra/terraform/variables.tf")
+        poc_tfvars = self.read("infra/environments/poc/terraform.tfvars.example")
+        self.assertIn('variable "pdf_converter_existing_url"', variables)
+        self.assertIn('variable "portal_pdf_converter_engine"', variables)
+        self.assertIn("enable_pdf_converter       = true", poc_tfvars)
+        self.assertIn("pdf_converter_existing_url", poc_tfvars)
+        self.assertIn(
+            "@sha256:6c00f9f11a93f9f8a756c9ed9fadcb9f9b1dbd6ce28282d82a6fb005ace683a3",
+            poc_tfvars,
+        )
+        self.assertNotIn(
+            "@sha256:f05fe09d2f95317e5aaf6111be92b4f491793ce52a3aacf78962a1ef81f14326",
+            poc_tfvars,
+        )
+
+    def test_bu_vertex_revisions_have_no_google_api_key_mount(self) -> None:
+        locals_tf = self.read("infra/terraform/locals.tf")
+        agent = self.read("infra/terraform/cloud_run.tf")
+        portal = self.read("infra/terraform/knowledge_portal.tf")
+        converter = self.read("infra/terraform/cloud_run_pdf_converter.tf")
+        iam = self.read("infra/terraform/iam.tf")
+        secrets = self.read("infra/terraform/secrets.tf")
+        deploy_agent = self.read("deploy/deploy-gcp.sh")
+        deploy_portal = self.read("deploy/deploy-portal.sh")
+
+        self.assertIn('GEMINI_API_BACKEND                   = "VERTEX_AI"', locals_tf)
+        self.assertNotIn("GOOGLE_API_KEY", locals_tf)
+        self.assertNotIn("GOOGLE_API_KEY", agent)
+        self.assertNotIn("GOOGLE_API_KEY", portal)
+        self.assertNotIn("GOOGLE_API_KEY", converter)
+        self.assertIn("agent_aiplatform_user", iam)
+        self.assertIn("backoffice_aiplatform_user", iam)
+        self.assertIn("aiplatform.googleapis.com", locals_tf)
+        self.assertIn('resource "google_secret_manager_secret" "google_api_key"', secrets)
+        self.assertNotIn("GOOGLE_API_KEY=", deploy_agent)
+        self.assertNotIn("GOOGLE_API_KEY=", deploy_portal.split("--set-env-vars", 1)[-1])
+        self.assertIn("deploy/lib/vertex-revision-contract.sh", deploy_agent)
+        self.assertIn("unmount_developer_api_key_secrets", deploy_agent)
+        self.assertIn("assert_bu_vertex_revision", deploy_agent)
+        self.assertIn("assert_bu_agent_knowledge_runtime", deploy_agent)
+        self.assertIn("preserve_live_agent_knowledge_env", deploy_agent)
+        self.assertIn("deploy_cloud_run_preserving_runtime", deploy_agent)
+        self.assertIn("VERTEX_AI_PDF_LOCATION", portal)
+        self.assertIn("unapproved_vertex_location_placeholder", locals_tf)
+        self.assertIn(
+            'unapproved_vertex_location_placeholder = "global"', locals_tf
+        )
+        self.assertNotIn(
+            "var.vertex_ai_project != \"\" ? var.vertex_ai_project : var.project_id",
+            locals_tf,
+        )
+        self.assertIn("vertex_ai_project_is_explicit", locals_tf)
+        self.assertIn("Do not infer it from project_id", locals_tf)
+        self.assertIn("vertex_pdf_in_play", locals_tf)
+        self.assertIn('P0 placeholder \\"global\\" is rejected', locals_tf)
+        image_policy = locals_tf.split('resource "terraform_data" "image_policy"', 1)[1]
+        self.assertIn("vertex_pdf_in_play", image_policy)
+        self.assertNotIn("portal_pdf_converter_engine", image_policy)
+        variables = self.read("infra/terraform/variables.tf")
+        self.assertIn(
+            'lower(trimspace(var.vertex_ai_chat_location)) != "global"',
+            variables,
+        )
+        self.assertIn(
+            'lower(trimspace(var.vertex_ai_embedding_location)) != "global"',
+            variables,
+        )
+        self.assertIn(
+            'lower(trimspace(var.vertex_ai_pdf_location)) != "global"',
+            variables,
+        )
+        self.assertNotRegex(
+            variables,
+            r'variable "vertex_ai_chat_location"[\s\S]*?default\s+=\s+"global"',
+        )
+        self.assertIn("deploy/lib/vertex-revision-contract.sh", deploy_portal)
+        self.assertIn("unmount_developer_api_key_secrets", deploy_portal)
+        self.assertIn("assert_bu_vertex_revision", deploy_portal)
+        self.assertIn("deploy_remove_developer_api_key_secrets_args", deploy_portal)
+        self.assertIn(
+            'KNOWLEDGE_PORTAL_GEMINI_FILE_SEARCH_SYNC_ENABLED=false',
+            deploy_portal,
+        )
+        self.assertIn(
+            "KNOWLEDGE_PORTAL_REQUIRE_FILE_SEARCH_PARITY=false",
+            deploy_portal,
+        )
+        deploy_backoffice = self.read("deploy/deploy-backoffice.sh")
+        self.assertIn('GEMINI_API_BACKEND="VERTEX_AI"', deploy_backoffice)
+        self.assertIn("unmount_developer_api_key_secrets", deploy_backoffice)
+        self.assertIn("assert_bu_vertex_revision", deploy_backoffice)
+        self.assertGreaterEqual(deploy_backoffice.count("assert_bu_vertex_revision"), 4)
+        source_wiring = self.read("deploy/lib/source-api-wiring.sh")
+        self.assertIn("deploy_remove_developer_api_key_secrets_args", source_wiring)
 
 
 if __name__ == "__main__":

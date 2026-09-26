@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 import logging
 import math
@@ -9,16 +11,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
 
-from langchain.embeddings import init_embeddings
-
 from knowledge_core.contextual_representation import effective_retrieval_text
 
 from .documents import DocumentChunk
 from .knowledge_eligibility import is_chunk_generation_eligible
 from .retrieval_acl import is_chunk_visible_to_groups
+from .retrieval_embeddings import embedding_index_mismatch_error, index_embedding_compatible
 
 logger = logging.getLogger(__name__)
-
 TOKEN_PATTERN = re.compile(r"[a-zA-Z0-9_./:\\-]+|[\u3400-\u9fff]+")
 
 
@@ -139,21 +139,6 @@ class SearchResult:
     final_rank: int | None = None
 
 
-def _normalize_embedding_model_id(model_id: str) -> str:
-    """Compare embedding ids with or without provider prefix."""
-
-    normalized = model_id.strip()
-    if ":" in normalized:
-        return normalized.split(":", 1)[1].strip()
-    return normalized
-
-
-def _embedding_models_compatible(left: str, right: str) -> bool:
-    if left == right:
-        return True
-    return _normalize_embedding_model_id(left) == _normalize_embedding_model_id(right)
-
-
 class HybridIndex:
     def __init__(
         self,
@@ -171,7 +156,13 @@ class HybridIndex:
     ) -> None:
         self.chunks = chunks
         self.embedding_model_name = embedding_model
-        self.embedding_client = init_embeddings(embedding_model) if embedding_model else None
+        from .gemini_clients import build_embeddings, current_embedding_provenance
+
+        self.embedding_client = build_embeddings(embedding_model) if embedding_model else None
+        self.embedding_provenance = current_embedding_provenance(
+            embedding_model,
+            chunks=chunks,
+        )
         self.tokenized_documents = [tokenize(sparse_index_text(chunk)) for chunk in chunks]
         self.last_search_timings_ms: dict[str, float] = {}
         self.fusion_mode = (fusion_mode or "RRF").strip().upper()
@@ -209,19 +200,14 @@ class HybridIndex:
         index_path: Path,
         embedding_model: str | None = None,
         **fusion_kwargs: object,
-    ) -> "HybridIndex":
+    ) -> HybridIndex:
         value = json.loads(index_path.read_text(encoding="utf-8"))
         chunks = [DocumentChunk.from_dict(item) for item in value["chunks"]]
         indexed_model = value.get("embeddingModel")
-        if (
-            indexed_model
-            and embedding_model
-            and not _embedding_models_compatible(indexed_model, embedding_model)
-        ):
-            raise ValueError(
-                "Configured embedding model does not match the built index. Run rag-index again."
-            )
-        # Prefer a provider-prefixed id so init_embeddings can resolve the client.
+        if not index_embedding_compatible(value, embedding_model):
+            raise embedding_index_mismatch_error(value, embedding_model)
+        # Prefer a provider-prefixed id so the explicit Gemini embedding factory
+        # can resolve the client.
         runtime_model = None
         if indexed_model:
             if embedding_model and ":" in embedding_model:
@@ -240,6 +226,13 @@ class HybridIndex:
             for chunk in self.chunks
             if chunk.contextualization_version
         }
+        from .gemini_clients import current_embedding_provenance
+
+        provenance = current_embedding_provenance(
+            self.embedding_model_name,
+            chunks=self.chunks,
+        )
+        self.embedding_provenance = provenance
         payload = {
             "version": 2 if has_contextual else 1,
             "indexSchemaVersion": 2 if has_contextual else 1,
@@ -247,6 +240,7 @@ class HybridIndex:
                 next(iter(contextual_versions)) if len(contextual_versions) == 1 else None
             ),
             "embeddingModel": self.embedding_model_name,
+            **provenance.to_index_fields(),
             "chunks": [chunk.to_dict() for chunk in self.chunks],
         }
         index_path.write_text(
@@ -257,6 +251,8 @@ class HybridIndex:
     def add_embeddings(self, *, only_missing: bool = False) -> None:
         if not self.embedding_client:
             return
+        from .retrieval_embeddings import embed_documents_batch
+
         if only_missing:
             pending = [
                 (index, chunk)
@@ -266,14 +262,16 @@ class HybridIndex:
             if not pending:
                 self.has_vectors = any(bool(chunk.vector) for chunk in self.chunks)
                 return
-            vectors = self.embedding_client.embed_documents(
-                [effective_retrieval_text(chunk) for _, chunk in pending]
+            vectors = embed_documents_batch(
+                self.embedding_client,
+                [effective_retrieval_text(chunk) for _, chunk in pending],
             )
             for (index, _), vector in zip(pending, vectors, strict=True):
                 self.chunks[index].vector = vector
         else:
-            vectors = self.embedding_client.embed_documents(
-                [effective_retrieval_text(chunk) for chunk in self.chunks]
+            vectors = embed_documents_batch(
+                self.embedding_client,
+                [effective_retrieval_text(chunk) for chunk in self.chunks],
             )
             for chunk, vector in zip(self.chunks, vectors, strict=True):
                 chunk.vector = vector

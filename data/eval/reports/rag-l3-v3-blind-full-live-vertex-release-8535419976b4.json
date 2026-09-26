@@ -1,0 +1,548 @@
+{
+  "summary": {
+    "caseCount": 156.0,
+    "evidenceLabeledCaseCount": 116.0,
+    "recallAt4": 0.6955128205128205,
+    "precisionAt4": 0.6997863247863249,
+    "evidenceRecallAt4": 0.8275862068965517,
+    "evidencePrecisionAt4": 0.8275862068965517,
+    "recallAt5": 0.6955128205128205,
+    "recallAt10": 0.6955128205128205,
+    "recallAt20": 0.6955128205128205,
+    "mrrAt10": 0.7051282051282052,
+    "ndcgAt10": 0.6971741177400292,
+    "hitAt1": 0.7051282051282052,
+    "hitAt3": 0.7051282051282052,
+    "hardNegativeAccuracy": 0.9375,
+    "hardNegativeLabeledCaseCount": 16.0,
+    "aclLeakageCount": 0.0,
+    "forbiddenDocumentHitCount": 0.0,
+    "noAnswer": {
+      "precision": 0.9090909090909091,
+      "recall": 1.0,
+      "f1": 0.9523809523809523,
+      "truePositive": 40.0,
+      "falsePositive": 4.0,
+      "falseNegative": 0.0
+    },
+    "inputCaseCount": 156.0,
+    "excludedMultiTurnCaseCount": 0.0,
+    "multiTurnCaseCount": 20.0,
+    "aclCoverageMode": "CORPUS_HAS_NO_GROUP_GATED_DOCUMENTS",
+    "layer": 3,
+    "liveModel": true,
+    "evidenceTokenBudgets": {
+      "cliOverride": null,
+      "configuredTokenBudget": 1200,
+      "effectiveTokenBudget": 1200,
+      "queryTier": null,
+      "trivial": 500,
+      "standard": 800,
+      "hard": 1200,
+      "usesQueryTier": true
+    },
+    "documentHitAt4": 0.9482758620689655,
+    "documentCandidateHitAt24": 0.9655172413793104,
+    "candidateEvidenceRecallAt24": 0.9655172413793104,
+    "candidateRecallAt24": 0.9655172413793104,
+    "rerankerHeadroomPp": 13.793103448275868,
+    "latencyMsP50": 2481.3889375072904,
+    "latencyMsP95": 4895.681378545123,
+    "latencyMsMean": 2782.1300264394945,
+    "fastPathRate": 0.08974358974358974,
+    "avgFacetCount": 0.07692307692307693,
+    "avgBatchEmbeddingMs": 1357.69,
+    "embeddingMsP50": 529.2,
+    "embeddingMsP95": 1123.0,
+    "sparseMsP50": 4.1,
+    "sparseMsP95": 8.79,
+    "denseMsP50": 24.85,
+    "denseMsP95": 51.275,
+    "fusionMsP50": 0.3,
+    "fusionMsP95": 0.7,
+    "searchTotalMsP50": 540.5,
+    "searchTotalMsP95": 1163.5600000000002,
+    "batchEmbeddingMsP50": 1331.3000000000002,
+    "batchEmbeddingMsP95": 1490.07,
+    "facetGroupCounts": {
+      "facet0": 150.0,
+      "facet1": 0.0,
+      "facet2plus": 6.0
+    },
+    "facet0SearchTotalMsP50": 545.0,
+    "facet0SearchTotalMsP95": 1164.8799999999999,
+    "facet2plusSearchTotalMsP50": 51.099999999999994,
+    "facet2plusSearchTotalMsP95": 539.6,
+    "approxCacheHitRate": 0.08974358974358974,
+    "answerAccuracy": 0.9294871794871795,
+    "singleTurnAnswerAccuracy": 0.9338235294117647,
+    "multiTurnAnswerAccuracy": 0.9,
+    "singleTurnCaseCount": 136.0,
+    "multiTurnScoredCaseCount": 20.0,
+    "citationPrecision": 0.9561965811965811,
+    "citationRecall": 0.9583333333333334,
+    "groundedness": 1.0,
+    "evidenceDropStages": {
+      "GENERATION_IGNORED": 14.0,
+      "CANDIDATE_MISS": 4.0,
+      "SELECTION_OR_PACKING_DROP": 4.0
+    },
+    "answerEvidenceRecallAt4": 0.9294871794871795,
+    "retrievalEvidenceRecallAt4": 0.9310344827586207,
+    "retrievalMsP50": 519.3,
+    "retrievalMsP95": 1328.84,
+    "relevanceMsP50": 0.6,
+    "relevanceMsP95": 1809.15,
+    "generateMsP50": 1808.8000000000002,
+    "generateMsP95": 3507.85,
+    "totalMsP50": 2403.5,
+    "totalMsP95": 4667.325,
+    "llmCallsPerQuery": 1.455128205128205,
+    "inputTokensPerQuery": 4130.858974358975,
+    "outputTokensPerQuery": 300.9871794871795,
+    "costUsdPerQuery": 0.0014841955128205128,
+    "usageSourceCounts": {
+      "PROVIDER": 156
+    },
+    "queryTierCounts": {
+      "trivial": 67.0,
+      "standard": 37.0,
+      "hard": 52.0,
+      "unknown": 0.0
+    },
+    "failureTaxonomy": {
+      "ANSWER_OMISSION": 6,
+      "NO_ANSWER_FALSE_POSITIVE": 4,
+      "BAD_CITATION": 3,
+      "EVIDENCE_NOT_PASSED_TO_GENERATOR": 1
+    },
+    "failureCount": 14,
+    "split": "test",
+    "evalSet": "data/eval/retrieval_eval_v3_blind.json",
+    "provenance": {
+      "datasetPath": "data/eval/retrieval_eval_v3_blind.json",
+      "datasetHash": "3969f9ac3295477113ab33850a989cf768ecbe53bf1c0d0d36e562d7fd06f448",
+      "commitSha": "eba3c8eb96026dccd891868bcbbc0733a4259dd1",
+      "freezeVersion": 5,
+      "model": "google_genai:gemini-3.1-flash-lite",
+      "agentModel": "google_genai:gemini-3.8-flash",
+      "answerModel": "google_genai:gemini-3.1-flash-lite",
+      "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+      "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+      "embeddingModel": "google_genai:gemini-embedding-2",
+      "liveModel": true,
+      "releaseId": "release-8535419976b4",
+      "region": null,
+      "knowledgeReleaseTenantId": "default",
+      "startedAt": null,
+      "completedAt": "2026-09-24T10:34:14.577743+00:00",
+      "geminiBackend": "VERTEX_AI",
+      "vertexProject": "itr-aimasteryhub-lab",
+      "vertexChatLocation": "us",
+      "vertexEmbeddingLocation": "us"
+    }
+  },
+  "provenance": {
+    "datasetPath": "data/eval/retrieval_eval_v3_blind.json",
+    "datasetHash": "3969f9ac3295477113ab33850a989cf768ecbe53bf1c0d0d36e562d7fd06f448",
+    "commitSha": "eba3c8eb96026dccd891868bcbbc0733a4259dd1",
+    "freezeVersion": 5,
+    "model": "google_genai:gemini-3.1-flash-lite",
+    "agentModel": "google_genai:gemini-3.8-flash",
+    "answerModel": "google_genai:gemini-3.1-flash-lite",
+    "relevanceModel": "google_genai:gemini-3.1-flash-lite",
+    "rewriteModel": "google_genai:gemini-3.1-flash-lite",
+    "embeddingModel": "google_genai:gemini-embedding-2",
+    "liveModel": true,
+    "releaseId": "release-8535419976b4",
+    "region": null,
+    "knowledgeReleaseTenantId": "default",
+    "startedAt": null,
+    "completedAt": "2026-09-24T10:34:14.577743+00:00",
+    "geminiBackend": "VERTEX_AI",
+    "vertexProject": "itr-aimasteryhub-lab",
+    "vertexChatLocation": "us",
+    "vertexEmbeddingLocation": "us"
+  },
+  "failures": [
+    {
+      "caseId": "v3-blind-ans-07",
+      "query": "VPN 密碼到期了要怎麼處理？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "登入 FortiClient 出現錯訊",
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼到期",
+          "改密碼"
+        ]
+      ],
+      "answer": "若您使用一般電腦，請插上實體網路線，使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]。\n\n若您使用內網型筆電，請直接變更密碼，請勿前往金控入口網同步開機密碼 (AD) [S2]。",
+      "citations": [
+        "登入 FortiClient 出現錯訊|chk-doc-forticlient-c9bc5032a5-951576ca51bccbc3",
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus VPN password expired; how-to steps live in FortiClient companion | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='若您使用一般電腦，請插上實體網路線，使用 **Ctrl + Alt + Delete** 變更公司電腦開機密碼 [S1]。\\n\\n若您使用內網型筆電，請直接變更密碼，請勿前往金控入口網同步開機密碼 (AD) [S2]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-14",
+      "query": "要申請 VPN 國外短暫連線怎麼做？",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [],
+      "selectedEvidenceTitles": [],
+      "expectedEvidence": [
+        [
+          "國外",
+          "申請"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": 0.0,
+      "terminalReason": "UNGROUNDED_ANSWER",
+      "notes": "Corpus-grounded answerable for VPN國外連線短暫申請 | evidenceDrop=CANDIDATE_MISS facts=['CANDIDATE_MISS'] | answer_preview=''"
+    },
+    {
+      "caseId": "v3-blind-ans-20",
+      "query": "郵件變成亂碼怎麼處理？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "郵件為亂碼"
+      ],
+      "selectedEvidenceTitles": [
+        "郵件為亂碼"
+      ],
+      "expectedEvidence": [
+        [
+          "亂碼",
+          "郵件"
+        ]
+      ],
+      "answer": "請點開發出的電郵，在「動作 (Actions)」欄，按以下步驟嘗試排除：\n1. 選取「繁體中文 (Big 5)」。\n2. 若現有設定已是「繁體中文 (Big 5)」，請嘗試轉為「Unicode (UTF-8)」。 [S1]",
+      "citations": [
+        "郵件為亂碼|chk-doc--187248458a-02d2219054139d1c"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for 郵件為亂碼 | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='請點開發出的電郵，在「動作 (Actions)」欄，按以下步驟嘗試排除：\\n1. 選取「繁體中文 (Big 5)」。\\n2. 若現有設定已是「繁體中文 (Big 5)」，請嘗試轉為「Unicode (UTF-8)」。 [S1]'"
+    },
+    {
+      "caseId": "v3-blind-ans-38",
+      "query": "VPN 密碼不對且不要保存密碼是什麼意思？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN常見Q&A問答"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN常見Q&A問答"
+      ],
+      "expectedEvidence": [
+        [
+          "密碼不對",
+          "不要保存密碼"
+        ]
+      ],
+      "answer": "這是指在連線 VPN 時，若出現「Permission denied (-455)」錯誤，代表系統偵測到密碼輸入錯誤。建議您在輸入密碼時，不要勾選或使用「保存密碼」的功能，以確保每次連線時皆輸入正確且最新的密碼 [S1]。",
+      "citations": [
+        "VPN常見Q&A問答|chk-doc-vpn-q-a-df506ab36d-daafaa01fdbc1372"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Corpus-grounded answerable for VPN常見Q&A問答 | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='這是指在連線 VPN 時，若出現「Permission denied (-455)」錯誤，代表系統偵測到密碼輸入錯誤。建議您在輸入密碼時，不要勾選或使用「保存密碼」的功能，以確保每次連線時皆輸入正確且最新的密碼 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-ans-45",
+      "query": "國外短期出差要申請哪種 VPN？",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [],
+      "selectedEvidenceTitles": [],
+      "expectedEvidence": [
+        [
+          "國外",
+          "短暫"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": 0.0,
+      "terminalReason": "NO_RELEVANT_EVIDENCE",
+      "notes": "Corpus-grounded answerable for VPN國外連線短暫申請 | evidenceDrop=CANDIDATE_MISS facts=['CANDIDATE_MISS'] | answer_preview=''"
+    },
+    {
+      "caseId": "v3-blind-hn-02",
+      "query": "員工入口網密碼要去哪改？不要給我 AD 解鎖流程",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "忘記密碼"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼與 AD 並非連動，請至國泰員工入口網站，點選「忘記密碼」進行修改 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|chk-doc-cteam-e-8813813da1-8e46657baf64cbc5"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Hard-negative: must not cite AD FAQ; 金控入口網密碼變更方式 is an acceptable related sibling when explaining portal↔金控 linkage | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='國泰員工入口網的密碼與 AD 並非連動，請至國泰員工入口網站，點選「忘記密碼」進行修改 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-05",
+      "query": "那密碼不是 AD 的話要去哪改？",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰員工入口網、CTeam密碼、國泰e點名"
+      ],
+      "expectedEvidence": [
+        [
+          "國泰金控網站帳密",
+          "忘記密碼"
+        ]
+      ],
+      "answer": "國泰員工入口網的密碼與 AD 並非連動，若需修改密碼，請至國泰員工入口網站，點選「忘記密碼」進行變更 [S1]。",
+      "citations": [
+        "國泰員工入口網、CTeam密碼、國泰e點名|chk-doc-cteam-e-8813813da1-8e46657baf64cbc5"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=員工入口網登不進去 | multiTurn priorTurn='員工入口網登不進去' | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='國泰員工入口網的密碼與 AD 並非連動，若需修改密碼，請至國泰員工入口網站，點選「忘記密碼」進行變更 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-conv-12",
+      "query": "那國外短期怎麼申請？",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [],
+      "selectedEvidenceTitles": [],
+      "expectedEvidence": [
+        [
+          "國外"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": 0.0,
+      "terminalReason": "NO_RELEVANT_EVIDENCE",
+      "notes": "Multi-turn follow-up; priorTurn=下週要出國仍要用 VPN | multiTurn priorTurn='下週要出國仍要用 VPN' | evidenceDrop=SELECTION_OR_PACKING_DROP facts=['SELECTION_OR_PACKING_DROP'] | answer_preview=''"
+    },
+    {
+      "caseId": "v3-blind-conv-18",
+      "query": "那 AP 登不進去找誰？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "國泰期貨艾揚登入出現-200"
+      ],
+      "selectedEvidenceTitles": [
+        "國泰期貨艾揚登入出現-200"
+      ],
+      "expectedEvidence": [
+        [
+          "樹精靈"
+        ]
+      ],
+      "answer": "目前知識庫未提供「樹精靈AP」或「國泰期貨(艾揚)」的具體支援窗口名稱或聯絡人資訊。若您遇到國泰期貨(艾揚)登入異常，請先依據系統提示進行排除，若無法排除，可將問題轉寄給 AP 單位 [S1]。",
+      "citations": [
+        "國泰期貨艾揚登入出現-200|chk-doc-200-74ca3f4641-a6b3835a2227f14b"
+      ],
+      "citationPrecision": 0.0,
+      "terminalReason": null,
+      "notes": "Multi-turn follow-up; priorTurn=樹精靈打不開 | multiTurn priorTurn='樹精靈打不開' | evidenceDrop=SELECTION_OR_PACKING_DROP facts=['SELECTION_OR_PACKING_DROP'] | answer_preview='目前知識庫未提供「樹精靈AP」或「國泰期貨(艾揚)」的具體支援窗口名稱或聯絡人資訊。若您遇到國泰期貨(艾揚)登入異常，請先依據系統提示進行排除，若無法排除，可將問題轉寄給 AP 單位 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-alias-03",
+      "query": "跳板機 VPN 掛掉",
+      "failureCategory": "ANSWER_OMISSION",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "VPN 跳板機連線異常"
+      ],
+      "selectedEvidenceTitles": [
+        "VPN 跳板機連線異常"
+      ],
+      "expectedEvidence": [
+        [
+          "已進入跳板機",
+          "未授權該使用者帳戶遠端登入"
+        ]
+      ],
+      "answer": "目前知識庫針對「跳板機 VPN 掛掉」未提供統一的排查步驟，請依據您遇到的具體症狀參考以下處理方式：若您已登入 FortiClient 但無法進入跳板機，請轉派工單由同仁協助 [S1]。若您已進入跳板機但無法連回公司電腦，請先確認公司桌機是否有開啟「允許遠端連線到此電腦」，若已開啟仍無法連線，請轉派工單由同仁協助 [S1]。",
+      "citations": [
+        "VPN 跳板機連線異常|chk-doc-vpn-jumpbox-connection-e-adc7a424ee-7c2ee2b9293124b4"
+      ],
+      "citationPrecision": 1.0,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | evidenceDrop=GENERATION_IGNORED facts=['GENERATION_IGNORED'] | answer_preview='目前知識庫針對「跳板機 VPN 掛掉」未提供統一的排查步驟，請依據您遇到的具體症狀參考以下處理方式：若您已登入 FortiClient 但無法進入跳板機，請轉派工單由同仁協助 [S1]。若您已進入跳板機但無法連回公司電腦，請先確認公司桌機是否有開啟「允許遠端連線到此電腦」，若已開啟仍無法連線，請轉派工單由同仁協助 [S1]。'"
+    },
+    {
+      "caseId": "v3-blind-short-02",
+      "query": "OTP綁定",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "selectedEvidenceTitles": [
+        "國金 CRM OTP 綁訂操作",
+        "外網 CRM 登入連線設定方式"
+      ],
+      "expectedEvidence": [
+        [
+          "OTP"
+        ]
+      ],
+      "answer": "由於您未指定要綁定的系統，請參考以下兩種常見系統的 OTP 綁定方式：若您是指「國證複委託 CRM 系統」，請使用 Google Authenticator；若您是指「外網 CRM」，則需綁定 FortiToken。請確認您要綁定的系統名稱，若非上述兩者，請補充說明。 [S1][S2]\n\n### 國證複委託 CRM 系統綁定方式\n1. 下載 **Google Authenticator** App。\n2. 登入 [https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp](https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp)，首次登入時 OTP Code 欄位請隨便填寫一碼。\n3. 系統跳出「首次登入需使用 OTP Key」視窗後，使用 **Google Authenticator** 掃描 QR Code 或複製 OTP Key。\n4. 在 **Google Authenticator** 中點選「輸入設定金鑰」，帳戶名稱輸入「國金CRM」，密鑰貼上剛剛複製的代碼，類型選「根據時間」並新增。\n5. 之後登入時，於 OTP Code 欄位輸入 **Google Authenticator** 產生的 6 位數驗證碼即可。 [S1]\n\n### 外網 CRM 綁定方式\n1. 下載 **FortiToken** App。\n2. 使用其他設備登入自助綁定頁面：[https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/](https://nh-fac.cathaysec.com.tw/portal/selfservice/Token_Registry/)，輸入 AD 帳密。\n3. 依網頁圖示操作，使用手機 **FortiToken** App 掃描網頁產生的 QR Code。\n4. 於 **FortiAuthenticator Portal** 設定：Delivery options 選 `FortiToken`、FortiToken type 選 `Mobile`、Activation delivery method 選 `Scan QR code` 並點選 `OK`。\n5. 使用 **FortiToken** App 掃描或手動輸入啟用碼，手機顯示 6 位數動態 OTP 即完成。 [S2]",
+      "citations": [
+        "國金 CRM OTP 綁訂操作|chk-doc-crm-otp-1965ff137d-c043d571e9442471",
+        "外網 CRM 登入連線設定方式|chk-doc-crm-fa49deb255-c41b5a9ed263831f"
+      ],
+      "citationPrecision": 0.5,
+      "terminalReason": null,
+      "notes": "Typo/alias/short query variant | evidenceDrop=NONE facts=['NONE'] | answer_preview='由於您未指定要綁定的系統，請參考以下兩種常見系統的 OTP 綁定方式：若您是指「國證複委託 CRM 系統」，請使用 Google Authenticator；若您是指「外網 CRM」，則需綁定 FortiToken。請確認您要綁定的系統名稱，若非上述兩者，請補充說明。 [S1][S2]\\n\\n### 國證複委託 CRM 系統綁定方式\\n1. 下載 **Google Authenticator** App。\\n2. 登入 [https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp](https://global-finance.cathaysec.com.tw/crm/rwdLogon.jsp)，首次登入時 OTP Code 欄位請隨便填寫一碼。\\n3. 系統跳出「首次登入需使用 OTP Key」視窗後，使用 **Google Authentic'"
+    },
+    {
+      "caseId": "v3-blind-short-06",
+      "query": "VPN國外",
+      "failureCategory": "NO_ANSWER_FALSE_POSITIVE",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 0.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [],
+      "selectedEvidenceTitles": [],
+      "expectedEvidence": [
+        [
+          "雙方主管",
+          "網路組"
+        ]
+      ],
+      "answer": "",
+      "citations": [],
+      "citationPrecision": 0.0,
+      "terminalReason": "UNGROUNDED_ANSWER",
+      "notes": "Typo/alias/short query variant | evidenceDrop=CANDIDATE_MISS facts=['CANDIDATE_MISS'] | answer_preview=''"
+    },
+    {
+      "caseId": "v3-blind-ver-04",
+      "query": "樹精靈無法登入跟超音樹閃退是不是同一份？",
+      "failureCategory": "BAD_CITATION",
+      "evidenceRecallAt4": 1.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 1.0,
+      "retrievalEvidenceRecall": 1.0,
+      "retrievedTop4Titles": [
+        "樹精靈AP無法登入",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應",
+        "超音樹-程式閃退問題"
+      ],
+      "selectedEvidenceTitles": [
+        "樹精靈AP無法登入",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應",
+        "超音樹-程式閃退問題"
+      ],
+      "expectedEvidence": [
+        [
+          "新版簽章元件",
+          "國泰期貨"
+        ]
+      ],
+      "answer": "不是同一份。樹精靈無法登入與超音樹閃退分別屬於不同的系統異常，處理方式如下：\n\n樹精靈無法登入：\n若為網路錯誤 12029，請確認網路環境（重啟數據機或改用手機熱點）並調整控制台的 TLS 安全協定與停用 Proxy [S1]。若為 WEB 版登入無反應，請於電腦右下角將安控元件「離開」後，重新開啟網頁並安裝元件 [S2]。\n\n超音樹閃退：\n此問題需至國泰期貨官網安裝「新版簽章元件」以排除 [S3]。",
+      "citations": [
+        "樹精靈AP無法登入|chk-doc-ap-1f8ba2b78c-28fad8992f2b9d0f",
+        "樹精靈WEB-登入異常.無法登入.登入無反映.畫面無反應|chk-doc-2433239567cf-a9585c7539a96cc0",
+        "超音樹-程式閃退問題|chk-doc--7424f76326-1444d2324f79f897"
+      ],
+      "citationPrecision": 0.6666666666666666,
+      "terminalReason": null,
+      "notes": "Adjacent product docs discrimination. | evidenceDrop=NONE facts=['NONE'] | answer_preview='不是同一份。樹精靈無法登入與超音樹閃退分別屬於不同的系統異常，處理方式如下：\\n\\n樹精靈無法登入：\\n若為網路錯誤 12029，請確認網路環境（重啟數據機或改用手機熱點）並調整控制台的 TLS 安全協定與停用 Proxy [S1]。若為 WEB 版登入無反應，請於電腦右下角將安控元件「離開」後，重新開啟網頁並安裝元件 [S2]。\\n\\n超音樹閃退：\\n此問題需至國泰期貨官網安裝「新版簽章元件」以排除 [S3]。'"
+    },
+    {
+      "caseId": "v3-blind-neg-02",
+      "query": "為何不能把 AD 解鎖當成員工入口網改密碼？",
+      "failureCategory": "EVIDENCE_NOT_PASSED_TO_GENERATOR",
+      "evidenceRecallAt4": 0.0,
+      "candidateRecallAt24": 1.0,
+      "answerEvidenceRecall": 0.0,
+      "retrievalEvidenceRecall": 0.0,
+      "retrievedTop4Titles": [
+        "好麥系統－帳號鎖定與密碼解鎖",
+        "複委託 AS400－帳號鎖定與密碼解鎖／重置 FAQ"
+      ],
+      "selectedEvidenceTitles": [
+        "好麥系統－帳號鎖定與密碼解鎖",
+        "複委託 AS400－帳號鎖定與密碼解鎖／重置 FAQ"
+      ],
+      "expectedEvidence": [
+        [
+          "並非AD"
+        ]
+      ],
+      "answer": "好麥系統帳號不得套用 AD 自助解鎖流程 [S1]。各系統帳號鎖定與密碼重置皆有其專屬的處理規範與適用情境，不得混用 [S1][S2]。",
+      "citations": [
+        "好麥系統－帳號鎖定與密碼解鎖|chk-doc-0b3b82209273-bca543f3cafa8ba0",
+        "複委託 AS400－帳號鎖定與密碼解鎖／重置 FAQ|chk-doc-5799c2d299b5-e55faae68bf794de"
+      ],
+      "citationPrecision": 0.0,
+      "terminalReason": null,
+      "notes": "Negative constraint | evidenceDrop=SELECTION_OR_PACKING_DROP facts=['SELECTION_OR_PACKING_DROP'] | answer_preview='好麥系統帳號不得套用 AD 自助解鎖流程 [S1]。各系統帳號鎖定與密碼重置皆有其專屬的處理規範與適用情境，不得混用 [S1][S2]。'"
+    }
+  ]
+}

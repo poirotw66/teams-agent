@@ -77,6 +77,26 @@ def test_import_places_rendered_images_after_each_source_mapped_page() -> None:
     assert markdown.index("Second page instructions.") < markdown.index("p02.png")
 
 
+def test_import_records_gemini_backend_provenance() -> None:
+    result = PdfConversionResult(
+        markdown="# Guide\n",
+        page_count=1,
+        assets=(),
+        raw={
+            "conversion_mode": "converter",
+            "conversion_engine": "gemini_vision",
+            "conversion_gemini_backend": "VERTEX_AI",
+        },
+    )
+    imported = conversion_to_import_dict(
+        result,
+        filename="Guide.pdf",
+        owner_unit_id="IT Service Desk",
+    )
+    assert imported["conversion_engine"] == "gemini_vision"
+    assert imported["conversion_gemini_backend"] == "VERTEX_AI"
+
+
 def test_import_places_rendered_images_inside_page_heading_sections() -> None:
     result = PdfConversionResult(
         markdown="## Page 1\n\nFirst page.\n\n## Page 2\n\nSecond page.\n",

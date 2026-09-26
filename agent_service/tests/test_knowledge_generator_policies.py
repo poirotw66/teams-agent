@@ -10,6 +10,7 @@ from agent_service.knowledge_pipeline.generator import (
     should_retry_error_coverage,
     should_retry_false_none,
     should_retry_procedure_coverage,
+    should_retry_ticket_intake_coverage,
     should_retry_visual_evidence,
 )
 
@@ -51,6 +52,26 @@ def test_should_retry_procedure_and_visual_policies() -> None:
     assert should_keep_prior_after_visual_retry(
         context_procedure_steps=["restart_outlook", "qr_code_scan"],
         answer="完成。",
+    )
+
+
+def test_should_retry_ticket_intake_when_short_script_omits_fields() -> None:
+    assert should_retry_ticket_intake_coverage(
+        answerability="FULL",
+        resolved_issue_query="好麥系統解鎖",
+        context_ticket_fields=[
+            "requester_name",
+            "employee_id",
+            "haomai_account",
+            "unlock_layer",
+        ],
+        answer="目前好麥系統尚未提供自助解鎖功能，此問題需由資訊人員協助進行帳號解鎖。",
+    )
+    assert not should_retry_ticket_intake_coverage(
+        answerability="FULL",
+        resolved_issue_query="VPN 連不上",
+        context_ticket_fields=["requester_name", "employee_id"],
+        answer="請改連公司 Wi-Fi。",
     )
 
 

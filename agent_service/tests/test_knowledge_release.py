@@ -400,6 +400,70 @@ def test_gcs_resolver_loads_verified_local_mirror_without_download(
     assert resolved.release_dir == mirrored_root
 
 
+def test_follow_cloud_skips_stale_loaded_id_without_mirror(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    tenant_id = "tenant-a"
+    release_id = "release-cloud"
+    from agent_service.knowledge_release_cache import (
+        VERIFIED_MARKER_FILENAME,
+        tenant_release_cache_dir,
+    )
+
+    mirrored_root = tenant_release_cache_dir(cache_dir, tenant_id, release_id).parent
+    index_path = _write_release(
+        mirrored_root,
+        release_id,
+        vectors=[[0.1, 0.2]],
+        tenant_id=tenant_id,
+    )
+    release_dir = index_path.parents[1]
+    artifact = inspect_index_artifact(index_path)
+    (release_dir / VERIFIED_MARKER_FILENAME).write_text(
+        json.dumps(
+            {
+                "releaseId": release_id,
+                "verificationHash": artifact.sha256,
+                "artifactCount": 1,
+                "qaSnapshotComplete": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    status_path = mirrored_root.parent / "sync_status.json"
+    status_path.write_text(
+        json.dumps(
+            {
+                "cloudActiveReleaseId": release_id,
+                "mirroredReleaseId": release_id,
+                "loadedReleaseId": "release-000452d5a2af",
+                "selectionMode": "FOLLOW_CLOUD",
+                "syncState": "IN_SYNC",
+                "qaSnapshotComplete": True,
+                "artifactCount": 1,
+                "verificationHash": artifact.sha256,
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = _settings(
+        tmp_path,
+        mode="PORTAL",
+        bundled_exists=False,
+        require_manifest=True,
+        require_vectors=True,
+    )
+    object.__setattr__(settings, "knowledge_release_store_mode", "GCS")
+    object.__setattr__(settings, "knowledge_release_gcs_bucket", "knowledge-bucket")
+    object.__setattr__(settings, "knowledge_release_cache_dir", cache_dir)
+    object.__setattr__(settings, "knowledge_release_tenant_id", tenant_id)
+    object.__setattr__(settings, "knowledge_release_selection_mode", "FOLLOW_CLOUD")
+
+    resolved = resolve_knowledge_index(settings)
+
+    assert resolved.release_id == release_id
+    assert resolved.source == "gcs_mirror"
+
+
 def test_gcs_resolver_fail_closed_without_verified_mirror(tmp_path: Path) -> None:
     settings = _settings(tmp_path, mode="PORTAL", bundled_exists=True)
     object.__setattr__(settings, "knowledge_release_store_mode", "GCS")

@@ -176,7 +176,12 @@ def build_knowledge_service(
 
     if settings.knowledge_service_mode == "GEMINI_FILE_SEARCH":
         from .file_search_registry import FileSearchDocumentRegistry
+        from .gemini_backend import require_developer_api_for_file_search
         from .gemini_file_search import GeminiFileSearchKnowledgeService
+
+        require_developer_api_for_file_search(
+            feature="KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH"
+        )
 
         logger.warning(
             "KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH selected; this is a "

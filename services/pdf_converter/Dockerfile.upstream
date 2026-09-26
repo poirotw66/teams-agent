@@ -1,5 +1,5 @@
 # Full-capability image: build from poirotw66/pdf-to-markdown-converter.
-# Requires network at build time and GOOGLE_API_KEY at runtime.
+# Runtime auth follows GEMINI_API_BACKEND (Developer API key or Vertex ADC).
 ARG UPSTREAM_REF=5583699dd718fdacbfd5ca53845ef929e177aa98
 FROM python:3.11-slim
 ARG UPSTREAM_REF
@@ -24,10 +24,15 @@ RUN printf '%s' "${UPSTREAM_REF}" | grep -Eq '^[0-9a-f]{40}$' \
     && cp -a /src/. /app/ \
     && rm -rf /src
 
+COPY patches/gemini_backend_client.py /tmp/gemini_backend_client.py
+COPY scripts/apply_gemini_backend_patch.py /tmp/apply_gemini_backend_patch.py
+RUN python3 /tmp/apply_gemini_backend_patch.py /app
+
 RUN uv sync --frozen || uv sync
 
 ENV PORT=8080
 ENV API_HOST=0.0.0.0
 ENV API_PORT=8080
+ENV GEMINI_MODEL=gemini-3.8-flash
 EXPOSE 8080
 CMD ["sh", "-c", "uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}"]

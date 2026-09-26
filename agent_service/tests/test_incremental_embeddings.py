@@ -49,6 +49,8 @@ def test_apply_reused_embeddings_prefers_content_hash() -> None:
     )
     previous_payload: dict[str, Any] = {
         "embeddingModel": "google_genai:gemini-embedding-2",
+        "embeddingBackend": "DEVELOPER_API",
+        "embeddingDimensions": 3,
         "chunks": [
             {
                 "chunk_id": "chk-old-1",
@@ -87,6 +89,8 @@ def test_apply_reused_embeddings_falls_back_to_chunk_id() -> None:
     )
     previous_payload = {
         "embeddingModel": "gemini-embedding-2",
+        "embeddingBackend": "DEVELOPER_API",
+        "embeddingDimensions": 2,
         "chunks": [
             {"chunk_id": "chk-stable", "content_hash": "", "vector": [1.0, 2.0]},
         ],
@@ -124,7 +128,7 @@ def test_apply_reused_embeddings_skips_on_model_mismatch() -> None:
         new_fingerprint=fingerprint,
     )
     assert stats.force_full
-    assert stats.skipped_reason == "embedding_model_mismatch"
+    assert stats.skipped_reason == "embedding_provenance_mismatch"
     assert chunks[0].vector is None
 
 
@@ -137,6 +141,8 @@ def test_legacy_fingerprint_still_allows_reuse() -> None:
     legacy = "chunk=800;overlap=100;embedding=google_genai:gemini-embedding-2"
     previous_payload = {
         "embeddingModel": "google_genai:gemini-embedding-2",
+        "embeddingBackend": "DEVELOPER_API",
+        "embeddingDimensions": 1,
         "chunks": [
             {"chunk_id": "chk-1", "content_hash": "hash-a", "vector": [9.0]},
         ],
@@ -151,6 +157,45 @@ def test_legacy_fingerprint_still_allows_reuse() -> None:
     )
     assert stats.reused == 1
     assert chunks[0].vector == [9.0]
+
+
+def test_fingerprint_includes_backend_and_location() -> None:
+    fingerprint = index_setting_fingerprint(
+        chunk_size=800,
+        chunk_overlap=100,
+        embedding_model="google_genai:gemini-embedding-2",
+        embedding_backend="VERTEX_AI",
+        embedding_vertex_location="us",
+        embedding_dimensions=768,
+    )
+    assert "backend=VERTEX_AI" in fingerprint
+    assert "location=us" in fingerprint
+    assert "dimensions=768" in fingerprint
+
+
+def test_apply_reused_embeddings_skips_when_provenance_missing() -> None:
+    fingerprint = index_setting_fingerprint(
+        chunk_size=800,
+        chunk_overlap=100,
+        embedding_model="google_genai:gemini-embedding-2",
+    )
+    previous_payload = {
+        "embeddingModel": "google_genai:gemini-embedding-2",
+        "chunks": [
+            {"chunk_id": "chk-1", "content_hash": "hash-a", "vector": [1.0, 2.0]},
+        ],
+    }
+    chunks = [_chunk(chunk_id="chk-1", content_hash="hash-a")]
+    stats = apply_reused_embeddings(
+        chunks,
+        previous_payload=previous_payload,
+        selected_embedding="google_genai:gemini-embedding-2",
+        previous_release=_release(fingerprint=fingerprint),
+        new_fingerprint=fingerprint,
+    )
+    assert stats.force_full
+    assert stats.skipped_reason == "embedding_provenance_mismatch"
+    assert chunks[0].vector is None
 
 
 def test_hybrid_index_add_embeddings_only_missing() -> None:

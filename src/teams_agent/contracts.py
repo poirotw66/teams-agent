@@ -169,6 +169,7 @@ class Citation:
     sourceRefId: str | None = None
     releaseId: str | None = None
     originalUrl: str | None = None
+    originalAssetAvailable: bool | None = None
 
 
 @dataclass(frozen=True)

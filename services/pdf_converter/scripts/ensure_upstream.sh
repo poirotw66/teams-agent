@@ -40,6 +40,11 @@ fi
 [[ -f "${UPSTREAM_DIR}/pyproject.toml" ]] || fail "upstream 缺少 pyproject.toml"
 [[ -d "${UPSTREAM_DIR}/app" ]] || fail "upstream 缺少 app/"
 
+PATCH_SCRIPT="${SCRIPT_DIR}/apply_gemini_backend_patch.py"
+[[ -f "${PATCH_SCRIPT}" ]] || fail "缺少 Gemini backend patch：${PATCH_SCRIPT}"
+log "套用 GEMINI_API_BACKEND 雙模式補丁…"
+python3 "${PATCH_SCRIPT}" "${UPSTREAM_DIR}"
+
 log "uv sync upstream 依賴…"
 (
   cd "${UPSTREAM_DIR}"

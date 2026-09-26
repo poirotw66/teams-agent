@@ -68,6 +68,34 @@ class DocumentCommands(Protocol):
         ...
 
 
+def _platform_inventory_actor(actor: PortalActor) -> PortalActor:
+    if actor.role == "PLATFORM":
+        return actor
+    return PortalActor(
+        user_id=actor.user_id,
+        display_name=actor.display_name,
+        role="PLATFORM",
+        owner_unit_ids=(),
+        tenant_id=None,
+    )
+
+
+async def _published_version_for_document(
+    repository: Any,
+    *,
+    document_id: str,
+    version_id: str | None,
+) -> KnowledgeVersionRecord | None:
+    if not version_id:
+        return None
+    version = await repository.get_version(version_id)
+    if version is None or version.status != "PUBLISHED":
+        return None
+    if version.document_id != document_id:
+        return None
+    return version
+
+
 async def collect_active_published_versions(
     *,
     repository: Any,
@@ -75,7 +103,7 @@ async def collect_active_published_versions(
     exclude_document_ids: set[str] | None = None,
 ) -> list[KnowledgeVersionRecord]:
     excluded = exclude_document_ids or set()
-    published_versions: list[KnowledgeVersionRecord] = []
+    published_by_id: dict[str, KnowledgeVersionRecord] = {}
 
     active_release_id = await repository.get_active_release_id()
     active_release = (
@@ -86,35 +114,31 @@ async def collect_active_published_versions(
         for entry in active_release.manifest:
             if entry.document_id in excluded:
                 continue
-            version = await repository.get_version(entry.version_id)
-            if version is not None and version.status == "PUBLISHED":
-                published_versions.append(version)
-    else:
-        # Fallback when no active release exists (e.g. first release):
-        # Query with PLATFORM role so cross-unit documents are included.
-        admin_actor = (
-            actor
-            if actor.role == "PLATFORM"
-            else PortalActor(
-                user_id=actor.user_id,
-                display_name=actor.display_name,
-                role="PLATFORM",
-                owner_unit_ids=(),
-                tenant_id=actor.tenant_id,
+            version = await _published_version_for_document(
+                repository,
+                document_id=entry.document_id,
+                version_id=entry.version_id,
             )
-        )
-        for other in await repository.list_documents(actor=admin_actor):
-            if other.document_id in excluded:
-                continue
-            if not other.current_published_version_id:
-                continue
-            other_version = await repository.get_version(
-                other.current_published_version_id
-            )
-            if other_version is not None and other_version.status == "PUBLISHED":
-                published_versions.append(other_version)
+            if version is not None:
+                published_by_id[entry.document_id] = version
 
-    return published_versions
+    # A later publish rebuilds from the current manifest only. Documents that
+    # became PUBLISHED but never landed in that manifest stay PENDING_INDEX on
+    # Console and never reach Playground until they are merged back in.
+    for other in await repository.list_documents(
+        actor=_platform_inventory_actor(actor)
+    ):
+        if other.document_id in excluded or other.document_id in published_by_id:
+            continue
+        version = await _published_version_for_document(
+            repository,
+            document_id=other.document_id,
+            version_id=other.current_published_version_id,
+        )
+        if version is not None:
+            published_by_id[other.document_id] = version
+
+    return list(published_by_id.values())
 
 
 async def _execute_publish(

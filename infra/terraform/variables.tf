@@ -114,6 +114,45 @@ variable "google_api_secret_id" {
   default = "teams-agent-google-api-key"
 }
 
+variable "vertex_ai_project" {
+  description = "Explicit Vertex Gemini billing/IAM project. Required before Cloud Run activate/full. Never inferred from project_id."
+  type        = string
+  default     = ""
+}
+
+variable "vertex_ai_chat_location" {
+  description = "Vertex chat endpoint location. Required before Cloud Run activate/full. The unapproved P0 placeholder global is rejected."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = lower(trimspace(var.vertex_ai_chat_location)) != "global"
+    error_message = "vertex_ai_chat_location cannot be the unapproved P0 placeholder \"global\". Set a BU-approved Vertex location or leave empty until Cloud Run is activated."
+  }
+}
+
+variable "vertex_ai_embedding_location" {
+  description = "Vertex embedding endpoint location. Required before Cloud Run activate/full. The unapproved P0 placeholder global is rejected."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = lower(trimspace(var.vertex_ai_embedding_location)) != "global"
+    error_message = "vertex_ai_embedding_location cannot be the unapproved P0 placeholder \"global\". Set a BU-approved Vertex location or leave empty until Cloud Run is activated."
+  }
+}
+
+variable "vertex_ai_pdf_location" {
+  description = "Vertex PDF Vision endpoint location. Required when the converter or gemini_vision is in play. The unapproved P0 placeholder global is rejected."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = lower(trimspace(var.vertex_ai_pdf_location)) != "global"
+    error_message = "vertex_ai_pdf_location cannot be the unapproved P0 placeholder \"global\". Set a BU-approved Vertex location or leave empty until Vision is activated."
+  }
+}
+
 variable "bot_client_secret_id" {
   type    = string
   default = "teams-agent-bot-client-secret"
@@ -346,7 +385,7 @@ variable "knowledge_portal_internal_url" {
 }
 
 variable "enable_pdf_converter" {
-  description = "Deploy the standalone PDF-to-Markdown converter Cloud Run service (option B)."
+  description = "Manage the standalone PDF converter Cloud Run service. For a live unmanaged converter, pin pdf_converter_image to the running digest and import before apply; do not create a second service."
   type        = bool
   default     = false
 }
@@ -364,9 +403,26 @@ variable "pdf_converter_service_account_id" {
 }
 
 variable "pdf_converter_image" {
-  description = "Immutable PDF converter image pinned by commit SHA tag or sha256 digest."
+  description = "Immutable PDF converter image pinned by commit SHA tag or sha256 digest. When importing a live service, use that revision's digest; do not invent a new pin."
   type        = string
   default     = ""
+}
+
+variable "pdf_converter_existing_url" {
+  description = "Already-running PDF converter URL. Preferred for Portal Vision so a Vertex apply cannot clear the converter before import."
+  type        = string
+  default     = ""
+}
+
+variable "portal_pdf_converter_engine" {
+  description = "Portal PDF engine override. Empty keeps gemini_vision whenever a converter URL exists. Set legacy_text only to explicitly park Vision."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = contains(["", "gemini_vision", "legacy_text"], var.portal_pdf_converter_engine)
+    error_message = "portal_pdf_converter_engine must be empty, gemini_vision, or legacy_text."
+  }
 }
 
 variable "pdf_converter_max_instances" {

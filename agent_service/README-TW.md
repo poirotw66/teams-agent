@@ -111,13 +111,30 @@ RAG_MODEL=openai:gpt-4.1-mini
 OPENAI_API_KEY=<secret>
 ```
 
-Google Gemini：
+Google Gemini（Developer API；未設定 `GEMINI_API_BACKEND` 時亦為此模式）：
 
 ```dotenv
+GEMINI_API_BACKEND=DEVELOPER_API
 RAG_MODEL=google_genai:gemini-3.1-flash-lite
 AGENT_MODEL=google_genai:gemini-3.8-flash
-GOOGLE_API_KEY=<secret>
+GEMINI_API_KEY=<secret>
 ```
+
+Vertex AI Service Account（使用 ADC；此程序不可匯出 Gemini key）：
+
+```dotenv
+GEMINI_API_BACKEND=VERTEX_AI
+VERTEX_AI_PROJECT=your-gcp-project
+VERTEX_AI_CHAT_LOCATION=<bu-approved-region>
+VERTEX_AI_EMBEDDING_LOCATION=<bu-approved-region>
+VERTEX_AI_PDF_LOCATION=<bu-approved-region>
+```
+
+啟動 Vertex 前必須寫入顯式 project 與 location。Terraform／BU deploy 會拒絕缺失的 `VERTEX_AI_PROJECT` 以及未核准占位 `global`。
+本機 Vertex ADC：
+`gcloud auth application-default login --impersonate-service-account=SA_EMAIL`。
+Vertex 403／429／ADC／向量不符／PDF Vision 故障排除見
+[`docs/vertex-ai-operations-runbook-20260924.md`](../docs/vertex-ai-operations-runbook-20260924.md)。
 
 模型名稱是部署設定，不應寫死在程式中。正式使用前，請依公司核准的模型服務
 與實際可用 model ID 調整。

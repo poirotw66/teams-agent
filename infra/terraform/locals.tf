@@ -38,7 +38,37 @@ locals {
     "bigquery.googleapis.com",
     "monitoring.googleapis.com",
     "logging.googleapis.com",
+    "aiplatform.googleapis.com",
   ])
+
+  unapproved_vertex_location_placeholder = "global"
+  vertex_ai_project                      = trimspace(var.vertex_ai_project)
+  vertex_ai_chat_location                = trimspace(var.vertex_ai_chat_location)
+  vertex_ai_embedding_location           = trimspace(var.vertex_ai_embedding_location)
+  vertex_ai_pdf_location                 = trimspace(var.vertex_ai_pdf_location)
+  vertex_ai_project_is_explicit          = local.vertex_ai_project != ""
+  vertex_chat_location_is_approved = (
+    local.vertex_ai_chat_location != "" &&
+    lower(local.vertex_ai_chat_location) != local.unapproved_vertex_location_placeholder
+  )
+  vertex_embedding_location_is_approved = (
+    local.vertex_ai_embedding_location != "" &&
+    lower(local.vertex_ai_embedding_location) != local.unapproved_vertex_location_placeholder
+  )
+  vertex_pdf_location_is_approved = (
+    local.vertex_ai_pdf_location != "" &&
+    lower(local.vertex_ai_pdf_location) != local.unapproved_vertex_location_placeholder
+  )
+  # Variable-only gate. Do not read portal_pdf_converter_engine here: that
+  # local can depend on the converter URI and would cycle with image_policy.
+  vertex_pdf_in_play = (
+    local.deploy_pdf_converter ||
+    var.portal_pdf_converter_engine == "gemini_vision" ||
+    (
+      var.portal_pdf_converter_engine != "legacy_text" &&
+      trimspace(var.pdf_converter_existing_url) != ""
+    )
+  )
 
   agent_env = {
     LOG_LEVEL                            = "INFO"
@@ -52,6 +82,13 @@ locals {
     RAG_ALLOWED_TENANTS                  = var.rag_allowed_tenants
     RAG_MAX_IMAGES                       = "2"
     KNOWLEDGE_SERVICE_MODE               = "HYBRID"
+    GEMINI_API_BACKEND                   = "VERTEX_AI"
+    VERTEX_AI_PROJECT                    = local.vertex_ai_project
+    VERTEX_AI_CHAT_LOCATION              = local.vertex_ai_chat_location
+    VERTEX_AI_EMBEDDING_LOCATION         = local.vertex_ai_embedding_location
+    GOOGLE_GENAI_USE_VERTEXAI            = "true"
+    GOOGLE_CLOUD_PROJECT                 = local.vertex_ai_project
+    GOOGLE_CLOUD_LOCATION                = local.vertex_ai_chat_location
     GEMINI_FILE_SEARCH_STORE             = var.gemini_file_search_store
     GEMINI_FILE_SEARCH_MODEL             = var.gemini_file_search_model
     GEMINI_FILE_SEARCH_ENFORCE_ACL       = tostring(var.gemini_file_search_enforce_acl)
@@ -135,6 +172,13 @@ locals {
     AI_OPS_KNOWLEDGE_BRIDGE_ENABLED            = tostring(var.knowledge_bridge_enabled)
     # Cloud Run must talk to the remote Portal; in-process is local-dev only.
     AI_OPS_KNOWLEDGE_IN_PROCESS          = "false"
+    GEMINI_API_BACKEND                   = "VERTEX_AI"
+    VERTEX_AI_PROJECT                    = local.vertex_ai_project
+    VERTEX_AI_CHAT_LOCATION              = local.vertex_ai_chat_location
+    VERTEX_AI_EMBEDDING_LOCATION         = local.vertex_ai_embedding_location
+    GOOGLE_GENAI_USE_VERTEXAI            = "true"
+    GOOGLE_CLOUD_PROJECT                 = local.vertex_ai_project
+    GOOGLE_CLOUD_LOCATION                = local.vertex_ai_chat_location
     AI_OPS_DEPLOYMENT_TENANT_ID          = var.bot_tenant_id
     KNOWLEDGE_PORTAL_AGENT_API_URL       = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
     AGENT_API_URL                        = local.deploy_cloud_run ? google_cloud_run_v2_service.agent[0].uri : ""
@@ -167,8 +211,14 @@ resource "terraform_data" "image_policy" {
 
   lifecycle {
     precondition {
-      condition     = local.agent_image != null && local.adapter_image != null && local.backoffice_image != null && local.portal_image != null
-      error_message = "Set agent_image, adapter_image, backoffice_image, and portal_image to immutable tags or digests. allow_latest_image_tags=true is import-only for existing POC."
+      condition = (
+        local.agent_image != null &&
+        local.adapter_image != null &&
+        local.backoffice_image != null &&
+        local.portal_image != null &&
+        (!var.enable_pdf_converter || local.pdf_converter_image != null)
+      )
+      error_message = "Set agent_image, adapter_image, backoffice_image, portal_image, and pdf_converter_image (when enable_pdf_converter) to immutable tags or digests. allow_latest_image_tags=true is import-only for existing POC."
     }
 
     precondition {
@@ -182,13 +232,33 @@ resource "terraform_data" "image_policy" {
     }
 
     precondition {
+      condition     = local.vertex_ai_project_is_explicit
+      error_message = "VERTEX_AI_PROJECT must be set explicitly as vertex_ai_project. Do not infer it from project_id."
+    }
+
+    precondition {
+      condition     = local.vertex_chat_location_is_approved && local.vertex_embedding_location_is_approved
+      error_message = "VERTEX_AI_CHAT_LOCATION and VERTEX_AI_EMBEDDING_LOCATION must be explicit BU-approved regions. Empty, whitespace, or the P0 placeholder \"global\" is rejected."
+    }
+
+    precondition {
+      condition     = !local.vertex_pdf_in_play || local.vertex_pdf_location_is_approved
+      error_message = "VERTEX_AI_PDF_LOCATION must be an explicit BU-approved region when PDF Vision or the converter is in play. Empty, whitespace, or the P0 placeholder \"global\" is rejected."
+    }
+
+    precondition {
       condition = !var.allow_latest_image_tags || (
         (var.agent_image == "" || endswith(var.agent_image, ":latest")) &&
         (var.adapter_image == "" || endswith(var.adapter_image, ":latest")) &&
         (var.backoffice_image == "" || endswith(var.backoffice_image, ":latest")) &&
-        (var.portal_image == "" || endswith(var.portal_image, ":latest"))
+        (var.portal_image == "" || endswith(var.portal_image, ":latest")) &&
+        (
+          var.pdf_converter_image == "" ||
+          endswith(var.pdf_converter_image, ":latest") ||
+          can(regex("@sha256:[0-9a-f]{64}$", var.pdf_converter_image))
+        )
       )
-      error_message = "When allow_latest_image_tags=true, omit images or use :latest explicitly for import workflows only."
+      error_message = "When allow_latest_image_tags=true, omit images or use :latest explicitly for import workflows only. A live converter digest is also allowed."
     }
   }
 }

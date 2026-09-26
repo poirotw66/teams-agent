@@ -24,6 +24,7 @@ __all__ = [
     "CitationViewerContext",
     "active_release_id",
     "citation_delivery_path",
+    "citation_source_file_exists",
     "citation_source_groups",
     "citation_source_tenant_id",
     "create_viewer_token",
@@ -228,6 +229,20 @@ def citation_delivery_path(
     if direct.is_file():
         return path
     return path
+
+
+def citation_source_file_exists(
+    source_path: str,
+    settings: CitationGatewaySettings,
+    *,
+    release_id: str | None = None,
+) -> bool:
+    """Whether Adapter can serve this citation from the local source tree."""
+    delivery = citation_delivery_path(source_path, settings, release_id=release_id)
+    if delivery is None:
+        return False
+    source_root = (settings.source_dir or Path()).resolve()
+    return (source_root / delivery).is_file()
 
 
 def original_delivery_path(source_ref_id: str) -> str | None:

@@ -22,6 +22,10 @@ from .relevance import (
     answer_indicates_insufficient_information,
     query_lexically_matches_results,
 )
+from .ticket_intake import (
+    answer_covers_ticket_intake_fields,
+    query_asks_for_ticket_intake,
+)
 
 _ERROR_BRANCH_QUERY_MARKERS: tuple[str, ...] = (
     "分流",
@@ -145,6 +149,21 @@ def should_retry_procedure_coverage(
         and query_asks_for_procedure(resolved_issue_query)
         and len(context_procedure_steps) >= 2
         and not answer_covers_procedure_steps(answer, list(context_procedure_steps))
+    )
+
+
+def should_retry_ticket_intake_coverage(
+    *,
+    answerability: str,
+    resolved_issue_query: str,
+    context_ticket_fields: Sequence[str],
+    answer: str,
+) -> bool:
+    return (
+        answerability in {"FULL", "PARTIAL"}
+        and query_asks_for_ticket_intake(resolved_issue_query)
+        and len(context_ticket_fields) >= 2
+        and not answer_covers_ticket_intake_fields(answer, list(context_ticket_fields))
     )
 
 
@@ -297,5 +316,6 @@ __all__ = [
     "should_retry_error_coverage",
     "should_retry_false_none",
     "should_retry_procedure_coverage",
+    "should_retry_ticket_intake_coverage",
     "should_retry_visual_evidence",
 ]

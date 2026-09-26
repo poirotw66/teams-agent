@@ -31,13 +31,6 @@ resource "google_secret_manager_secret" "asset_signing_key" {
   }
 }
 
-resource "google_secret_manager_secret_iam_member" "agent_google_api_key" {
-  project   = var.project_id
-  secret_id = google_secret_manager_secret.google_api_key.secret_id
-  role      = "roles/secretmanager.secretAccessor"
-  member    = "serviceAccount:${google_service_account.agent.email}"
-}
-
 resource "google_secret_manager_secret_iam_member" "adapter_bot_client_secret" {
   project   = var.project_id
   secret_id = google_secret_manager_secret.bot_client_secret.secret_id

@@ -283,6 +283,49 @@ def test_card_adds_open_url_actions_for_citation_links_by_default() -> None:
     ]
 
 
+def test_card_dedupes_source_buttons_for_same_document_chunks() -> None:
+    response = AgentResponse(
+        answer="請重新啟動安控元件。[S1][S2]",
+        traceId="trace-1",
+        citations=[
+            Citation(
+                title="樹精靈WEB-登入異常",
+                url="https://bot.example.com/rag-citations/chunk-1",
+                originalUrl="https://bot.example.com/rag-originals/web-1",
+                sourcePath="sources/shu-web.md",
+            ),
+            Citation(
+                title="樹精靈WEB-登入異常",
+                url="https://bot.example.com/rag-citations/chunk-2",
+                originalUrl="https://bot.example.com/rag-originals/web-1",
+                sourcePath="sources/shu-web.md",
+            ),
+        ],
+        feedbackEnabled=True,
+    )
+
+    activity = build_agent_activity(
+        response,
+        AgentSettings(),
+        conversation_id="conversation-1",
+        now=1_000,
+    )
+
+    actions = activity.attachments[0].content["actions"]
+    assert actions == [
+        {
+            "type": "Action.OpenUrl",
+            "title": "開啟原始檔案：樹精靈WEB-登入異常",
+            "url": "https://bot.example.com/rag-originals/web-1",
+        },
+        {
+            "type": "Action.OpenUrl",
+            "title": "查看引用段落：樹精靈WEB-登入異常",
+            "url": "https://bot.example.com/rag-citations/chunk-1",
+        },
+    ]
+
+
 def test_card_adds_open_url_actions_for_citation_links() -> None:
     response = AgentResponse(
         answer="請調整安全性設定。",

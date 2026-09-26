@@ -38,8 +38,8 @@ output "teams_developer_portal_runbook" {
 }
 
 output "pdf_converter_url" {
-  description = "Internal HTTPS URL of the PDF converter Cloud Run service, when enabled."
-  value       = try(google_cloud_run_v2_service.pdf_converter[0].uri, null)
+  description = "Internal HTTPS URL of the PDF converter Cloud Run service, or the existing live URL before import."
+  value       = local.portal_pdf_converter_url != "" ? local.portal_pdf_converter_url : null
 }
 
 output "agent_service_account_email" {

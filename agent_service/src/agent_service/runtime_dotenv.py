@@ -3,14 +3,15 @@
 Importing ``agent_service.settings`` must not call ``load_dotenv``. Tests and
 library imports therefore see process environment only; CLI / ASGI / worker
 entrypoints call ``load_runtime_dotenv`` before reading settings from env.
+
+Vertex mode loads dotenv selectively and never copies Gemini/Google API keys
+from ``.env`` into the process. Resolution is process-fixed after this load.
 """
 
 from __future__ import annotations
 
 from os import environ
 from pathlib import Path
-
-from dotenv import load_dotenv
 
 _LOADED = False
 
@@ -25,16 +26,15 @@ def load_runtime_dotenv(*, dotenv_path: Path | str | None = None) -> bool:
     if _LOADED:
         return False
 
-    if dotenv_path is None:
-        load_dotenv()
-    else:
-        load_dotenv(dotenv_path, override=False)
+    from .gemini_backend import load_dotenv_for_gemini_backend, resolve_gemini_backend
 
-    # Normalize dotenv values that may retain trailing CR on Windows-edited files.
+    load_dotenv_for_gemini_backend(dotenv_path=dotenv_path, override=False)
+
     for key, value in list(environ.items()):
         if "\r" in value:
             environ[key] = value.replace("\r", "")
 
+    resolve_gemini_backend()
     _LOADED = True
     return True
 
@@ -42,4 +42,7 @@ def load_runtime_dotenv(*, dotenv_path: Path | str | None = None) -> bool:
 def reset_runtime_dotenv_for_tests() -> None:
     """Allow tests to re-invoke ``load_runtime_dotenv`` in the same process."""
     global _LOADED
+    from .gemini_backend import reset_gemini_backend_for_tests
+
     _LOADED = False
+    reset_gemini_backend_for_tests()

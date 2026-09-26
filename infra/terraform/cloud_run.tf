@@ -3,8 +3,8 @@ resource "google_cloud_run_v2_service" "agent" {
 
   depends_on = [
     google_project_service.required,
-    google_secret_manager_secret_iam_member.agent_google_api_key,
     terraform_data.image_policy,
+    google_project_iam_member.agent_aiplatform_user,
   ]
 
   name     = var.agent_service_name
@@ -41,16 +41,6 @@ resource "google_cloud_run_v2_service" "agent" {
         content {
           name  = env.key
           value = env.value
-        }
-      }
-
-      env {
-        name = "GOOGLE_API_KEY"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.google_api_key.secret_id
-            version = "latest"
-          }
         }
       }
 

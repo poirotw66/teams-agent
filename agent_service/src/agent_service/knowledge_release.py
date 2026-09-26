@@ -15,6 +15,7 @@ from knowledge_core.release_pointer import (
 from .knowledge_release_cache import resolve_mirrored_release_dir
 from .knowledge_release_sync import (
     KnowledgeReleaseSelectionMode,
+    KnowledgeReleaseSyncStatus,
     is_verified_qa_snapshot,
     read_sync_status,
     resolve_selection_mode,
@@ -221,6 +222,49 @@ def _resolve_local_sandbox_under_gcs_store(
     )
 
 
+def _follow_cloud_target_release_id(
+    *,
+    release_id: str | None,
+    sync_status: KnowledgeReleaseSyncStatus | None,
+    cache_dir: Path,
+    tenant_id: str,
+) -> str | None:
+    """Prefer a FOLLOW_CLOUD snapshot that is actually on disk.
+
+    ``loadedReleaseId`` is a previous-process report, including LOCAL_SANDBOX
+    ids that were persisted into the GCS status file. A missing loaded mirror
+    must not hide the just-synced cloud snapshot.
+    """
+    loaded_id = sync_status.loaded_release_id if sync_status else None
+    candidates: list[str] = []
+    for candidate in (
+        release_id,
+        sync_status.mirrored_release_id if sync_status else None,
+        sync_status.cloud_active_release_id if sync_status else None,
+        loaded_id,
+    ):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    for candidate in candidates:
+        if (
+            resolve_mirrored_release_dir(
+                cache_dir,
+                tenant_id=tenant_id,
+                release_id=candidate,
+            )
+            is None
+        ):
+            continue
+        if loaded_id and candidate != loaded_id:
+            logger.info(
+                "FOLLOW_CLOUD using mirrored release %s instead of missing loaded %s.",
+                candidate,
+                loaded_id,
+            )
+        return candidate
+    return candidates[0] if candidates else None
+
+
 def _resolve_gcs_mirrored_knowledge_index(
     settings: RagSettings,
     *,
@@ -241,10 +285,11 @@ def _resolve_gcs_mirrored_knowledge_index(
                 "PINNED selection requires KNOWLEDGE_ACTIVE_RELEASE_ID."
             )
     else:
-        target_release_id = (
-            release_id
-            or (sync_status.loaded_release_id if sync_status else None)
-            or (sync_status.mirrored_release_id if sync_status else None)
+        target_release_id = _follow_cloud_target_release_id(
+            release_id=release_id,
+            sync_status=sync_status,
+            cache_dir=cache_dir,
+            tenant_id=tenant_id,
         )
 
     if not target_release_id:

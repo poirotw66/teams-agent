@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ai_ops_backoffice.ports.answer_prompt import get_default_answer_prompt
+from ai_ops_backoffice.ports.default_chat_model import get_default_chat_model_id
 
 from .errors import EvaluationValidationError
 from .real_rag_answer import (
@@ -20,6 +21,14 @@ from .tool_fixture_models import ToolCallTrace
 from .tool_fixtures import ToolFixtureService
 
 logger = logging.getLogger(__name__)
+
+
+def _configured_chat_model_id() -> str:
+    """Return the process-configured Vertex/Developer-API chat model id."""
+    try:
+        return (get_default_chat_model_id() or "").strip()
+    except RuntimeError:
+        return ""
 
 
 def tokenize_cjk_and_words(text: str) -> list[str]:
@@ -118,9 +127,13 @@ class RealRagAnswerAdapter:
             return True
         if self._model_factory is None:
             return False
-        # Factory alone is not enough: it must be able to produce a live model.
+        # Factory alone is not enough: it must construct the configured chat model.
+        # Never use a literal placeholder id such as "probe".
+        model_id = _configured_chat_model_id()
+        if not model_id:
+            return False
         try:
-            probed = self._model_factory("") or self._model_factory("probe")
+            probed = self._model_factory(model_id)
         except Exception:
             return False
         return probed is not None
@@ -160,7 +173,18 @@ class RealRagAnswerAdapter:
                     f"REAL_RAG rejected: requested model '{model_id}' does not match "
                     f"bound chat model '{default_name}'."
                 )
-        return self._chat_model
+        if self._chat_model is not None:
+            return self._chat_model
+        configured_id = _configured_chat_model_id()
+        if configured_id and self._model_factory is not None:
+            built = self._model_factory(configured_id)
+            if built is not None:
+                return built
+            raise EvaluationValidationError(
+                f"REAL_RAG rejected: configured chat model '{configured_id}' could not "
+                "be constructed. Silent API-key fallback is prohibited."
+            )
+        return None
 
     def _priced_cost(
         self,

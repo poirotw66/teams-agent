@@ -17,6 +17,7 @@ from .document_selection_select import (
     select_chunks_for_documents,
 )
 from .selector import top1_was_displaced
+from .ticket_intake import query_asks_for_ticket_intake, text_has_ticket_intake_section
 
 # Temporary Compatibility Rule (RAG v2.1): retire once metadata/aliases/
 # contextual representation + dedicated reranker recover enterprise-app hits.
@@ -235,6 +236,59 @@ def inject_vpn_password_expiry_howto(
     )
 
 
+def inject_ticket_intake_checklist(
+    query: str,
+    results: Sequence[SearchResult],
+    *,
+    index_chunks: Sequence[DocumentChunk],
+    groups: set[str],
+    environment: str,
+) -> list[SearchResult]:
+    """Keep the same-document ticket checklist beside short unlock scripts."""
+    if not query_asks_for_ticket_intake(query):
+        return list(results)
+    selected_document_ids = {
+        item.chunk.document_id for item in results if item.chunk.document_id
+    }
+    if not selected_document_ids:
+        return list(results)
+
+    def _is_checklist_chunk(chunk: DocumentChunk) -> bool:
+        if chunk.document_id not in selected_document_ids:
+            return False
+        return text_has_ticket_intake_section(chunk.content)
+
+    return _inject_matching_chunks(
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        is_match=_is_checklist_chunk,
+    )
+
+
+def inject_shu_channel_evidence(
+    query: str,
+    results: Sequence[SearchResult],
+    *,
+    index_chunks: Sequence[DocumentChunk],
+    groups: set[str],
+    environment: str,
+) -> list[SearchResult]:
+    """Force the 樹精靈 AP manual into the pool for AP-only login questions."""
+    from_catalog = _inject_from_relationships(
+        query,
+        results,
+        index_chunks=index_chunks,
+        groups=groups,
+        environment=environment,
+        relationship_ids=frozenset({"shu-ap-channel"}),
+    )
+    if from_catalog is not None:
+        return from_catalog
+    return list(results)
+
+
 def inject_same_doc_discrimination_evidence(
     query: str,
     results: Sequence[SearchResult],
@@ -394,6 +448,8 @@ __all__ = [
     "inject_employee_portal_password_evidence",
     "inject_enterprise_app_evidence",
     "inject_same_doc_discrimination_evidence",
+    "inject_shu_channel_evidence",
+    "inject_ticket_intake_checklist",
     "inject_vpn_password_expiry_howto",
     "select_document_chunks",
 ]

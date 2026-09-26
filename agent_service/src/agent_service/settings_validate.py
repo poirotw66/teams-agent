@@ -167,6 +167,15 @@ def validate_faq_and_prompt_modes(settings: _AgentSettingsView) -> None:
 def validate_knowledge_and_ticket_modes(settings: _AgentSettingsView) -> None:
     if settings.knowledge_service_mode not in {"HYBRID", "GEMINI_FILE_SEARCH"}:
         raise ValueError("KNOWLEDGE_SERVICE_MODE must be one of HYBRID or GEMINI_FILE_SEARCH.")
+    from .gemini_backend import GeminiApiBackend, peek_gemini_api_backend
+
+    if (
+        settings.knowledge_service_mode == "GEMINI_FILE_SEARCH"
+        and peek_gemini_api_backend() is GeminiApiBackend.VERTEX_AI
+    ):
+        raise ValueError(
+            "KNOWLEDGE_SERVICE_MODE=GEMINI_FILE_SEARCH is not supported on VERTEX_AI."
+        )
     if (
         settings.rag_require_file_search_acl
         and settings.gemini_file_search_store

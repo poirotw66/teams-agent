@@ -32,6 +32,8 @@ class KnowledgeIndexArtifact:
     vector_count: int
     embedding_model: str | None
     embedding_dimensions: int | None
+    embedding_backend: str | None = None
+    embedding_vertex_location: str | None = None
 
     def to_manifest_dict(self) -> dict[str, object]:
         return {
@@ -42,6 +44,8 @@ class KnowledgeIndexArtifact:
             "vectorCount": self.vector_count,
             "embeddingModel": self.embedding_model,
             "embeddingDimensions": self.embedding_dimensions,
+            "embeddingBackend": self.embedding_backend,
+            "embeddingVertexLocation": self.embedding_vertex_location,
         }
 
 
@@ -84,6 +88,8 @@ def inspect_index_artifact(index_path: Path) -> KnowledgeIndexArtifact:
         vector_count=vector_count,
         embedding_model=_optional_string(payload.get("embeddingModel")),
         embedding_dimensions=next(iter(vector_dimensions), None),
+        embedding_backend=_optional_string(payload.get("embeddingBackend")),
+        embedding_vertex_location=_optional_string(payload.get("embeddingVertexLocation")),
     )
 
 
@@ -146,6 +152,11 @@ def validate_release_artifacts(
         "embeddingDimensions",
     ):
         if declared.get(field) != expected[field]:
+            raise KnowledgeReleaseValidationError(
+                f"Knowledge release index metadata mismatch for '{field}'."
+            )
+    for field in ("embeddingBackend", "embeddingVertexLocation"):
+        if field in declared and declared.get(field) != expected[field]:
             raise KnowledgeReleaseValidationError(
                 f"Knowledge release index metadata mismatch for '{field}'."
             )

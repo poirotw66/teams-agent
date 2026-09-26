@@ -1,10 +1,23 @@
+import json
+from pathlib import Path
+
+import pytest
+
 from agent_service.documents import DocumentChunk
-from agent_service.retrieval import (
-    HybridIndex,
-    _embedding_models_compatible,
-    tokenize,
-)
+from agent_service.gemini_backend import reset_gemini_backend_for_tests
+from agent_service.retrieval import HybridIndex, tokenize
 from agent_service.retrieval_acl import is_chunk_visible_to_groups
+from agent_service.retrieval_embeddings import _embedding_models_compatible
+from agent_service.retrieval_embeddings import (
+    index_embedding_compatible as _index_embedding_compatible,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_gemini_backend() -> None:
+    reset_gemini_backend_for_tests()
+    yield
+    reset_gemini_backend_for_tests()
 
 
 def test_chinese_tokenizer_creates_bigrams() -> None:
@@ -165,3 +178,88 @@ def test_search_with_timings_reports_acl_filtered_chunk_count() -> None:
     _results, timings = index.search_with_timings("VPN", limit=5, groups={"HR"})
     assert timings["aclVisibleChunks"] == 1.0
     assert timings["aclFilteredChunks"] == 1.0
+
+
+def test_vertex_refuses_index_without_provenance(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    reset_gemini_backend_for_tests()
+    monkeypatch.setenv("GEMINI_API_BACKEND", "VERTEX_AI")
+    monkeypatch.setenv("VERTEX_AI_PROJECT", "proj-a")
+    monkeypatch.setenv("VERTEX_AI_CHAT_LOCATION", "us")
+    monkeypatch.setenv("VERTEX_AI_EMBEDDING_LOCATION", "us")
+    payload = {
+        "embeddingModel": "google_genai:gemini-embedding-2",
+        "chunks": [
+            {
+                "chunk_id": "c1",
+                "title": "t",
+                "source_path": "sources/a.md",
+                "content": "body",
+                "vector": [0.1, 0.2],
+            }
+        ],
+    }
+    assert (
+        _index_embedding_compatible(payload, "google_genai:gemini-embedding-2") is False
+    )
+    index_path = tmp_path / "chunks.json"
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="sparse-only"):
+        HybridIndex.load(index_path, "google_genai:gemini-embedding-2")
+    reset_gemini_backend_for_tests()
+
+
+def test_developer_api_grandfathers_old_index_without_backend_fields() -> None:
+    reset_gemini_backend_for_tests()
+    payload = {
+        "embeddingModel": "google_genai:gemini-embedding-2",
+        "chunks": [{"vector": [0.1, 0.2]}],
+    }
+    assert _index_embedding_compatible(payload, "google_genai:gemini-embedding-2") is True
+    reset_gemini_backend_for_tests()
+
+
+def test_developer_api_refuses_vertex_provenance_index(tmp_path: Path) -> None:
+    payload = {
+        "embeddingModel": "google_genai:gemini-embedding-2",
+        "embeddingBackend": "VERTEX_AI",
+        "embeddingVertexLocation": "us",
+        "embeddingDimensions": 2,
+        "chunks": [
+            {
+                "chunk_id": "c1",
+                "title": "t",
+                "source_path": "sources/a.md",
+                "content": "body",
+                "vector": [0.1, 0.2],
+            }
+        ],
+    }
+    assert _index_embedding_compatible(payload, "google_genai:gemini-embedding-2") is False
+    index_path = tmp_path / "chunks.json"
+    index_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="Process backend=DEVELOPER_API") as error:
+        HybridIndex.load(index_path, "google_genai:gemini-embedding-2")
+    message = str(error.value)
+    assert "index backend=VERTEX_AI" in message
+    assert "sparse-only" in message
+
+
+def test_vertex_complete_provenance_is_compatible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    reset_gemini_backend_for_tests()
+    monkeypatch.setenv("GEMINI_API_BACKEND", "VERTEX_AI")
+    monkeypatch.setenv("VERTEX_AI_PROJECT", "proj-a")
+    monkeypatch.setenv("VERTEX_AI_CHAT_LOCATION", "us")
+    monkeypatch.setenv("VERTEX_AI_EMBEDDING_LOCATION", "us")
+    payload = {
+        "embeddingModel": "google_genai:gemini-embedding-2",
+        "embeddingBackend": "VERTEX_AI",
+        "embeddingVertexLocation": "us",
+        "embeddingDimensions": 2,
+        "chunks": [{"vector": [0.1, 0.2]}],
+    }
+    assert _index_embedding_compatible(payload, "google_genai:gemini-embedding-2") is True
+    reset_gemini_backend_for_tests()

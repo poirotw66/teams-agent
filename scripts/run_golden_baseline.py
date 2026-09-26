@@ -16,12 +16,10 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from dotenv import load_dotenv
-
 from ai_ops_backoffice.evaluation_domain.baseline import (
-    AgentTargetResult,
     DEFAULT_JUDGE_MODEL_ID,
     DEFAULT_JUDGE_REASONING_EFFORT,
+    AgentTargetResult,
     GeminiAnswerJudge,
     JudgeAssessment,
     KnowledgeBaselineCase,
@@ -32,7 +30,30 @@ from ai_ops_backoffice.evaluation_domain.baseline_pipeline import run_baseline_p
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AI_OPS_CASE_IDS = frozenset({"QB-010", "QB-090", "QB-099", "QB-100"})
-load_dotenv(REPO_ROOT / "agent_service" / ".env", override=False)
+
+
+def _load_eval_dotenv() -> None:
+    from agent_service.gemini_backend import load_dotenv_for_gemini_backend
+
+    load_dotenv_for_gemini_backend(
+        dotenv_path=REPO_ROOT / "agent_service" / ".env",
+        override=False,
+    )
+
+
+def apply_golden_eval_preflight() -> str:
+    from agent_service.eval_credentials import apply_eval_gemini_preflight
+
+    return apply_eval_gemini_preflight()
+
+
+def _eval_gemini_report_fields() -> dict[str, str | None]:
+    from agent_service.eval_credentials import eval_gemini_report_fields
+
+    return eval_gemini_report_fields()
+
+
+_load_eval_dotenv()
 
 
 def parse_args() -> argparse.Namespace:
@@ -311,6 +332,7 @@ def _build_report(
                 "agentModel": ready.get("agentModel"),
                 "embeddingModel": ready.get("embeddingModel"),
                 "fileSearchModel": ready.get("fileSearchModel"),
+                **_eval_gemini_report_fields(),
             },
         },
         "judge": {
@@ -425,6 +447,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main() -> int:
+    apply_golden_eval_preflight()
     args = parse_args()
     if args.output is None:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

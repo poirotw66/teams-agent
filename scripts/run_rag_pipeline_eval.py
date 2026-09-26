@@ -142,6 +142,8 @@ def _build_eval_provenance(
                 resolved_release_id = payload.strip() or None
             if resolved_release_id:
                 break
+    from agent_service.eval_credentials import eval_gemini_report_fields
+
     answer_model = settings.model
     agent_model = settings.agent_model or settings.model
     return {
@@ -161,6 +163,7 @@ def _build_eval_provenance(
         "knowledgeReleaseTenantId": settings.knowledge_release_tenant_id,
         "startedAt": started_at,
         "completedAt": completed_at,
+        **eval_gemini_report_fields(),
     }
 
 

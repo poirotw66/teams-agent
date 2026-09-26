@@ -42,12 +42,9 @@ from .knowledge_pipeline.citation_io import (
     document_key as citation_document_key,
 )
 from .knowledge_pipeline.claim_repair import repair_claims_with_model
+from .knowledge_pipeline.companion_evidence import inject_companion_evidence
 from .knowledge_pipeline.document_selection import (
     canonical_version_results,
-    inject_employee_portal_password_evidence,
-    inject_enterprise_app_evidence,
-    inject_same_doc_discrimination_evidence,
-    inject_vpn_password_expiry_howto,
     select_document_chunks,
 )
 from .knowledge_pipeline.generation_host import _HybridGenerationHost
@@ -231,30 +228,9 @@ class HybridKnowledgeService:
     ) -> list[SearchResult]:
         if not getattr(self.settings, "rag_companion_inject_enabled", True):
             return list(results)
-        boosted = inject_enterprise_app_evidence(
+        return inject_companion_evidence(
             query,
             results,
-            index_chunks=self.index.chunks,
-            groups=groups,
-            environment=environment,
-        )
-        boosted = inject_employee_portal_password_evidence(
-            query,
-            boosted,
-            index_chunks=self.index.chunks,
-            groups=groups,
-            environment=environment,
-        )
-        boosted = inject_vpn_password_expiry_howto(
-            query,
-            boosted,
-            index_chunks=self.index.chunks,
-            groups=groups,
-            environment=environment,
-        )
-        return inject_same_doc_discrimination_evidence(
-            query,
-            boosted,
             index_chunks=self.index.chunks,
             groups=groups,
             environment=environment,

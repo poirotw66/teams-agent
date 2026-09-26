@@ -220,9 +220,16 @@ def test_governance_model_parameters_peek_and_runtime_resolution(tmp_path: Path)
     assert "TIMEOUT" in resolved.fallback_on
 
 
-def test_build_chat_model_accepts_and_configures_parameters() -> None:
+def test_build_chat_model_accepts_and_configures_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """REQ-022: Verify build_chat_model accepts temperature, timeout, max_retries without error."""
     from unittest.mock import MagicMock, patch
+
+    from agent_service.gemini_backend import reset_gemini_backend_for_tests
+
+    reset_gemini_backend_for_tests()
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
     # When model_name is None, it returns None
     assert build_chat_model(None) is None

@@ -302,10 +302,18 @@ START_TUNNEL=false ./start.sh
 
 `Ctrl+C` stops all child processes started by the script. If any port is already occupied by an old process, the script stops first and tells you which service to close manually.
 
+`start.sh` reads `GEMINI_API_BACKEND` from the shell or `agent_service/.env`
+(`DEVELOPER_API` or `VERTEX_AI`; omitted defaults to `DEVELOPER_API`) and
+passes the same mode to Agent, Portal, and PDF Converter. Modes never fall
+back. Developer API may still read `GOOGLE_API_KEY` / `GEMINI_API_KEY` or
+Secret Manager. Vertex preflights ADC, refuses process keys, and disables
+File Search sync/parity. BU Cloud Run is Vertex-only and does not mount the
+Google API key secret.
+
 `start.sh` also launches the local Agents Playground with the knowledge-backend selector.
-For Gemini File Search it first respects shell environment variables and
-`agent_service/.env` values for `GEMINI_FILE_SEARCH_STORE`, `GOOGLE_API_KEY`
-(or `GEMINI_API_KEY`). If the store is unset, it uses the same store as the
+For Gemini File Search (Developer API only) it first respects shell environment
+variables and `agent_service/.env` values for `GEMINI_FILE_SEARCH_STORE` and
+the Gemini key. If the store is unset, it uses the same store as the
 existing Cloud Run deployment. When no local API key is available but `gcloud`
 is authenticated, the script securely loads the existing Secret Manager value
 into the Agent child process without printing it. If that is unavailable, it

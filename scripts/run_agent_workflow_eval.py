@@ -84,6 +84,8 @@ def _build_provenance(
 ) -> dict[str, Any]:
     from agent_service.rag_models import resolve_rag_model_ids
 
+    from agent_service.eval_credentials import eval_gemini_report_fields
+
     ids = resolve_rag_model_ids(settings)
     return {
         "commitSha": _git_commit_sha(),
@@ -105,6 +107,7 @@ def _build_provenance(
         ),
         "startedAt": started_at,
         "completedAt": completed_at,
+        **eval_gemini_report_fields(),
     }
 
 

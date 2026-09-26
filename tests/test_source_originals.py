@@ -20,6 +20,7 @@ from teams_agent.source_links import (
     authorize_original_open,
     build_citation_preview_url,
     build_original_url,
+    build_source_url,
     enrich_citation_urls,
 )
 from teams_agent.source_routes import create_source_router
@@ -134,6 +135,34 @@ def test_enrich_mints_original_url_when_source_api_ready(tmp_path: Path) -> None
     assert enriched.citations[0].originalUrl.startswith(
         "https://bot.example.com/rag-originals/src-vpn-1?"
     )
+
+
+def test_enrich_uses_citation_preview_when_follow_cloud_markdown_missing(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    store = InMemoryViewerMembershipStore()
+    response = AgentResponse(
+        answer="目前好麥系統尚未提供自助解鎖功能。",
+        traceId="t",
+        citations=[
+            Citation(
+                title="好麥系統－帳號鎖定與密碼解鎖",
+                sourcePath="sources/doc-0b3b82209273.md",
+                sourceRefId="src-29323ef1bd8ac580a76d4720",
+                originalAssetAvailable=False,
+            )
+        ],
+    )
+
+    enriched = enrich_citation_urls(
+        response, settings, now=1_000, viewer=_viewer(), membership_store=store
+    )
+
+    url = enriched.citations[0].url or ""
+    assert "/rag-citations/src-29323ef1bd8ac580a76d4720" in url
+    assert "/rag-sources/sources/doc-0b3b82209273.md" not in url
+    assert enriched.citations[0].originalUrl is None
 
 
 def test_enrich_mints_governed_preview_without_bundled_sources(tmp_path: Path) -> None:
@@ -437,6 +466,38 @@ def test_card_prefers_original_open_action(tmp_path: Path) -> None:
     assert any(title.startswith("查看引用段落：") for title in titles)
 
 
+def test_card_skips_original_open_action_when_asset_missing(tmp_path: Path) -> None:
+    settings = _settings(tmp_path)
+    settings = AgentSettings(
+        **{
+            **settings.__dict__,
+            "citation_open_actions_enabled": True,
+        }
+    )
+    store = InMemoryViewerMembershipStore()
+    response = AgentResponse(
+        answer="請參考來源。",
+        traceId="t",
+        citations=[
+            Citation(
+                title="好麥系統－帳號鎖定與密碼解鎖",
+                sourcePath="sources/doc-haomai.md",
+                sourceRefId="src-haomai",
+                originalAssetAvailable=False,
+            )
+        ],
+    )
+    enriched = enrich_citation_urls(
+        response, settings, now=1_000, viewer=_viewer(), membership_store=store
+    )
+    assert enriched.citations[0].originalUrl is None
+    activity = build_agent_activity(enriched, settings, now=1_000, viewer=_viewer())
+    assert not isinstance(activity, str)
+    titles = [str(action.get("title")) for action in activity.attachments[0].content.get("actions", [])]
+    assert not any(title.startswith("開啟原始檔案：") for title in titles)
+    assert any("好麥系統" in title for title in titles)
+
+
 def test_card_hides_citation_open_actions_when_disabled(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     settings = AgentSettings(
@@ -540,6 +601,97 @@ def test_rag_originals_route_proxies_backoffice_bytes(tmp_path: Path) -> None:
     assert kwargs["subject"] == "user-1"
     assert kwargs["tenant_id"] == "t1"
     assert "it-helpdesk" in kwargs["groups"]
+
+
+def test_rag_originals_route_falls_back_to_preview_when_original_missing(
+    tmp_path: Path,
+) -> None:
+    settings = _settings(tmp_path)
+    store = InMemoryViewerMembershipStore()
+    url = build_original_url(
+        "src-haomai",
+        settings,
+        viewer=_viewer(),
+        membership_store=store,
+    )
+    assert url is not None
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+
+    with (
+        patch(
+            "citation_asset_gateway.source_route_streaming.stream_original_source_file",
+            new=AsyncMock(side_effect=SourceApiError("missing original", status=404)),
+        ),
+        patch(
+            "citation_asset_gateway.source_route_streaming.fetch_source_preview",
+            new=AsyncMock(
+                return_value={
+                    "title": "好麥系統－帳號鎖定與密碼解鎖",
+                    "mappingStatus": "AVAILABLE",
+                    "evidence": {"excerpt": "此問題需由資訊人員協助解鎖。"},
+                }
+            ),
+        ),
+    ):
+        parsed = urlparse(url)
+        response = TestClient(app).get(
+            f"{parsed.path}?{parsed.query}",
+            headers={"Accept": "text/html"},
+        )
+
+    assert response.status_code == 200
+    assert "好麥系統" in response.text
+    assert "此問題需由資訊人員協助解鎖。" in response.text
+    assert "Original source unavailable." not in response.text
+
+
+def test_rag_sources_falls_back_to_gcs_when_local_file_missing(tmp_path: Path) -> None:
+    settings = AgentSettings(
+        **{
+            **_settings(tmp_path).__dict__,
+            "asset_gcs_bucket": "knowledge-bucket",
+            "asset_gcs_prefix": "knowledge-releases",
+            "asset_gcs_tenant_id": "default",
+        }
+    )
+    store = InMemoryViewerMembershipStore()
+    url = build_source_url(
+        "sources/doc-0b3b82209273.md",
+        settings,
+        viewer=_viewer(),
+        source_ref_id="src-aaaaaaaaaaaaaaaaaaaaaaaa",
+        membership_store=store,
+    )
+    assert url is not None
+    app = FastAPI()
+    app.include_router(create_source_router(settings))
+    preview = MagicMock()
+    preview.title = "好麥系統－帳號鎖定與密碼解鎖"
+    preview.release_id = "release-f264246457a2"
+    preview.source_path = "sources/doc-0b3b82209273.md"
+    preview.excerpt = "需由資訊人員協助解鎖"
+
+    with (
+        patch(
+            "citation_asset_gateway.source_route_streaming.resolve_release_citation_preview",
+            return_value=preview,
+        ),
+        patch(
+            "citation_asset_gateway.source_route_streaming.fetch_release_source_document",
+            return_value="# 好麥系統\n\n需由資訊人員協助解鎖。\n",
+        ),
+    ):
+        parsed = urlparse(url)
+        response = TestClient(app).get(
+            f"{parsed.path}?{parsed.query}",
+            headers={"Accept": "text/html"},
+        )
+
+    assert response.status_code == 200
+    assert "好麥系統" in response.text
+    assert "需由資訊人員協助解鎖" in response.text
+    assert "Not Found" not in response.text
 
 
 def test_issue_source_delegation_round_trips() -> None:

@@ -25,6 +25,10 @@ _READY_SYMPTOM_FAILURE_TERMS = (
     "功能無法",
     "無法開啟",
     "無法使用",
+    "登入異常",
+    "登入無反應",
+    "登入無反映",
+    "畫面無反應",
 )
 # Concrete product/system names only — bare 系統/客戶 are too broad for READY.
 _READY_SYMPTOM_SYSTEM_TERMS = (
@@ -302,6 +306,14 @@ def _is_ready_known_it_symptom(description: str) -> bool:
     )
     has_failure = any(term in description for term in _READY_SYMPTOM_FAILURE_TERMS)
     return has_named_system and has_failure
+
+
+def _is_shu_channel_login_symptom(description: str) -> bool:
+    """樹精靈 AP/WEB login asks already name the handbook; do not ask for a code."""
+    compact = "".join(description.split()).casefold()
+    if "樹精靈ap" not in compact and "樹精靈web" not in compact:
+        return False
+    return any(term in description for term in _READY_SYMPTOM_FAILURE_TERMS)
 
 
 def _can_skip_extractor_for_ready_symptom(

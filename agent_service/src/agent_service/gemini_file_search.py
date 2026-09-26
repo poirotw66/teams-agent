@@ -75,6 +75,9 @@ class GeminiFileSearchKnowledgeService:
         max_images: int = 2,
         enforce_acl: bool = True,
     ) -> None:
+        from .gemini_backend import require_developer_api_for_file_search
+
+        require_developer_api_for_file_search()
         if not file_search_store:
             raise ValueError("file_search_store is required (GEMINI_FILE_SEARCH_STORE).")
         self.api_key = api_key
@@ -106,9 +109,16 @@ class GeminiFileSearchKnowledgeService:
             )
 
     def _get_client(self):
+        from .gemini_backend import (
+            require_developer_api_for_file_search,
+            require_developer_api_key,
+        )
+
+        require_developer_api_for_file_search()
+        api_key = (self.api_key or "").strip() or require_developer_api_key()
         genai, _types = import_genai()
         if self._client is None:
-            self._client = genai.Client(api_key=self.api_key)
+            self._client = genai.Client(api_key=api_key)
         return self._client
 
     def _resolve_title(self, slug: str) -> str:

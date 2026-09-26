@@ -39,6 +39,13 @@ from pathlib import Path
 
 
 def _require_api_key() -> str:
+    from agent_service.gemini_backend import (
+        load_dotenv_for_gemini_backend,
+        require_developer_api_for_file_search,
+    )
+
+    load_dotenv_for_gemini_backend()
+    require_developer_api_for_file_search(feature="acl_verification File Search probe")
     api_key = (os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY") or "").strip()
     if not api_key:
         print(

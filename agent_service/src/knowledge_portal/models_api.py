@@ -160,6 +160,7 @@ class ImportPdfResponse(StrictModel):
     warnings: list[str] = Field(default_factory=list)
     conversion_mode: Literal["legacy", "converter"] = "legacy"
     conversion_engine: Literal["legacy_text", "gemini_vision", "unknown"] = "legacy_text"
+    conversion_gemini_backend: Literal["DEVELOPER_API", "VERTEX_AI"] | None = None
     assets: list[dict[str, str]] = Field(default_factory=list)
     original_asset_token: str | None = None
     original_asset_name: str | None = None

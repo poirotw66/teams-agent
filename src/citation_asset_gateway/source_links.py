@@ -34,6 +34,7 @@ from .source_link_signing import (
     CitationViewerContext,
     active_release_id,
     citation_delivery_path,
+    citation_source_file_exists,
     citation_source_groups,
     citation_source_tenant_id,
     create_viewer_token,
@@ -58,9 +59,11 @@ __all__ = [
     "build_original_url",
     "build_source_url",
     "citation_delivery_path",
+    "citation_source_file_exists",
     "citation_source_groups",
     "citation_source_tenant_id",
     "create_viewer_token",
+    "is_adapter_citation_preview_url",
     "is_adapter_original_delivery_url",
     "is_adapter_source_delivery_url",
     "load_source_acl_document",
@@ -220,6 +223,16 @@ def is_adapter_original_delivery_url(url: str, settings: CitationGatewaySettings
         return True
     base = str(settings.public_base_url or "").rstrip("/")
     return bool(base) and candidate.startswith(f"{base}/rag-originals/")
+
+
+def is_adapter_citation_preview_url(url: str, settings: CitationGatewaySettings) -> bool:
+    candidate = str(url or "").strip()
+    if not candidate:
+        return False
+    if candidate.startswith("/rag-citations/"):
+        return True
+    base = str(settings.public_base_url or "").rstrip("/")
+    return bool(base) and candidate.startswith(f"{base}/rag-citations/")
 
 
 def register_viewer_membership(

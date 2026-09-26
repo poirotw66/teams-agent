@@ -114,13 +114,31 @@ RAG_MODEL=openai:gpt-4.1-mini
 OPENAI_API_KEY=<secret>
 ```
 
-Google Gemini:
+Google Gemini (Developer API; default when `GEMINI_API_BACKEND` is omitted):
 
 ```dotenv
+GEMINI_API_BACKEND=DEVELOPER_API
 RAG_MODEL=google_genai:gemini-3.1-flash-lite
 AGENT_MODEL=google_genai:gemini-3.8-flash
-GOOGLE_API_KEY=<secret>
+GEMINI_API_KEY=<secret>
 ```
+
+Vertex AI Service Account (ADC; do not export Gemini keys in this process):
+
+```dotenv
+GEMINI_API_BACKEND=VERTEX_AI
+VERTEX_AI_PROJECT=your-gcp-project
+VERTEX_AI_CHAT_LOCATION=<bu-approved-region>
+VERTEX_AI_EMBEDDING_LOCATION=<bu-approved-region>
+VERTEX_AI_PDF_LOCATION=<bu-approved-region>
+```
+
+Write explicit project and locations before Vertex start. Terraform/BU deploy
+reject missing `VERTEX_AI_PROJECT` and the unapproved P0 placeholder `global`.
+Local Vertex
+ADC: `gcloud auth application-default login --impersonate-service-account=SA_EMAIL`.
+Vertex 403／429／ADC／向量不符／PDF Vision 故障排除見
+[`docs/vertex-ai-operations-runbook-20260924.md`](../docs/vertex-ai-operations-runbook-20260924.md)。
 
 Model names are a deployment setting and must not be hard-coded. Before
 production use, adjust them to your company-approved model service and the
