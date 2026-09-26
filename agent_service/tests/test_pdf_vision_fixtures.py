@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
 from pypdf import PdfReader
 
 FIXTURE_DIR = (
@@ -53,6 +54,7 @@ def test_vision_fixtures_exist_with_expected_page_contracts() -> None:
 
 
 def test_vision_fixture_builder_rewrites_the_same_four_files(tmp_path: Path) -> None:
+    pytest.importorskip("PIL")
     written = write_fixtures(tmp_path)
     assert set(written) == {
         "selectable-text.pdf",

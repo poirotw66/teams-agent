@@ -9,8 +9,6 @@ from __future__ import annotations
 import io
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
-
 OUTPUT_DIR = Path(__file__).resolve().parent
 
 SELECTABLE_TEXT = "Vertex Vision selectable 20260924 IT Service Desk"
@@ -27,6 +25,8 @@ def _escape_pdf_text(text: str) -> str:
 
 
 def _jpeg_bytes(text: str, *, size: tuple[int, int] = (640, 360)) -> bytes:
+    from PIL import Image, ImageDraw, ImageFont
+
     image = Image.new("RGB", size, (236, 236, 236))
     draw = ImageDraw.Draw(image)
     font = ImageFont.load_default()
