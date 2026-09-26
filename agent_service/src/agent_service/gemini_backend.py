@@ -18,6 +18,7 @@ __all__ = [
     "EVAL_API_KEY_ENV_NAMES",
     "GEMINI_DOTENV_KEY_NAMES",
     "GOOGLE_GENAI_PROVIDER",
+    "UNAPPROVED_VERTEX_LOCATION_PLACEHOLDER",
     "GeminiApiBackend",
     "GeminiBackendConfig",
     "GeminiConfigurationError",
@@ -35,7 +36,6 @@ __all__ = [
     "reset_gemini_backend_for_tests",
     "resolve_gemini_backend",
     "strip_model_provider",
-    "UNAPPROVED_VERTEX_LOCATION_PLACEHOLDER",
 ]
 
 GOOGLE_GENAI_PROVIDER = "google_genai"

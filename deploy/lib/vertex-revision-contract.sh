@@ -1,4 +1,6 @@
+#!/usr/bin/env bash
 # Shared Cloud Run Vertex revision contract for BU deploy scripts.
+# Sourced by deploy-gcp.sh, deploy-portal.sh, and deploy-backoffice.sh.
 # --set-env-vars does not clear secret mounts. Live Developer API revisions
 # keep GOOGLE_API_KEY unless it is removed explicitly.
 
@@ -208,15 +210,15 @@ preserve_live_agent_knowledge_env() {
   done
   live="$(cloud_run_plain_env_value "${service}" "KNOWLEDGE_RELEASE_GCS_BUCKET")"
   if [[ -n "${live}" ]]; then
-    KNOWLEDGE_RELEASE_BUCKET="${live}"
+    export KNOWLEDGE_RELEASE_BUCKET="${live}"
   fi
   live="$(cloud_run_plain_env_value "${service}" "KNOWLEDGE_RELEASE_GCS_PREFIX")"
   if [[ -n "${live}" ]]; then
-    KNOWLEDGE_RELEASE_PREFIX="${live}"
+    export KNOWLEDGE_RELEASE_PREFIX="${live}"
   fi
   live="$(cloud_run_plain_env_value "${service}" "KNOWLEDGE_RELEASE_TENANT_ID")"
   if [[ -n "${live}" ]]; then
-    KNOWLEDGE_RELEASE_TENANT_ID="${live}"
+    export KNOWLEDGE_RELEASE_TENANT_ID="${live}"
   fi
 }
 

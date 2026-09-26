@@ -16,9 +16,9 @@ REGISTRY="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPOSITORY}"
 AGENT_IMAGE="${REGISTRY}/${AGENT_SERVICE}:latest"
 ADAPTER_IMAGE="${REGISTRY}/${ADAPTER_SERVICE}:latest"
 
-# Retained for allowed Developer API environments. BU Vertex revisions
-# must not upload, inject, or mount this secret.
-GOOGLE_API_SECRET="teams-agent-google-api-key"
+# BU Vertex revisions must not upload, inject, or mount
+# teams-agent-google-api-key. Developer API environments keep that secret
+# outside this script.
 GEMINI_API_BACKEND="VERTEX_AI"
 # Explicit Vertex target only. Do not default to PROJECT_ID or "global".
 VERTEX_AI_PROJECT="${VERTEX_AI_PROJECT:-}"

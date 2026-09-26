@@ -9,7 +9,7 @@ from pypdf import PdfReader
 
 FIXTURE_DIR = Path(__file__).resolve().parent / "fixtures" / "pdf-vision"
 sys.path.insert(0, str(FIXTURE_DIR))
-from build_vision_fixtures import (  # noqa: E402
+from build_vision_fixtures import (
     MIXED_TEXT,
     SCAN_MARKER,
     SELECTABLE_TEXT,

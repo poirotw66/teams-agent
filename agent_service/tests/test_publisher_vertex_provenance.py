@@ -6,13 +6,13 @@ import json
 from pathlib import Path
 
 import pytest
+
+from agent_service.gemini_backend import reset_gemini_backend_for_tests
 from knowledge_core.artifacts import INDEX_RELATIVE_PATH
 from knowledge_portal.publisher_finalize import (
     ReleaseBuildError,
     _require_vertex_index_provenance,
 )
-
-from agent_service.gemini_backend import reset_gemini_backend_for_tests
 
 
 def _write_index(release_dir: Path, payload: dict[str, object]) -> None:
